@@ -53,18 +53,15 @@ Unity 專案架構模式
 
 **使用時機**: 設計大型 Unity 專案架構時
 
-### 5. **unity-google-play**
-Google Play 上架完整指南
+### 5. **unity-app-store-deployment**
+Google Play 和 iOS App Store 雙平台上架完整指南
 
 **涵蓋**:
-- AAB 200MB 限制處理
-- Play Asset Delivery (PAD)
-- Keystore 簽名管理
-- Build Settings 配置
-- Google Play Console 設定
-- 測試與發佈流程
+- **Android**: AAB 200MB 限制、Play Asset Delivery、Keystore 簽名、Google Play Console
+- **iOS**: IPA 優化、On-Demand Resources、Provisioning Profile、App Store Connect、TestFlight
+- **雙平台通用**: 資產優化策略、隱私政策合規、審核注意事項、GDPR/ATT
 
-**使用時機**: 準備上架 Google Play 或處理 AAB 過大問題時
+**使用時機**: 準備上架 Google Play 或 App Store、處理包體過大、審核被拒、隱私合規
 
 ## 🚀 安裝方式
 
@@ -129,19 +126,19 @@ ln -s /path/to/claude-code-skills/projects/unity .claude/skills
   - 使用對象池、緩存等技術
 ```
 
-### 場景 4: Google Play 上架
+### 場景 4: 雙平台上架
 
 ```
-你: "要上架 Google Play，但 AAB 超過 200MB 怎麼辦？"
+你: "要上架 Google Play 和 App Store，AAB 超過 200MB 怎麼辦？"
 
-自動觸發: unity-google-play
+自動觸發: unity-app-store-deployment
 
 會做什麼:
-  - 檢查 AAB 大小
-  - 提供瘦身技巧（壓縮、IL2CPP、Stripping）
-  - 如果仍超過，配置 Play Asset Delivery
-  - 提供完整的 Build 和上架流程
-  - 檢查 Keystore 配置
+  - 檢查 AAB/IPA 大小
+  - Android: 提供瘦身技巧、配置 Play Asset Delivery
+  - iOS: 配置 Xcode 簽名、TestFlight 測試、On-Demand Resources
+  - 雙平台: 資產優化、隱私政策、審核準備
+  - 提供完整的 Build 和上架流程 (兩個平台)
 ```
 
 ## 🎮 Unity 特定的反幻覺機制
@@ -192,7 +189,7 @@ ln -s /path/to/claude-code-skills/projects/unity .claude/skills
 HIGH (Unity 特定問題)
 ├─ unity-performance (性能問題)
 ├─ unity-multiplatform (平台問題)
-└─ unity-google-play (上架問題)
+└─ unity-app-store-deployment (雙平台上架)
 
 MEDIUM (架構設計)
 └─ unity-architecture

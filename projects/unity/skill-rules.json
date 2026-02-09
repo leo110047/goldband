@@ -47,16 +47,18 @@
       }
     },
     {
-      "name": "unity-google-play-priority",
-      "description": "Google Play 上架問題優先使用 unity-google-play skill",
+      "name": "unity-app-store-deployment-priority",
+      "description": "雙平台上架問題優先使用 unity-app-store-deployment skill",
       "when": {
         "user_mentions_any": [
-          "上架", "Google Play", "AAB", "200MB", "Play Console",
-          "Play Asset Delivery", "PAD", "發佈", "審核", "keystore"
+          "上架", "Google Play", "App Store", "AAB", "IPA", "200MB",
+          "Play Console", "App Store Connect", "Play Asset Delivery", "PAD",
+          "TestFlight", "發佈", "審核", "keystore", "provisioning",
+          "Xcode 簽名", "隱私政策", "GDPR", "ATT"
         ]
       },
       "then": {
-        "primary_skill": "unity-google-play",
+        "primary_skill": "unity-app-store-deployment",
         "priority": "HIGH"
       }
     }
@@ -75,9 +77,9 @@
       "collaborates_with": ["unity-performance", "unity-best-practices"],
       "reason": "多平台開發需要考慮性能和最佳實踐"
     },
-    "unity-google-play": {
+    "unity-app-store-deployment": {
       "collaborates_with": ["unity-performance", "unity-multiplatform", "unity-best-practices"],
-      "reason": "Google Play 上架需要考慮性能優化、多平台支援和最佳實踐"
+      "reason": "雙平台上架需要考慮性能優化、多平台支援和最佳實踐"
     }
   },
 
