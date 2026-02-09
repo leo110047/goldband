@@ -1,0 +1,187 @@
+{
+  "$schema": "https://claude.ai/skill-rules-schema.json",
+  "version": "1.0.0",
+  "description": "Global skill conflict resolution and priority rules",
+
+  "priority_rules": [
+    {
+      "name": "debugging-absolute-priority",
+      "description": "Bugs and test failures must be debugged systematically before any other action",
+      "when": {
+        "user_mentions_any": [
+          "bug", "error", "fail", "failing", "broken", "crash",
+          "test fail", "test failing", "unexpected behavior", "doesn't work"
+        ]
+      },
+      "then": {
+        "primary_skill": "systematic-debugging",
+        "priority": "CRITICAL",
+        "defer_skills": ["code-review-skill", "backend-patterns", "performance-optimization"],
+        "reason": "Bugs must be investigated systematically before review, optimization, or architectural changes"
+      }
+    },
+
+    {
+      "name": "performance-vs-architecture",
+      "description": "Separate performance optimization from architectural design",
+      "when": {
+        "user_mentions_any": ["slow", "optimize", "performance", "bottleneck", "lag", "latency", "too long"],
+        "not_mentions": ["design", "architecture", "structure", "pattern"]
+      },
+      "then": {
+        "primary_skill": "performance-optimization",
+        "exclude_skills": ["backend-patterns"],
+        "reason": "Performance problems need specialized measurement and optimization, not architectural redesign"
+      }
+    },
+
+    {
+      "name": "architecture-without-performance",
+      "description": "Pure architectural design without performance concerns",
+      "when": {
+        "user_mentions_any": ["design", "architecture", "structure", "pattern", "implement", "create"],
+        "not_mentions": ["slow", "optimize", "performance", "bottleneck"]
+      },
+      "then": {
+        "primary_skill": "backend-patterns",
+        "exclude_skills": ["performance-optimization"],
+        "reason": "Architectural decisions should be made based on design principles, not premature optimization"
+      }
+    },
+
+    {
+      "name": "review-without-bugs",
+      "description": "Code review should only proceed when no active bugs exist",
+      "when": {
+        "user_mentions_any": ["review", "PR", "pull request", "code review"],
+        "not_mentions": ["bug", "error", "fail", "test fail", "broken"]
+      },
+      "then": {
+        "primary_skill": "code-review-skill",
+        "exclude_skills": ["systematic-debugging"],
+        "reason": "Review is for quality and standards, not active debugging"
+      }
+    },
+
+    {
+      "name": "review-with-bugs-detected",
+      "description": "If bugs are found during review, stop and debug first",
+      "when": {
+        "user_mentions_any": ["review", "PR"],
+        "and_mentions": ["bug", "fail", "error", "test fail"]
+      },
+      "then": {
+        "primary_skill": "systematic-debugging",
+        "defer_skills": ["code-review-skill"],
+        "workflow": [
+          "1. Invoke systematic-debugging to investigate bugs",
+          "2. Fix bugs systematically",
+          "3. Resume code-review-skill after bugs are resolved"
+        ],
+        "reason": "Cannot properly review code with active bugs; debugging must come first"
+      }
+    }
+  ],
+
+  "conflict_resolution": {
+    "backend-patterns_vs_performance-optimization": {
+      "trigger_keywords": {
+        "performance-optimization": ["slow", "optimize", "performance", "bottleneck"],
+        "backend-patterns": ["design", "architecture", "implement", "create"]
+      },
+      "resolution": "If user mentions BOTH, ask clarifying question: 'Are you designing a new system (architecture) or fixing an existing slow system (optimization)?'",
+      "default": "performance-optimization (if 'slow' or 'optimize' present)"
+    },
+
+    "code-review_vs_systematic-debugging": {
+      "trigger_keywords": {
+        "systematic-debugging": ["bug", "error", "fail", "broken"],
+        "code-review-skill": ["review", "PR", "code quality"]
+      },
+      "resolution": "systematic-debugging ALWAYS takes priority when bugs are present",
+      "workflow": "Debug first, review later"
+    }
+  },
+
+  "anti_hallucination_rules": {
+    "verify_before_claim": {
+      "description": "Always verify tool results before making claims",
+      "rules": [
+        "After reading a file, verify it exists and contains expected content",
+        "After grep/glob, verify matches are relevant before claiming 'found X'",
+        "After running tests, check actual output, don't assume success",
+        "When suggesting file paths, use Glob to verify they exist first"
+      ],
+      "enforcement": "CRITICAL"
+    },
+
+    "no_assumed_apis": {
+      "description": "Never assume API signatures, read actual code first",
+      "rules": [
+        "Before suggesting function calls, Read the actual implementation",
+        "Before claiming 'this function does X', verify by reading source",
+        "If uncertain about API, use Grep to search for usage examples"
+      ],
+      "enforcement": "CRITICAL"
+    },
+
+    "evidence_based_debugging": {
+      "description": "Only make claims based on actual evidence, not assumptions",
+      "rules": [
+        "Don't say 'probably' or 'likely' - gather evidence first",
+        "Don't guess at root causes - follow systematic-debugging process",
+        "Don't assume 'this should work' - test and verify",
+        "If you don't know, say so and investigate"
+      ],
+      "enforcement": "CRITICAL",
+      "linked_skill": "systematic-debugging"
+    }
+  },
+
+  "global_reminders": [
+    {
+      "trigger": "before_suggesting_fix",
+      "message": "Have you verified this with actual evidence? (Read, Grep, or test output)"
+    },
+    {
+      "trigger": "after_file_operation",
+      "message": "Did you verify the operation succeeded? Check tool result carefully."
+    },
+    {
+      "trigger": "when_uncertain",
+      "message": "Instead of guessing, use Read/Grep/Glob to gather evidence first."
+    }
+  ],
+
+  "skill_collaboration": {
+    "systematic-debugging": {
+      "overrides": ["code-review-skill", "backend-patterns", "performance-optimization"],
+      "priority": "CRITICAL",
+      "reason": "Bugs must be fixed before review, optimization, or redesign"
+    },
+    "code-review-skill": {
+      "defers_to": ["systematic-debugging"],
+      "collaborates_with": ["performance-optimization", "backend-patterns"],
+      "workflow": "Review can flag issues and recommend other skills, but should not attempt to fix bugs"
+    },
+    "performance-optimization": {
+      "requires_evidence": true,
+      "must_use": ["profiling", "measurement", "baseline establishment"],
+      "reason": "Never optimize without measuring first (Measure First, Optimize Second)"
+    },
+    "backend-patterns": {
+      "focus": "design and architecture",
+      "excludes": ["performance fixes", "bug fixes"],
+      "reason": "Architecture is about structure, not fixing existing problems"
+    }
+  },
+
+  "metadata": {
+    "created": "2026-02-09",
+    "author": "Leo (with Claude assistance)",
+    "purpose": "Prevent skill conflicts and AI hallucinations in global Claude Code skills",
+    "version_history": [
+      "1.0.0 - Initial version with conflict resolution and anti-hallucination rules"
+    ]
+  }
+}

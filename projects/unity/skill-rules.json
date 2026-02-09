@@ -1,0 +1,71 @@
+{
+  "$schema": "https://claude.ai/skill-rules-schema.json",
+  "version": "1.0.0",
+  "description": "Unity project-specific skill rules",
+
+  "priority_rules": [
+    {
+      "name": "unity-performance-priority",
+      "description": "Unity 性能問題優先使用 unity-performance skill",
+      "when": {
+        "user_mentions_any": [
+          "Unity 慢", "幀率低", "FPS 低", "卡頓", "lag",
+          "GC", "垃圾回收", "內存", "優化 Unity"
+        ]
+      },
+      "then": {
+        "primary_skill": "unity-performance",
+        "priority": "HIGH"
+      }
+    },
+    {
+      "name": "unity-multiplatform-priority",
+      "description": "多平台問題優先使用 unity-multiplatform skill",
+      "when": {
+        "user_mentions_any": [
+          "iOS", "Android", "WebGL", "移動平台", "觸控",
+          "多平台", "跨平台", "mobile", "touch"
+        ]
+      },
+      "then": {
+        "primary_skill": "unity-multiplatform",
+        "priority": "HIGH"
+      }
+    },
+    {
+      "name": "unity-architecture-for-design",
+      "description": "架構設計問題使用 unity-architecture skill",
+      "when": {
+        "user_mentions_any": [
+          "Unity 架構", "設計模式", "MVC", "ECS", "系統設計",
+          "專案結構", "代碼組織"
+        ]
+      },
+      "then": {
+        "primary_skill": "unity-architecture",
+        "priority": "MEDIUM"
+      }
+    }
+  ],
+
+  "skill_collaboration": {
+    "unity-best-practices": {
+      "always_active": true,
+      "reason": "通用的 Unity 最佳實踐應該始終適用"
+    },
+    "unity-performance": {
+      "requires": ["unity-best-practices"],
+      "reason": "性能優化建立在最佳實踐基礎上"
+    },
+    "unity-multiplatform": {
+      "collaborates_with": ["unity-performance", "unity-best-practices"],
+      "reason": "多平台開發需要考慮性能和最佳實踐"
+    }
+  },
+
+  "metadata": {
+    "created": "2026-02-09",
+    "project_type": "Unity Game Development",
+    "purpose": "Unity project-specific skills for multi-platform game development"
+  }
+}
