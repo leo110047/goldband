@@ -49,12 +49,15 @@ Automatically activates when you mention:
 
 **Location**: `.claude/skills/skill-rules.json`
 
-Defines:
-- All skills and their trigger conditions
-- Enforcement levels (block, suggest, warn)
-- File path patterns (glob)
-- Content detection patterns (regex)
-- Skip conditions (session tracking, file markers, env vars)
+**Important**: `skill-rules.json` is a **human-readable reference document**. It is NOT automatically loaded or executed by Claude Code. The rules it describes are enforced through the content of each SKILL.md file (via `## Priority and Conflict Rules` sections). The JSON file serves as:
+- A centralized reference for skill relationships and priorities
+- Documentation for humans maintaining the skill collection
+- A schema reference for creating new skills
+
+**Actual rule enforcement** happens via:
+- SKILL.md content (loaded when skill is triggered)
+- Hook scripts (executed by Claude Code's hook system)
+- `## Priority and Conflict Rules` sections in each SKILL.md
 
 ---
 

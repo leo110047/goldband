@@ -1,5 +1,6 @@
 {
   "$schema": "https://claude.ai/skill-rules-schema.json",
+  "_purpose": "Reference document. Rules enforced via SKILL.md content. Not auto-loaded by Claude Code.",
   "version": "1.0.0",
   "description": "Global skill conflict resolution and priority rules",
 
@@ -173,6 +174,24 @@
       "focus": "design and architecture",
       "excludes": ["performance fixes", "bug fixes"],
       "reason": "Architecture is about structure, not fixing existing problems"
+    },
+    "database-patterns": {
+      "focus": "schema design, query optimization, migrations",
+      "collaborates_with": ["backend-patterns", "performance-optimization"],
+      "excludes": ["API design", "bug fixes"],
+      "reason": "Database patterns focus on data layer design and optimization"
+    },
+    "api-design": {
+      "focus": "REST conventions, error formats, pagination, versioning",
+      "collaborates_with": ["backend-patterns", "security-checklist"],
+      "excludes": ["database design", "implementation details"],
+      "reason": "API design focuses on interface contracts, not implementation"
+    },
+    "ci-cd-integration": {
+      "focus": "pipeline design, deployment strategies, automation",
+      "collaborates_with": ["testing-strategy", "security-checklist"],
+      "excludes": ["application architecture", "bug fixes"],
+      "reason": "CI/CD focuses on delivery pipeline, not application code"
     }
   },
 

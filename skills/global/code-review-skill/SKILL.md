@@ -37,6 +37,13 @@ Transform code reviews from gatekeeping to knowledge sharing through constructiv
 - Reducing code review cycle time
 - Maintaining code quality standards
 
+## Priority and Conflict Rules
+
+- **Scope**: Code quality, maintainability, and standards compliance
+- **Defers to**: `systematic-debugging` when bugs are found during review
+- When bugs are detected, STOP review and invoke systematic-debugging first
+- Only resume review after bugs are systematically investigated and fixed
+
 ## Collaboration with Other Skills
 
 **When you encounter bugs or test failures during review:**

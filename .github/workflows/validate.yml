@@ -1,0 +1,159 @@
+name: Validate Config
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate JSON files
+        run: |
+          echo "=== Validating JSON files ==="
+          errors=0
+
+          for f in hooks/hooks.json skills/global/skill-rules.json; do
+            if [ -f "$f" ]; then
+              if python3 -c "import json; json.load(open('$f'))" 2>/dev/null; then
+                echo "  [OK] $f"
+              else
+                echo "  [ERROR] $f — invalid JSON"
+                errors=$((errors + 1))
+              fi
+            else
+              echo "  [SKIP] $f — not found"
+            fi
+          done
+
+          if [ $errors -gt 0 ]; then
+            echo "::error::$errors JSON file(s) have syntax errors"
+            exit 1
+          fi
+
+      - name: Check SKILL.md frontmatter
+        run: |
+          echo "=== Checking SKILL.md frontmatter ==="
+          errors=0
+          warnings=0
+
+          find skills -name "SKILL.md" | sort | while read -r f; do
+            # Check frontmatter exists (starts with ---)
+            if ! head -1 "$f" | grep -q "^---"; then
+              echo "  [ERROR] $f — missing YAML frontmatter"
+              errors=$((errors + 1))
+              continue
+            fi
+
+            # Check for name field
+            if ! sed -n '/^---$/,/^---$/p' "$f" | grep -q "^name:"; then
+              echo "  [ERROR] $f — missing 'name' in frontmatter"
+              errors=$((errors + 1))
+            fi
+
+            # Check for description field
+            if ! sed -n '/^---$/,/^---$/p' "$f" | grep -q "^description"; then
+              echo "  [ERROR] $f — missing 'description' in frontmatter"
+              errors=$((errors + 1))
+            fi
+
+            # Check line count
+            lines=$(wc -l < "$f")
+            if [ "$lines" -gt 500 ]; then
+              echo "  [WARNING] $f — $lines lines (>500)"
+              warnings=$((warnings + 1))
+            else
+              echo "  [OK] $f — $lines lines"
+            fi
+          done
+
+          echo ""
+          echo "Frontmatter check complete"
+
+      - name: Verify hook script references
+        run: |
+          echo "=== Verifying hook script references ==="
+          errors=0
+
+          # Extract script paths from hooks.json
+          grep -oP '"command":\s*"node\s+\\"[^"]*\\"' hooks/hooks.json | \
+            sed 's/.*node\s*\\"\(.*\)\\"/\1/' | \
+            sed 's/${HOOKS_DIR}/hooks/' | \
+            while read -r script; do
+              if [ -f "$script" ]; then
+                echo "  [OK] $script"
+              else
+                echo "  [ERROR] $script — not found"
+                errors=$((errors + 1))
+              fi
+            done
+
+          # Fallback: use python for more robust parsing
+          python3 -c "
+          import json, re, sys, os
+
+          with open('hooks/hooks.json') as f:
+              data = json.load(f)
+
+          errors = 0
+          hooks = data.get('hooks', {})
+          for phase, entries in hooks.items():
+              for entry in entries:
+                  for hook in entry.get('hooks', []):
+                      cmd = hook.get('command', '')
+                      # Extract script path
+                      match = re.search(r'node\s+\"([^\"]+)\"', cmd)
+                      if match:
+                          path = match.group(1).replace('\${HOOKS_DIR}', 'hooks')
+                          if not os.path.exists(path):
+                              print(f'  [ERROR] {path} — referenced but not found')
+                              errors += 1
+
+          if errors > 0:
+              print(f'::error::{errors} hook script(s) not found')
+              sys.exit(1)
+          else:
+              print('  All hook scripts verified')
+          "
+
+      - name: Verify reference file links
+        run: |
+          echo "=== Verifying reference/ links in SKILL.md files ==="
+          errors=0
+
+          find skills -name "SKILL.md" | sort | while read -r f; do
+            dir=$(dirname "$f")
+
+            # Find reference links like (reference/xxx.md) or reference/xxx.md
+            grep -oP 'reference/[a-zA-Z0-9_-]+\.md' "$f" | sort -u | while read -r ref; do
+              refpath="$dir/$ref"
+              if [ -f "$refpath" ]; then
+                echo "  [OK] $f → $ref"
+              else
+                echo "  [ERROR] $f → $ref — file not found at $refpath"
+                errors=$((errors + 1))
+              fi
+            done
+          done
+
+          echo ""
+          echo "Reference link check complete"
+
+      - name: Summary
+        run: |
+          echo "=== Validation Summary ==="
+          skill_count=$(find skills -name "SKILL.md" | wc -l)
+          command_count=$(find commands -name "*.md" 2>/dev/null | wc -l)
+          context_count=$(find contexts -name "*.md" 2>/dev/null | wc -l)
+          rule_count=$(find rules -name "*.md" 2>/dev/null | wc -l)
+          hook_script_count=$(find hooks/scripts/hooks -name "*.js" 2>/dev/null | wc -l)
+
+          echo "  Skills:       $skill_count"
+          echo "  Commands:     $command_count"
+          echo "  Contexts:     $context_count"
+          echo "  Rules:        $rule_count"
+          echo "  Hook Scripts: $hook_script_count"

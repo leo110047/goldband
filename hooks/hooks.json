@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const i=JSON.parse(d);const cmd=i.tool_input?.command||'';if(process.platform!=='win32'&&/(npm run dev\\b|pnpm( run)? dev\\b|yarn dev\\b|bun run dev\\b)/.test(cmd)){console.error('[Hook] BLOCKED: Dev server must run in tmux for log access');console.error('[Hook] Use: tmux new-session -d -s dev \\\"npm run dev\\\"');console.error('[Hook] Then: tmux attach -t dev');process.exit(2)}}catch{}console.log(d)})\""
+            "command": "node \"${HOOKS_DIR}/scripts/hooks/dev-server-blocker.js\""
           }
         ],
         "description": "Block dev servers outside tmux"
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const i=JSON.parse(d);const cmd=i.tool_input?.command||'';if(/git push/.test(cmd)){console.error('[Hook] Review changes before push...')}}catch{}console.log(d)})\""
+            "command": "node \"${HOOKS_DIR}/scripts/hooks/git-push-reminder.js\""
           }
         ],
         "description": "Reminder before git push"
@@ -28,10 +28,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const i=JSON.parse(d);const p=i.tool_input?.file_path||'';if(/\\.(md|txt)$/.test(p)&&!/(README|CLAUDE|AGENTS|CONTRIBUTING)\\.md$/.test(p)&&!/\\.claude\\/plans\\//.test(p)){console.error('[Hook] BLOCKED: Unnecessary documentation file creation');console.error('[Hook] File: '+p);process.exit(2)}}catch{}console.log(d)})\""
+            "command": "node \"${HOOKS_DIR}/scripts/hooks/doc-file-blocker.js\""
           }
         ],
         "description": "Block creation of random .md files"
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${HOOKS_DIR}/scripts/hooks/detect-secrets.js\""
+          }
+        ],
+        "description": "Detect and block secrets in file content"
       },
       {
         "matcher": "Edit|Write",

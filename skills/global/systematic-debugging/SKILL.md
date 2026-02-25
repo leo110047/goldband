@@ -21,6 +21,13 @@ NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST
 
 If you haven't completed Phase 1, you cannot propose fixes.
 
+## Priority and Conflict Rules
+
+- **Priority**: CRITICAL — overrides all other skills when bugs are present
+- Overrides: `code-review-skill`, `performance-optimization`, `backend-patterns`
+- When bugs are found during review or optimization, STOP and debug first
+- Only resume other skills after bugs are systematically investigated and fixed
+
 ## When to Use
 
 Use for ANY technical issue:

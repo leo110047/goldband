@@ -30,705 +30,168 @@ allowed-tools:
 
 ## OWASP Top 10 (2021)
 
+The OWASP Top 10 represents the most critical web application security risks. Each item below
+includes a summary and key prevention measures. See `reference/owasp-top10.md` for detailed
+code examples showing vulnerable (bad) and secure (good) patterns for every category.
+
 ### 1. Broken Access Control
 
-**Vulnerability:** Users can access resources they shouldn't
+Users accessing resources or actions beyond their intended permissions. This is the most
+common web application vulnerability.
 
-```typescript
-// ❌ No access control
-app.get('/api/users/:id', async (req, res) => {
-  const user = await db.users.findById(req.params.id)
-  res.json(user) // Any user can view any other user's data!
-})
-
-// ✅ Proper access control
-app.get('/api/users/:id', authenticateUser, async (req, res) => {
-  const requestedUserId = req.params.id
-  const currentUserId = req.user.id
-
-  // Users can only view their own data, or admins can view anyone
-  if (requestedUserId !== currentUserId && !req.user.isAdmin) {
-    return res.status(403).json({ error: 'Access denied' })
-  }
-
-  const user = await db.users.findById(requestedUserId)
-  res.json(user)
-})
-```
-
-**Prevention:**
-- Deny by default
+- Deny access by default
 - Implement role-based access control (RBAC)
-- Verify ownership before modifying resources
-- Don't trust client-side access control
+- Verify resource ownership before every modification
+- Never rely on client-side access control
 
 ### 2. Cryptographic Failures
 
-**Vulnerability:** Sensitive data exposed due to weak crypto
+Sensitive data exposed due to weak or missing encryption. Includes storing passwords in
+plain text, using base64 as "encryption," or transmitting data without TLS.
 
-```typescript
-// ❌ Storing plain text passwords
-await db.users.create({
-  email: 'user@example.com',
-  password: 'mypassword123' // Plain text!
-})
+- Use bcrypt (12+ rounds) or Argon2 for password hashing -- never MD5 or SHA1
+- Use AES-256-GCM for encrypting data at rest
+- Enforce HTTPS/TLS for all data in transit
+- Generate random values with `crypto.randomBytes`, never `Math.random`
+- Rotate encryption keys on a regular schedule
 
-// ✅ Hash passwords with bcrypt
-import bcrypt from 'bcrypt'
+### 3. Injection (SQL, Command, NoSQL)
 
-const SALT_ROUNDS = 12
+Untrusted data sent to an interpreter as part of a query or command. Attackers can
+execute unintended commands or access unauthorized data.
 
-async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, SALT_ROUNDS)
-}
-
-await db.users.create({
-  email: 'user@example.com',
-  password: await hashPassword('mypassword123')
-})
-
-// Verifying password
-const isValid = await bcrypt.compare(inputPassword, user.password)
-```
-
-```typescript
-// ❌ Weak encryption
-const encrypted = Buffer.from(sensitiveData).toString('base64') // Not encryption!
-
-// ✅ Proper encryption (AES-256-GCM)
-import crypto from 'crypto'
-
-function encrypt(text: string, key: Buffer): { encrypted: string; iv: string; tag: string } {
-  const iv = crypto.randomBytes(16)
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
-
-  let encrypted = cipher.update(text, 'utf8', 'hex')
-  encrypted += cipher.final('hex')
-
-  return {
-    encrypted,
-    iv: iv.toString('hex'),
-    tag: cipher.getAuthTag().toString('hex')
-  }
-}
-```
-
-**Prevention:**
-- Use bcrypt/Argon2 for passwords (never MD5/SHA1)
-- Use TLS/HTTPS for data in transit
-- Encrypt sensitive data at rest
-- Use strong random values (crypto.randomBytes, not Math.random)
-- Rotate encryption keys regularly
-
-### 3. Injection (SQL, NoSQL, Command)
-
-**SQL Injection:**
-
-```typescript
-// ❌ SQL Injection vulnerability
-app.get('/users', async (req, res) => {
-  const search = req.query.search
-  const query = `SELECT * FROM users WHERE name = '${search}'`
-  // Input: ' OR '1'='1' --
-  // Executes: SELECT * FROM users WHERE name = '' OR '1'='1' --'
-  const users = await db.raw(query)
-  res.json(users)
-})
-
-// ✅ Parameterized queries
-app.get('/users', async (req, res) => {
-  const search = req.query.search
-  const users = await db.query('SELECT * FROM users WHERE name = $1', [search])
-  res.json(users)
-})
-
-// ✅ ORM (Prisma)
-const users = await prisma.user.findMany({
-  where: { name: search }
-})
-```
-
-**Command Injection:**
-
-```typescript
-// ❌ Command injection
-app.post('/convert', (req, res) => {
-  const filename = req.body.filename
-  exec(`convert ${filename} output.jpg`, (err, stdout) => {
-    // Input: "file.png; rm -rf /"
-    // Executes: convert file.png; rm -rf / output.jpg
-    res.send('Converted')
-  })
-})
-
-// ✅ Validate and sanitize input
-const { z } = require('zod')
-
-const FilenameSchema = z.string().regex(/^[a-zA-Z0-9_\-\.]+$/)
-
-app.post('/convert', (req, res) => {
-  try {
-    const filename = FilenameSchema.parse(req.body.filename)
-    const safePath = path.join('/uploads', path.basename(filename))
-    exec(`convert ${JSON.stringify(safePath)} output.jpg`, (err, stdout) => {
-      res.send('Converted')
-    })
-  } catch (error) {
-    res.status(400).json({ error: 'Invalid filename' })
-  }
-})
-```
-
-**NoSQL Injection:**
-
-```typescript
-// ❌ NoSQL injection
-app.post('/login', async (req, res) => {
-  const { username, password } = req.body
-  const user = await db.users.findOne({ username, password })
-  // Input: { username: { $ne: null }, password: { $ne: null } }
-  // Finds user without knowing credentials!
-})
-
-// ✅ Type validation
-app.post('/login', async (req, res) => {
-  const { username, password } = req.body
-
-  if (typeof username !== 'string' || typeof password !== 'string') {
-    return res.status(400).json({ error: 'Invalid input' })
-  }
-
-  const user = await db.users.findOne({ username })
-  if (!user || !(await bcrypt.compare(password, user.password))) {
-    return res.status(401).json({ error: 'Invalid credentials' })
-  }
-
-  res.json({ token: generateToken(user) })
-})
-```
-
-**Prevention:**
-- Always use parameterized queries/prepared statements
-- Use ORMs with proper escaping
-- Validate input types (string, number, etc.)
-- Never concatenate user input into queries
-- Avoid exec/eval with user input
+- Always use parameterized queries or prepared statements
+- Use ORMs (Prisma, Sequelize) with built-in escaping
+- Validate input types strictly (string, number, enum)
+- Never concatenate user input into SQL, shell commands, or NoSQL queries
+- Avoid `exec()` and `eval()` with any user-controlled input
 
 ### 4. Insecure Design
 
-**Vulnerability:** Security flaws in architecture
+Missing or ineffective security controls at the architecture level. Unlike implementation
+bugs, these are flaws in the design itself.
 
-```typescript
-// ❌ No rate limiting on password reset
-app.post('/reset-password', async (req, res) => {
-  const { email } = req.body
-  await sendResetEmail(email) // Attacker can spam this endpoint
-  res.json({ message: 'Reset email sent' })
-})
-
-// ✅ Rate limiting
-import rateLimit from 'express-rate-limit'
-
-const resetPasswordLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 3, // 3 attempts per window
-  message: 'Too many password reset attempts, please try again later'
-})
-
-app.post('/reset-password', resetPasswordLimiter, async (req, res) => {
-  const { email } = req.body
-  await sendResetEmail(email)
-  res.json({ message: 'If that email exists, a reset link has been sent' })
-})
-```
-
-**Prevention:**
-- Design with security from the start
-- Implement rate limiting
-- Use CAPTCHA for sensitive actions
-- Add security headers
-- Follow principle of least privilege
+- Perform threat modeling during design phase
+- Implement rate limiting on sensitive endpoints (login, password reset, signup)
+- Use CAPTCHA for actions vulnerable to automation
+- Apply the principle of least privilege throughout
 
 ### 5. Security Misconfiguration
 
-```typescript
-// ❌ Exposing sensitive errors
-app.use((err, req, res, next) => {
-  res.status(500).json({
-    error: err.message,
-    stack: err.stack, // Leaks internal paths!
-    query: req.query  // May contain sensitive data
-  })
-})
+Default credentials, verbose error messages, exposed stack traces, missing security
+headers, or unnecessary features left enabled.
 
-// ✅ Generic error messages in production
-app.use((err, req, res, next) => {
-  // Log full error server-side
-  logger.error(err, {
-    url: req.url,
-    method: req.method,
-    userId: req.user?.id
-  })
-
-  // Return generic message to client
-  res.status(500).json({
-    error: process.env.NODE_ENV === 'production'
-      ? 'Internal server error'
-      : err.message
-  })
-})
-```
-
-**Security Headers:**
-
-```typescript
-import helmet from 'helmet'
-
-app.use(helmet()) // Sets multiple security headers
-
-// Or manually:
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff')
-  res.setHeader('X-Frame-Options', 'DENY')
-  res.setHeader('X-XSS-Protection', '1; mode=block')
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
-  res.setHeader('Content-Security-Policy', "default-src 'self'")
-  next()
-})
-```
-
-**Prevention:**
-- Remove default credentials
-- Disable directory listing
-- Remove unnecessary features/endpoints
-- Keep dependencies updated
-- Use security headers (helmet)
-- Don't expose stack traces in production
+- Use `helmet` to set security headers automatically
+- Return generic error messages in production (never stack traces)
+- Remove default credentials and sample applications
+- Disable directory listing and unnecessary HTTP methods
+- Keep all frameworks and libraries on supported versions
 
 ### 6. Vulnerable and Outdated Components
 
-```bash
-# ❌ Never checking for vulnerabilities
-npm install express
+Using libraries, frameworks, or other software modules with known security vulnerabilities.
 
-# ✅ Regular security audits
-npm audit
-npm audit fix
-
-# Check for known vulnerabilities
-npx snyk test
-
-# Automated dependency updates
-# Use Dependabot or Renovate
-```
-
-**Prevention:**
-- Run `npm audit` regularly
-- Update dependencies frequently
-- Use `npm ci` in CI/CD (locks exact versions)
-- Monitor security advisories
-- Remove unused dependencies
+- Run `npm audit` regularly and fix findings
+- Set up automated dependency updates (Dependabot, Renovate)
+- Use `npm ci` in CI/CD pipelines to lock exact versions
+- Monitor security advisories for your stack
+- Remove dependencies you no longer use
 
 ### 7. Identification and Authentication Failures
 
-**Weak Password Policy:**
+Weak password policies, predictable session tokens, misconfigured JWT, and missing
+multi-factor authentication.
 
-```typescript
-// ❌ Weak password requirements
-if (password.length < 6) {
-  throw new Error('Password too short')
-}
-
-// ✅ Strong password policy
-import passwordValidator from 'password-validator'
-
-const schema = new passwordValidator()
-schema
-  .is().min(12)                                    // Minimum length 12
-  .has().uppercase()                               // Must have uppercase
-  .has().lowercase()                               // Must have lowercase
-  .has().digits(1)                                 // Must have at least 1 digit
-  .has().symbols(1)                                // Must have at least 1 symbol
-  .has().not().spaces()                            // Should not have spaces
-  .is().not().oneOf(['Password123!', 'Admin123!']) // Blacklist common passwords
-
-if (!schema.validate(password)) {
-  throw new Error('Password does not meet requirements')
-}
-```
-
-**Session Management:**
-
-```typescript
-// ❌ Predictable session IDs
-const sessionId = `${userId}_${Date.now()}` // Predictable!
-
-// ✅ Cryptographically secure session IDs
-import crypto from 'crypto'
-
-const sessionId = crypto.randomBytes(32).toString('hex')
-
-// Session expiration
-app.use(session({
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: true,        // HTTPS only
-    httpOnly: true,      // No JavaScript access
-    sameSite: 'strict',  // CSRF protection
-    maxAge: 3600000      // 1 hour
-  }
-}))
-```
-
-**JWT Best Practices:**
-
-```typescript
-// ✅ Secure JWT implementation
-import jwt from 'jsonwebtoken'
-
-function generateToken(user: User): string {
-  return jwt.sign(
-    {
-      id: user.id,
-      email: user.email,
-      role: user.role
-    },
-    process.env.JWT_SECRET!,
-    {
-      expiresIn: '1h',
-      issuer: 'your-app',
-      audience: 'your-app-users'
-    }
-  )
-}
-
-function verifyToken(token: string): TokenPayload {
-  try {
-    return jwt.verify(token, process.env.JWT_SECRET!, {
-      issuer: 'your-app',
-      audience: 'your-app-users'
-    }) as TokenPayload
-  } catch (error) {
-    throw new Error('Invalid token')
-  }
-}
-
-// Middleware
-function authenticateJWT(req, res, next) {
-  const authHeader = req.headers.authorization
-
-  if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'No token provided' })
-  }
-
-  const token = authHeader.substring(7)
-
-  try {
-    req.user = verifyToken(token)
-    next()
-  } catch (error) {
-    return res.status(403).json({ error: 'Invalid token' })
-  }
-}
-```
-
-**Prevention:**
-- Use strong password requirements
-- Implement multi-factor authentication (MFA)
-- Use secure session management
-- Implement account lockout after failed attempts
-- Use cryptographically secure random values
+- Enforce strong passwords (12+ chars, mixed case, digits, symbols)
+- Use cryptographically secure session IDs (`crypto.randomBytes`)
+- Set secure cookie flags: `httpOnly`, `secure`, `sameSite: 'strict'`
+- Issue short-lived JWT tokens with proper `issuer` and `audience` claims
+- Implement account lockout after repeated failed login attempts
+- Support multi-factor authentication (MFA)
 
 ### 8. Software and Data Integrity Failures
 
-**Dependency Integrity:**
+Using unverified updates, plugins, or dependencies without integrity checks. Includes
+CI/CD pipeline compromises and unsigned packages.
 
-```json
-// package.json
-{
-  "dependencies": {
-    "express": "^4.18.0"  // ❌ Allows minor updates that could introduce vulnerabilities
-  }
-}
-
-// ✅ Use package-lock.json and verify checksums
-npm ci  // Uses exact versions from package-lock.json
-```
-
-**Prevention:**
-- Use package-lock.json or yarn.lock
-- Verify checksums of downloads
-- Use code signing
-- Implement CI/CD pipeline checks
-- Review dependencies before adding
+- Always commit and use `package-lock.json` or `yarn.lock`
+- Run `npm ci` (not `npm install`) in CI/CD for deterministic builds
+- Verify checksums and signatures on downloaded artifacts
+- Review new dependencies before adding them to the project
 
 ### 9. Security Logging and Monitoring Failures
 
-```typescript
-// ❌ No security logging
-app.post('/login', async (req, res) => {
-  const user = await authenticate(req.body)
-  res.json({ token: generateToken(user) })
-  // Failed login attempts not logged!
-})
+Insufficient logging of security-relevant events, making it impossible to detect attacks
+or perform forensic analysis after a breach.
 
-// ✅ Comprehensive security logging
-import winston from 'winston'
-
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.json(),
-  transports: [
-    new winston.transports.File({ filename: 'security.log' })
-  ]
-})
-
-app.post('/login', async (req, res) => {
-  const { email, password } = req.body
-
-  try {
-    const user = await authenticate(email, password)
-
-    logger.info('Login successful', {
-      userId: user.id,
-      email: user.email,
-      ip: req.ip,
-      userAgent: req.headers['user-agent'],
-      timestamp: new Date()
-    })
-
-    res.json({ token: generateToken(user) })
-  } catch (error) {
-    logger.warn('Login failed', {
-      email: email,
-      ip: req.ip,
-      userAgent: req.headers['user-agent'],
-      timestamp: new Date(),
-      reason: 'Invalid credentials'
-    })
-
-    res.status(401).json({ error: 'Invalid credentials' })
-  }
-})
-```
-
-**What to Log:**
-- ✅ Authentication attempts (success and failure)
-- ✅ Authorization failures
-- ✅ Input validation failures
-- ✅ Suspicious activity patterns
-- ❌ Passwords or tokens
-- ❌ Personal identifiable information (PII)
-
-**Prevention:**
-- Log security-relevant events
-- Monitor logs for suspicious patterns
-- Set up alerts for critical events
-- Centralize logging
-- Retain logs appropriately
+- Log all authentication attempts (success and failure)
+- Log authorization failures and input validation errors
+- Record IP address, user agent, and timestamp for security events
+- Set up alerts for suspicious patterns (brute force, unusual access)
+- Centralize logs for analysis and retain them appropriately
+- Never log passwords, tokens, or personally identifiable information (PII)
 
 ### 10. Server-Side Request Forgery (SSRF)
 
-```typescript
-// ❌ SSRF vulnerability
-app.get('/fetch', async (req, res) => {
-  const url = req.query.url
-  const response = await fetch(url)
-  // Attacker can request: http://localhost:3000/admin
-  // Or: http://169.254.169.254/latest/meta-data/ (AWS metadata)
-  res.send(await response.text())
-})
+The server fetches attacker-controlled URLs, potentially accessing internal services,
+cloud metadata endpoints, or private network resources.
 
-// ✅ Whitelist allowed domains
-const ALLOWED_DOMAINS = ['api.example.com', 'cdn.example.com']
-
-app.get('/fetch', async (req, res) => {
-  const url = req.query.url
-
-  try {
-    const parsedUrl = new URL(url)
-
-    // Check if domain is whitelisted
-    if (!ALLOWED_DOMAINS.includes(parsedUrl.hostname)) {
-      return res.status(403).json({ error: 'Domain not allowed' })
-    }
-
-    // Prevent localhost and private IP access
-    if (parsedUrl.hostname === 'localhost' ||
-        parsedUrl.hostname.startsWith('127.') ||
-        parsedUrl.hostname.startsWith('192.168.') ||
-        parsedUrl.hostname.startsWith('10.')) {
-      return res.status(403).json({ error: 'Private IP access denied' })
-    }
-
-    const response = await fetch(url)
-    res.send(await response.text())
-  } catch (error) {
-    res.status(400).json({ error: 'Invalid URL' })
-  }
-})
-```
-
-**Prevention:**
-- Whitelist allowed domains
-- Block private IP ranges
-- Validate and sanitize URLs
-- Use network segmentation
+- Whitelist allowed destination domains
+- Block requests to localhost, 127.x.x.x, 10.x.x.x, 192.168.x.x, and 169.254.x.x
+- Validate and parse URLs before fetching
+- Use network segmentation to limit server-side access
 
 ## Input Validation
 
-### Always Validate on Server-Side
+Always validate on the server side -- client-side validation (HTML `required`, `type="email"`)
+is trivially bypassed with curl, Postman, or browser dev tools.
 
-```typescript
-// ❌ Client-side only validation
-// <input type="email" required>
-// Attacker can bypass with curl/Postman!
+**Key practices:**
+- Use schema validation libraries (Zod, Joi, Yup) to enforce types, ranges, and formats
+- Validate input lengths, numeric ranges, and date boundaries
+- Use enums or whitelists for constrained values (roles, statuses, categories)
+- Sanitize HTML output with DOMPurify to prevent Cross-Site Scripting (XSS)
+- Modern frameworks (React, Vue, Angular) auto-escape by default, but be cautious with
+  `dangerouslySetInnerHTML` (React) or `v-html` (Vue) -- these bypass auto-escaping
+- Prefer whitelisting acceptable input over blacklisting known-bad input
 
-// ✅ Server-side validation with Zod
-import { z } from 'zod'
-
-const UserSchema = z.object({
-  email: z.string().email(),
-  age: z.number().min(18).max(120),
-  password: z.string().min(12),
-  role: z.enum(['user', 'admin'])
-})
-
-app.post('/users', async (req, res) => {
-  try {
-    const validated = UserSchema.parse(req.body)
-    const user = await createUser(validated)
-    res.json(user)
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        error: 'Validation failed',
-        details: error.errors
-      })
-    }
-    throw error
-  }
-})
-```
-
-### Sanitize HTML Input (XSS Prevention)
-
-```typescript
-// ❌ Directly rendering user input
-app.get('/profile/:id', async (req, res) => {
-  const user = await db.users.findById(req.params.id)
-  res.send(`<h1>${user.bio}</h1>`)
-  // If bio contains: <script>alert('XSS')</script>
-  // It will execute!
-})
-
-// ✅ Sanitize HTML
-import DOMPurify from 'isomorphic-dompurify'
-
-app.get('/profile/:id', async (req, res) => {
-  const user = await db.users.findById(req.params.id)
-  const safeBio = DOMPurify.sanitize(user.bio)
-  res.send(`<h1>${safeBio}</h1>`)
-})
-
-// ✅ Use templating engines with auto-escaping
-// React, Vue, Angular auto-escape by default
-const Profile = ({ user }) => <h1>{user.bio}</h1> // Automatically escaped
-```
+See `reference/input-validation.md` for Zod validation examples, DOMPurify usage, and
+XSS prevention patterns.
 
 ## File Upload Security
 
-```typescript
-import multer from 'multer'
-import path from 'path'
-import crypto from 'crypto'
+Unrestricted file uploads can lead to remote code execution, storage exhaustion, and
+serving malicious content to users.
 
-// ❌ Insecure file upload
-app.post('/upload', upload.single('file'), (req, res) => {
-  // No validation! Attacker can upload .exe, .php, etc.
-  res.json({ filename: req.file.filename })
-})
+**Key practices:**
+- Validate both MIME type and file extension (attackers can spoof one but rarely both)
+- Enforce file size limits appropriate to your use case
+- Generate random filenames with `crypto.randomBytes` to prevent path traversal
+- Store uploaded files outside the web root so they cannot be directly executed
+- Scan files for malware when feasible
+- Never execute or interpret uploaded file contents
 
-// ✅ Secure file upload
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif']
-const MAX_SIZE = 5 * 1024 * 1024 // 5MB
+See `reference/file-upload-security.md` for secure multer configuration and the full
+file upload checklist.
 
-const storage = multer.diskStorage({
-  destination: './uploads/',
-  filename: (req, file, cb) => {
-    // Generate random filename to prevent path traversal
-    const randomName = crypto.randomBytes(16).toString('hex')
-    const ext = path.extname(file.originalname)
-    cb(null, `${randomName}${ext}`)
-  }
-})
+## Environment Variables & Secrets
 
-const upload = multer({
-  storage,
-  limits: { fileSize: MAX_SIZE },
-  fileFilter: (req, file, cb) => {
-    if (!ALLOWED_TYPES.includes(file.mimetype)) {
-      return cb(new Error('Invalid file type'))
-    }
-    cb(null, true)
-  }
-})
+Never hardcode secrets (API keys, JWT secrets, database credentials) in source code.
+Hardcoded secrets get committed to version control, leaked in logs, and exposed to
+anyone with repository access.
 
-app.post('/upload', upload.single('file'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' })
-  }
+**Key practices:**
+- Load secrets from environment variables using `dotenv` or platform-native mechanisms
+- Validate that all required environment variables are present on startup -- fail fast
+- Commit `.env.example` with placeholder values so the team knows what is needed
+- Add `.env` and `.env.local` to `.gitignore` immediately
+- Use different secrets for each environment (dev, staging, production)
+- In production, use a dedicated secrets manager (AWS Secrets Manager, HashiCorp Vault,
+  or your platform's native solution)
+- Rotate secrets regularly, especially after team member departures
 
-  res.json({
-    filename: req.file.filename,
-    size: req.file.size,
-    mimetype: req.file.mimetype
-  })
-})
-```
-
-**File Upload Checklist:**
-- [ ] Validate file type (check MIME type AND file extension)
-- [ ] Limit file size
-- [ ] Generate random filenames
-- [ ] Store files outside web root
-- [ ] Scan for malware (if possible)
-- [ ] Don't execute uploaded files
-
-## Environment Variables
-
-```typescript
-// ❌ Hardcoded secrets
-const JWT_SECRET = 'my-super-secret-key' // Never!
-
-// ❌ Committed .env file
-// .env file should be in .gitignore!
-
-// ✅ Use environment variables
-import dotenv from 'dotenv'
-dotenv.config()
-
-const JWT_SECRET = process.env.JWT_SECRET
-const DATABASE_URL = process.env.DATABASE_URL
-
-if (!JWT_SECRET || !DATABASE_URL) {
-  throw new Error('Missing required environment variables')
-}
-```
-
-**.env.example (commit this):**
-```
-JWT_SECRET=your-secret-here
-DATABASE_URL=postgresql://user:pass@localhost:5432/db
-```
-
-**.gitignore:**
-```
-.env
-.env.local
-```
+See `reference/environment-secrets.md` for code examples, `.env.example` template, and
+`.gitignore` configuration.
 
 ## Security Checklist
 
@@ -814,4 +277,3 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/db
 - **Use security headers** - helmet is your friend
 - **Log security events** - But don't log secrets
 - **Test security** - Include security tests in your test suite
-
