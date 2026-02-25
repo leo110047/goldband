@@ -109,6 +109,10 @@ merge_hooks_config() {
         return
     fi
 
+    # Read permissions from hooks.json
+    local permissions_content
+    permissions_content=$(jq '.permissions // null' "$hooks_json")
+
     # Initialize settings.json if it doesn't exist
     if [ ! -f "$settings_json" ]; then
         echo '{}' > "$settings_json"
@@ -137,7 +141,8 @@ merge_hooks_config() {
         {
             PreToolUse: merge_phase("PreToolUse"),
             PostToolUse: merge_phase("PostToolUse"),
-            Stop: merge_phase("Stop")
+            Stop: merge_phase("Stop"),
+            Notification: merge_phase("Notification")
         }
         ')
 
@@ -146,10 +151,21 @@ merge_hooks_config() {
         && mv "${settings_json}.tmp" "$settings_json"
 
     echo -e "  ${GREEN}[合併] Hooks 設定已自動合併到 settings.json${NC}"
+
+    # Merge permissions if present (merge allow/deny arrays, don't overwrite)
+    if [ "$permissions_content" != "null" ] && [ -n "$permissions_content" ]; then
+        jq --argjson new_perms "$permissions_content" '
+            .permissions.defaultMode = ($new_perms.defaultMode // .permissions.defaultMode // "default") |
+            .permissions.allow = ((.permissions.allow // []) + ($new_perms.allow // []) | unique) |
+            .permissions.deny = ((.permissions.deny // []) + ($new_perms.deny // []) | unique)
+        ' "$settings_json" > "${settings_json}.tmp" \
+            && mv "${settings_json}.tmp" "$settings_json"
+        echo -e "  ${GREEN}[合併] Permissions 設定已自動合併到 settings.json${NC}"
+    fi
 }
 
 install_hooks() {
-    link_component "$REPO_DIR/hooks/scripts" "$CLAUDE_DIR/hooks/scripts" "Hook Scripts (9 個)"
+    link_component "$REPO_DIR/hooks/scripts" "$CLAUDE_DIR/hooks/scripts" "Hook Scripts (10 個)"
     echo ""
     merge_hooks_config
 }

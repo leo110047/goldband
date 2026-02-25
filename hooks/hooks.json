@@ -1,6 +1,41 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "_comment": "安裝後請將此檔案內容合併到 ~/.claude/settings.json 的 hooks 區塊，並將 ${HOOKS_DIR} 替換為實際路徑",
+  "_comment": "安裝後請將此檔案內容合併到 ~/.claude/settings.json，並將 ${HOOKS_DIR} 替換為實際路徑",
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npm test *)",
+      "Bash(npm install *)",
+      "Bash(npx *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git branch*)",
+      "Bash(git checkout *)",
+      "Bash(git stash*)",
+      "Bash(git remote *)",
+      "Bash(ls *)",
+      "Bash(cd *)",
+      "Bash(pwd)",
+      "Bash(cat *)",
+      "Bash(wc *)",
+      "Bash(which *)",
+      "Bash(echo *)",
+      "Bash(mkdir *)",
+      "Bash(python3 *)",
+      "Bash(node *)",
+      "Bash(jq *)"
+    ],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(dd *)",
+      "Bash(chmod 777 *)",
+      "Bash(> /dev/*)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -96,6 +131,18 @@
           }
         ],
         "description": "Check for console.log in modified files after each response"
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${HOOKS_DIR}/scripts/hooks/notify-desktop.js\""
+          }
+        ],
+        "description": "macOS notification when Claude needs attention (only when terminal is not focused)"
       }
     ]
   }
