@@ -132,17 +132,23 @@ merge_hooks_config() {
         --argjson existing "$existing_hooks" \
         --argjson new_hooks "$hooks_content" \
         '
-        # For each phase (PreToolUse, PostToolUse, Stop), merge arrays by command dedup
+        # For each phase, merge arrays by command dedup
         def merge_phase(phase):
             (($existing[phase] // []) + ($new_hooks[phase] // []))
             | group_by(.hooks[0].command)
+            | map(last);
+
+        # For Notification, dedup by description (same purpose = replace with latest)
+        def merge_notification:
+            (($existing["Notification"] // []) + ($new_hooks["Notification"] // []))
+            | group_by(.description)
             | map(last);
 
         {
             PreToolUse: merge_phase("PreToolUse"),
             PostToolUse: merge_phase("PostToolUse"),
             Stop: merge_phase("Stop"),
-            Notification: merge_phase("Notification")
+            Notification: merge_notification
         }
         ')
 
