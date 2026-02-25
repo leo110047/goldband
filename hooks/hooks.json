@@ -131,18 +131,16 @@
           }
         ],
         "description": "Check for console.log in modified files after each response"
-      }
-    ],
-    "Notification": [
+      },
       {
-        "matcher": "",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
             "command": "node \"${HOOKS_DIR}/scripts/hooks/notify-desktop.js\""
           }
         ],
-        "description": "macOS notification when Claude needs attention (only when terminal is not focused)"
+        "description": "Desktop notification when response completes (only when terminal is not focused)"
       }
     ]
   }

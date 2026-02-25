@@ -9,15 +9,25 @@ const os = require("os");
 
 const TITLE = "Claude Code";
 
-const MESSAGES = {
+const NOTIFICATION_MESSAGES = {
   permission_prompt: "需要你的同意才能繼續",
-  idle_prompt: "任務完成，等你下一步指示",
   elicitation_dialog: "有問題想問你",
 };
 
-// auth_success 不通知（成功了不需要提醒）
-const SKIP_TYPES = ["auth_success"];
-const DEFAULT_MESSAGE = "需要你的注意";
+const SKIP_TYPES = ["auth_success", "idle_prompt"];
+
+function getMessage(data) {
+  const event = data.hook_event_name;
+  const notifType = data.notification_type;
+
+  if (event === "Stop") {
+    return "等待下一步指示";
+  }
+  if (notifType && NOTIFICATION_MESSAGES[notifType]) {
+    return NOTIFICATION_MESSAGES[notifType];
+  }
+  return "需要你的注意";
+}
 
 function isMac() {
   return os.platform() === "darwin";
@@ -29,19 +39,17 @@ function isLinux() {
   return os.platform() === "linux";
 }
 
-function getNotificationType() {
+function getStdinData() {
   try {
-    let data = "";
     const fd = require("fs").openSync("/dev/stdin", "r");
     const buf = Buffer.alloc(4096);
     const bytesRead = require("fs").readSync(fd, buf, 0, buf.length);
     require("fs").closeSync(fd);
-    data = buf.toString("utf8", 0, bytesRead);
-    if (!data.trim()) return null;
-    const parsed = JSON.parse(data);
-    return parsed.type || parsed.notification_type || parsed.matcher || null;
+    const data = buf.toString("utf8", 0, bytesRead);
+    if (!data.trim()) return {};
+    return JSON.parse(data);
   } catch (e) {
-    return null;
+    return {};
   }
 }
 
@@ -113,12 +121,19 @@ function sendNotification(message) {
 }
 
 try {
-  if (!isTerminalFocused()) {
-    const type = getNotificationType();
-    if (SKIP_TYPES.includes(type)) process.exit(0);
-    const message = MESSAGES[type] || DEFAULT_MESSAGE;
-    sendNotification(message);
+  const data = getStdinData();
+  const notifType = data.notification_type;
+  const focused = isTerminalFocused();
+
+  if (focused) {
+    process.exit(0);
   }
+  if (SKIP_TYPES.includes(notifType)) {
+    process.exit(0);
+  }
+
+  const message = getMessage(data);
+  sendNotification(message);
 } catch (e) {
   process.exit(0);
 }
