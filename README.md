@@ -1,10 +1,10 @@
-# Leo's Claude Code Config
+# goldband
+
+> Claude Code 的緊箍咒 — Skills, hooks & guardrails that keep your AI disciplined.
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**我的完整 Claude Code 設定集合 — Skills、Commands、Rules、Contexts、Hooks。**
-
-經過日常密集使用演化而來的生產級配置，核心設計理念：**防止 AI 幻覺、系統性除錯、證據驅動開發、流程編排強制設計先行**。
+生產級 Claude Code 配置集合，經過日常密集使用演化而來。核心設計理念：**防止 AI 幻覺、系統性除錯、證據驅動開發、流程編排強制設計先行**。
 
 ---
 
@@ -82,8 +82,8 @@
 
 ```bash
 # 1. Clone
-git clone https://github.com/leo110047/Leo-s-Claude-Code-Config.git
-cd Leo-s-Claude-Code-Config
+git clone https://github.com/leo110047/goldband.git
+cd goldband
 
 # 2. 一鍵安裝（含 hooks 自動合併）
 ./install.sh

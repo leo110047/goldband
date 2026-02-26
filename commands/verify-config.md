@@ -1,4 +1,4 @@
-Perform a comprehensive health check of the Claude Code Config installation.
+Perform a comprehensive health check of the goldband installation.
 
 ## Instructions
 
@@ -51,7 +51,7 @@ Use `cat FILE | python3 -c "import sys,json; json.load(sys.stdin); print('OK')"`
 
 ```
 ╔════════════════════════════════════════╗
-║  Claude Code Config Health Check       ║
+║  goldband Health Check                 ║
 ╚════════════════════════════════════════╝
 
 Symlinks:

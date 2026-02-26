@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Leo's Claude Code Config — 安裝腳本
+# goldband — 安裝腳本
 # 用途：將 skills、commands、contexts、rules、hooks 安裝到 ~/.claude/
 
 set -e
@@ -138,9 +138,9 @@ merge_hooks_config() {
             | group_by(.hooks[0].command)
             | map(last);
 
-        # For Notification, dedup by description (same purpose = replace with latest)
-        def merge_notification:
-            (($existing["Notification"] // []) + ($new_hooks["Notification"] // []))
+        # For prompt-based hooks (no command field), dedup by description
+        def merge_by_description(phase):
+            (($existing[phase] // []) + ($new_hooks[phase] // []))
             | group_by(.description)
             | map(last);
 
@@ -148,7 +148,8 @@ merge_hooks_config() {
             PreToolUse: merge_phase("PreToolUse"),
             PostToolUse: merge_phase("PostToolUse"),
             Stop: merge_phase("Stop"),
-            Notification: merge_notification
+            SubagentStop: merge_by_description("SubagentStop"),
+            Notification: merge_by_description("Notification")
         }
         ')
 
@@ -257,7 +258,7 @@ do_uninstall() {
 # ─────────────────────────────────────
 
 echo -e "${BLUE}════════════════════════════════════════${NC}"
-echo -e "${BLUE}  Leo's Claude Code Config Installer${NC}"
+echo -e "${BLUE}  goldband Installer${NC}"
 echo -e "${BLUE}════════════════════════════════════════${NC}"
 echo ""
 echo -e "${YELLOW}倉庫位置：${NC}$REPO_DIR"
