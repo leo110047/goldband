@@ -70,11 +70,11 @@ show_help() {
 }
 
 install_skills() {
-    link_component "$REPO_DIR/skills/global" "$CLAUDE_DIR/skills" "全域 Skills (14 個)"
+    link_component "$REPO_DIR/skills/global" "$CLAUDE_DIR/skills" "全域 Skills (16 個)"
 }
 
 install_commands() {
-    link_component "$REPO_DIR/commands" "$CLAUDE_DIR/commands" "Commands (5 個)"
+    link_component "$REPO_DIR/commands" "$CLAUDE_DIR/commands" "Commands (7 個)"
 }
 
 install_contexts() {
@@ -329,6 +329,6 @@ echo -e "${BLUE}═════════════════════�
 echo ""
 echo -e "${YELLOW}下一步：${NC}"
 echo "  1. 重啟 Claude Code"
-echo "  2. 試試 /plan、/verify、/code-review、/verify-config 等命令"
+echo "  2. 試試 /plan、/verify、/code-review、/discuss、/map-codebase、/verify-config 等命令"
 echo "  3. 查看 ./install.sh status 確認安裝狀態"
 echo ""

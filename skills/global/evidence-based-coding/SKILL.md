@@ -85,6 +85,20 @@ GOOD: [Make change, run tests]
       'should handle null values' - we need to add null checking."
 ```
 
+## Completion Verification — The Iron Law
+
+```
+NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE.
+```
+
+Before claiming ANY task is complete, follow the 5-Step Gate: **IDENTIFY → RUN → READ → VERIFY → CLAIM**.
+
+- Every "done" claim requires fresh tool output from the current turn
+- Watch for red-flag phrases: "should work", "probably fine", "Done!"
+- Agent reports must be independently verified — agents hallucinate completion
+
+See [reference/completion-verification.md](reference/completion-verification.md) for the full Iron Law, common failure patterns, rationalization prevention, and TDD red-green verification.
+
 ## Mandatory Verification Workflows
 
 Step-by-step workflows for verifying code changes, function behavior, and file paths before making any claims.

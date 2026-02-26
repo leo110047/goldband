@@ -192,6 +192,17 @@
       "collaborates_with": ["testing-strategy", "security-checklist"],
       "excludes": ["application architecture", "bug fixes"],
       "reason": "CI/CD focuses on delivery pipeline, not application code"
+    },
+    "planning-workflow": {
+      "focus": "structured task planning and breakdown",
+      "collaborates_with": ["evidence-based-coding"],
+      "reason": "Plans must include verification steps and evidence-based file paths"
+    },
+    "subagent-development": {
+      "focus": "subagent dispatch and two-stage review patterns",
+      "collaborates_with": ["code-review-skill", "evidence-based-coding"],
+      "requires_evidence": true,
+      "reason": "Subagent work must pass spec compliance and quality review"
     }
   },
 

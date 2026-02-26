@@ -77,19 +77,19 @@
           }
         ],
         "description": "Detect and block secrets in file content"
-      },
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${HOOKS_DIR}/scripts/hooks/suggest-compact.js\""
-          }
-        ],
-        "description": "Suggest manual compaction at logical intervals"
       }
     ],
     "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${HOOKS_DIR}/scripts/hooks/context-monitor.js\""
+          }
+        ],
+        "description": "Monitor context usage and suggest /compact at high utilization"
+      },
       {
         "matcher": "Edit",
         "hooks": [
