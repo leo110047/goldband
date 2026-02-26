@@ -4,7 +4,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-生產級 Claude Code 配置集合，經過日常密集使用演化而來。核心設計理念：**防止 AI 幻覺、系統性除錯、證據驅動開發、流程編排強制設計先行**。
+我的 Claude Code 配置集合，經過日常密集使用演化而來。核心設計理念：**防止 AI 幻覺、系統性除錯、證據驅動開發、流程編排強制設計先行**。
 
 ---
 
@@ -110,16 +110,16 @@ cd goldband
 
 ```
 ├── skills/
-│   ├── global/                 # 16 個全域 skills
+│   ├── global/                    # 16 個全域 skills
 │   │   ├── systematic-debugging/
 │   │   ├── evidence-based-coding/
-│   │   │   └── reference/      # Iron Law、驗證流程、幻覺模式、目標驗證
+│   │   │   └── reference/         # Iron Law、驗證流程、幻覺模式、目標驗證
 │   │   ├── code-review-skill/
-│   │   │   └── reference/      # 語言指南、Spec Review 模板
+│   │   │   └── reference/         # 語言指南、Spec Review 模板
 │   │   ├── planning-workflow/
-│   │   │   └── reference/      # 計畫模板（Single File / Multi-File / Refactoring / Bug Fix）
+│   │   │   └── reference/         # 計畫模板（Single File / Multi-File / Refactoring / Bug Fix）
 │   │   ├── subagent-development/
-│   │   │   └── reference/      # Prompt 模板（Implementer / Reviewer）
+│   │   │   └── reference/         # Prompt 模板（Implementer / Reviewer）
 │   │   ├── backend-patterns/
 │   │   ├── performance-optimization/
 │   │   ├── testing-strategy/
@@ -131,17 +131,17 @@ cd goldband
 │   │   ├── decision-log/
 │   │   ├── file-search/
 │   │   ├── skill-developer/
-│   │   └── skill-rules.json    # 衝突解決 + 防幻覺規則（參考文件）
+│   │   └── skill-rules.json       # 衝突解決 + 防幻覺規則（參考文件）
 │   └── projects/
-│       └── unity/              # 5 個 Unity 專案 skills
-├── commands/                   # 7 個斜線命令
-├── contexts/                   # 4 個模式切換
-├── rules/                      # 3 個永遠生效的規則
-├── hooks/                      # Hook 配置 + 10 個腳本
+│       └── unity/                 # 5 個 Unity 專案 skills
+├── commands/                      # 7 個斜線命令
+├── contexts/                      # 4 個模式切換
+├── rules/                         # 3 個永遠生效的規則
+├── hooks/                         # Hook 配置 + 10 個腳本
 │   ├── hooks.json
 │   └── scripts/
-├── examples/                   # 範例 CLAUDE.md
-├── install.sh                  # 安裝腳本
+├── examples/                      # 範例 CLAUDE.md
+├── install.sh                     # 安裝腳本
 └── README.md
 ```
 
@@ -153,28 +153,28 @@ cd goldband
 
 ```
 CRITICAL（絕對優先）
-├─ systematic-debugging    有 bug/error 時自動觸發
-└─ evidence-based-coding   全域強制，防止 AI 幻覺 + Iron Law 完成驗證
+├─ systematic-debugging      有 bug/error 時自動觸發
+└─ evidence-based-coding     全域強制，防止 AI 幻覺 + Iron Law 完成驗證
 
 HIGH
-├─ security-checklist      安全問題
-└─ performance-optimization 效能問題
+├─ security-checklist        安全問題
+└─ performance-optimization  效能問題
 
 MEDIUM
-├─ code-review-skill       代碼審查（含 Spec Compliance Review）
-├─ backend-patterns        架構設計
-├─ testing-strategy        測試策略
-├─ database-patterns       資料庫設計
-├─ api-design              API 設計
-├─ ci-cd-integration       CI/CD 流程
-├─ planning-workflow       結構化任務規劃（2-5 分鐘粒度、TDD 順序）
-└─ subagent-development    Subagent 調度 + 兩階段 review
+├─ code-review-skill         代碼審查（含 Spec Compliance Review）
+├─ backend-patterns          架構設計
+├─ testing-strategy          測試策略
+├─ database-patterns         資料庫設計
+├─ api-design                API 設計
+├─ ci-cd-integration         CI/CD 流程
+├─ planning-workflow         結構化任務規劃（2-5 分鐘粒度、TDD 順序）
+└─ subagent-development      Subagent 調度 + 兩階段 review
 
 LOW（工具性質）
-├─ commit-conventions      Git commit 規範
-├─ decision-log            架構決策記錄
-├─ file-search             代碼搜尋
-└─ skill-developer         Skill 開發工具
+├─ commit-conventions        Git commit 規範
+├─ decision-log              架構決策記錄
+├─ file-search               代碼搜尋
+└─ skill-developer           Skill 開發工具
 ```
 
 ### 四層防幻覺機制
