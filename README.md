@@ -94,19 +94,19 @@ cd goldband
 ### 選擇性安裝
 
 ```bash
-./install.sh pack-core    # core-security（skills-core + rules + hooks）
-./install.sh pack-quality # core-quality（skills-dev + commands/contexts/rules/hooks）
-./install.sh pack-unity   # unity-pack（pack-quality + unity skills）
-./install.sh skills-core   # 核心常駐 skills（最低 token）
-./install.sh skills-dev    # 開發常用 skills（core + auto，推薦）
-./install.sh skills-full   # 全量 skills（16 個）
-./install.sh all           # 相容舊用法，等同 pack-quality
-./install.sh commands      # 只裝 commands
-./install.sh all-full      # 全組件 + skills-full（舊行為）
+./install.sh pack-core         # core-security（skills-core + rules + hooks）
+./install.sh pack-quality      # core-quality（skills-dev + commands/contexts/rules/hooks）
+./install.sh pack-unity        # unity-pack（pack-quality + unity skills）
+./install.sh skills-core       # 核心常駐 skills（最低 token）
+./install.sh skills-dev        # 開發常用 skills（core + auto，推薦）
+./install.sh skills-full       # 全量 skills（16 個）
+./install.sh all               # 相容舊用法，等同 pack-quality
+./install.sh commands          # 只裝 commands
+./install.sh all-full          # 全組件 + skills-full（舊行為）
 ./install.sh skills-dev rules  # 裝 dev profile + rules
-./install.sh unity         # 在 Unity 專案中安裝專案 skills
-./install.sh status        # 檢查安裝狀態
-./install.sh uninstall     # 移除所有安裝
+./install.sh unity             # 在 Unity 專案中安裝專案 skills
+./install.sh status            # 檢查安裝狀態
+./install.sh uninstall         # 移除所有安裝
 ```
 
 ### Skills Profile 分層
@@ -123,16 +123,16 @@ cd goldband
 
 ```
 ├── skills/
-│   ├── global/                    # 16 個全域 skills
+│   ├── global/                         # 16 個全域 skills
 │   │   ├── systematic-debugging/
 │   │   ├── evidence-based-coding/
-│   │   │   └── reference/         # Iron Law、驗證流程、幻覺模式、目標驗證
+│   │   │   └── reference/              # Iron Law、驗證流程、幻覺模式、目標驗證
 │   │   ├── code-review-skill/
-│   │   │   └── reference/         # 語言指南、Spec Review 模板
+│   │   │   └── reference/              # 語言指南、Spec Review 模板
 │   │   ├── planning-workflow/
-│   │   │   └── reference/         # 計畫模板（Single File / Multi-File / Refactoring / Bug Fix）
+│   │   │   └── reference/              # 計畫模板（Single File / Multi-File / Refactoring / Bug Fix）
 │   │   ├── subagent-development/
-│   │   │   └── reference/         # Prompt 模板（Implementer / Reviewer）
+│   │   │   └── reference/              # Prompt 模板（Implementer / Reviewer）
 │   │   ├── backend-patterns/
 │   │   ├── performance-optimization/
 │   │   ├── testing-strategy/
@@ -144,22 +144,22 @@ cd goldband
 │   │   ├── decision-log/
 │   │   ├── file-search/
 │   │   ├── skill-developer/
-│   │   └── skill-rules.json       # 參考文件（Not auto-loaded）
+│   │   └── skill-rules.json            # 參考文件（Not auto-loaded）
 │   └── projects/
-│       └── unity/                 # 5 個 Unity 專案 skills
-├── commands/                      # 7 個斜線命令
-├── contexts/                      # 4 個模式切換
-├── rules/                         # 3 個永遠生效的規則
-├── hooks/                         # Hook 配置 + router/worker/fixtures
+│       └── unity/                      # 5 個 Unity 專案 skills
+├── commands/                           # 7 個斜線命令
+├── contexts/                           # 4 個模式切換
+├── rules/                              # 3 個永遠生效的規則
+├── hooks/                              # Hook 配置 + router/worker/fixtures
 │   ├── hooks.json
 │   └── scripts/
-│       ├── hooks/hook-router.js   # 單一入口（Pre/Post/Stop/Notification）
+│       ├── hooks/hook-router.js        # 單一入口（Pre/Post/Stop/Notification）
 │       ├── hooks/post-edit-worker.js
 │       └── tools/replay-hook-router.js
 ├── .claude-plugin/
-│   └── plugin.json                # 產品化 metadata + pack 定義
-├── examples/                      # 範例 CLAUDE.md
-├── install.sh                     # 安裝腳本
+│   └── plugin.json                     # 產品化 metadata + pack 定義
+├── examples/                           # 範例 CLAUDE.md
+├── install.sh                          # 安裝腳本
 └── README.md
 ```
 
@@ -241,7 +241,7 @@ LOW（工具性質）
 | `/verify-config` | 配置健康檢查 | `quick` |
 
 ```bash
-/discuss 我想加一個使用者登入功能               # 先釐清灰色地帶
+/discuss 我想加一個使用者登入功能                # 先釐清灰色地帶
 /plan 實作 OAuth2 登入，支援 Google 和 GitHub  # 設計先行，確認才動工
 /verify quick                               # 快速檢查 build + types
 /verify --goal "OAuth 登入, token 刷新"      # 三層驗證：EXISTS → SUBSTANTIVE → WIRED
