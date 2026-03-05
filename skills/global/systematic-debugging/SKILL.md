@@ -219,6 +219,21 @@ You MUST complete each phase before proceeding to the next.
 
    This is NOT a failed hypothesis - this is a wrong architecture.
 
+## Phase 5: Record for Future Sessions
+
+After fixing the bug, evaluate whether the root cause has generalizable value — meaning it could recur in this project or across projects. If so, record it in auto memory's `debugging.md` topic file for cross-session learning.
+
+**Worth recording:**
+- Root causes that were non-obvious or counterintuitive
+- Patterns that recurred across different parts of the codebase
+- Environment/config issues that took significant investigation
+- Architectural gotchas that could trap future sessions
+
+**Not worth recording:**
+- Typos, simple syntax errors
+- One-off issues specific to a single context
+- Anything already documented in project README or docs
+
 ## Red Flags - STOP and Follow Process
 
 If you catch yourself thinking:
@@ -270,6 +285,7 @@ If you catch yourself thinking:
 | **2. Pattern** | Find working examples, compare | Identify differences |
 | **3. Hypothesis** | Form theory, test minimally | Confirmed or new hypothesis |
 | **4. Implementation** | Create test, fix, verify | Bug resolved, tests pass |
+| **5. Record** | Evaluate root cause value, write to memory | Generalizable insight saved |
 
 ## When Process Reveals "No Root Cause"
 

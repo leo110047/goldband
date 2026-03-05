@@ -1,0 +1,131 @@
+[
+  {
+    "id": "pretool-allow-normal-edit",
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "src/app.ts",
+        "new_string": "const value = 1;"
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "pretool-block-secret",
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "src/secret.ts",
+        "new_string": "const token = 'ghp_abcdefghijklmnopqrstuvwxyz1234567890';"
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "BLOCKED",
+        "Potential secrets"
+      ]
+    }
+  },
+  {
+    "id": "pretool-block-doc-write",
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": "notes/random-notes.md",
+        "content": "temporary"
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Unnecessary documentation"
+      ]
+    }
+  },
+  {
+    "id": "pretool-allow-git-push-reminder",
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git push origin main"
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stderrIncludes": [
+        "review branch/commits/remote"
+      ]
+    }
+  },
+  {
+    "id": "pretool-block-dev-server",
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "npm run dev"
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Dev server must run in tmux"
+      ]
+    }
+  },
+  {
+    "id": "posttool-edit-ts-async-tasks",
+    "input": {
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "cwd": ".",
+      "tool_input": {
+        "file_path": "hooks/fixtures/router/sample.ts"
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stderrIncludes": [
+        "console.log"
+      ]
+    }
+  },
+  {
+    "id": "posttool-edit-js-format-only",
+    "input": {
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "cwd": ".",
+      "tool_input": {
+        "file_path": "hooks/fixtures/router/sample.js"
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "stop-non-blocking",
+    "input": {
+      "hook_event_name": "Stop"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  }
+]

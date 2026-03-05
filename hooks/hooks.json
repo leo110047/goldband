@@ -73,44 +73,14 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${HOOKS_DIR}/scripts/hooks/dev-server-blocker.js\""
+            "command": "node \"${HOOKS_DIR}/scripts/hooks/hook-router.js\""
           }
         ],
-        "description": "Block dev servers outside tmux"
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${HOOKS_DIR}/scripts/hooks/git-push-reminder.js\""
-          }
-        ],
-        "description": "Reminder before git push"
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${HOOKS_DIR}/scripts/hooks/doc-file-blocker.js\""
-          }
-        ],
-        "description": "Block creation of random .md files"
-      },
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${HOOKS_DIR}/scripts/hooks/detect-secrets.js\""
-          }
-        ],
-        "description": "Detect and block secrets in file content"
+        "description": "Unified router (blocking policies: secrets/dev-server/doc-file)"
       }
     ],
     "PostToolUse": [
@@ -119,62 +89,43 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${HOOKS_DIR}/scripts/hooks/context-monitor.js\""
+            "command": "node \"${HOOKS_DIR}/scripts/hooks/hook-router.js\""
           }
         ],
-        "description": "Monitor context usage and suggest /compact at high utilization"
+        "description": "Unified router (context monitor + console warnings)"
       },
       {
         "matcher": "Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${HOOKS_DIR}/scripts/hooks/post-edit-format.js\""
+            "command": "node \"${HOOKS_DIR}/scripts/hooks/post-edit-worker.js\" --task format",
+            "async": true
           }
         ],
-        "description": "Auto-format JS/TS files with Prettier after edits"
+        "description": "Native async format worker with debounce"
       },
       {
         "matcher": "Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${HOOKS_DIR}/scripts/hooks/post-edit-typecheck.js\""
+            "command": "node \"${HOOKS_DIR}/scripts/hooks/post-edit-worker.js\" --task typecheck",
+            "async": true
           }
         ],
-        "description": "TypeScript check after editing .ts/.tsx files"
-      },
-      {
-        "matcher": "Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${HOOKS_DIR}/scripts/hooks/post-edit-console-warn.js\""
-          }
-        ],
-        "description": "Warn about console.log statements after edits"
+        "description": "Native async typecheck worker with debounce"
       }
     ],
     "Stop": [
       {
-        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${HOOKS_DIR}/scripts/hooks/check-console-log.js\""
+            "command": "node \"${HOOKS_DIR}/scripts/hooks/hook-router.js\""
           }
         ],
-        "description": "Check for console.log in modified files after each response"
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${HOOKS_DIR}/scripts/hooks/notify-desktop.js\""
-          }
-        ],
-        "description": "Desktop notification when response completes (only when terminal is not focused)"
+        "description": "Unified router (console audit + desktop notifications)"
       }
     ],
     "SubagentStop": [
@@ -196,10 +147,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${HOOKS_DIR}/scripts/hooks/notify-desktop.js\""
+            "command": "node \"${HOOKS_DIR}/scripts/hooks/hook-router.js\""
           }
         ],
-        "description": "Desktop notification for permission prompts and questions"
+        "description": "Unified router notification handling"
       }
     ]
   }

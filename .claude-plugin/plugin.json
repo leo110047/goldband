@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0",
+  "name": "goldband",
+  "version": "1.2.0",
+  "description": "Production-focused Claude Code config with measurable hook guardrails and modular skill packs.",
+  "author": "Leo",
+  "license": "MIT",
+  "homepage": "https://github.com/leo110047/goldband",
+  "repository": "https://github.com/leo110047/goldband",
+  "keywords": [
+    "claude-code",
+    "hooks",
+    "skills",
+    "guardrails",
+    "performance",
+    "security"
+  ],
+  "x-goldband": {
+    "default_pack": "core-security",
+    "packs": {
+      "core-security": {
+        "description": "Blocking guardrails + essential quality controls with minimal token footprint.",
+        "install": [
+          "skills-core",
+          "rules",
+          "hooks"
+        ]
+      },
+      "core-quality": {
+        "description": "Core security plus development-quality skills and workflow commands.",
+        "install": [
+          "skills-dev",
+          "commands",
+          "contexts",
+          "rules",
+          "hooks"
+        ]
+      },
+      "unity-pack": {
+        "description": "Core-quality baseline plus Unity project skills.",
+        "install": [
+          "pack-quality",
+          "unity"
+        ]
+      }
+    },
+    "release": {
+      "semver": true,
+      "cadence": "biweekly",
+      "channels": [
+        "stable",
+        "rc"
+      ],
+      "policy": {
+        "major": "breaking changes only",
+        "minor": "new packs/features",
+        "patch": "bugfixes and policy tuning"
+      }
+    }
+  }
+}

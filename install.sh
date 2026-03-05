@@ -14,6 +14,34 @@ NC='\033[0m'
 
 REPO_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 CLAUDE_DIR="$HOME/.claude"
+SKILLS_DIR="$CLAUDE_DIR/skills"
+SKILL_PROFILE_FILE="$SKILLS_DIR/.goldband-profile"
+
+# Skill profile groups
+CORE_SKILLS=(
+    "evidence-based-coding"
+    "systematic-debugging"
+    "file-search"
+    "planning-workflow"
+    "security-checklist"
+    "performance-optimization"
+)
+
+AUTO_SKILLS=(
+    "api-design"
+    "backend-patterns"
+    "code-review-skill"
+    "database-patterns"
+    "testing-strategy"
+)
+
+ON_DEMAND_SKILLS=(
+    "ci-cd-integration"
+    "commit-conventions"
+    "decision-log"
+    "skill-developer"
+    "subagent-development"
+)
 
 # ─────────────────────────────────────
 # 工具函數
@@ -47,30 +75,240 @@ link_component() {
     echo -e "  ${GREEN}[安裝] $name${NC}"
 }
 
+timestamp_suffix() {
+    date +"%Y%m%d%H%M%S"
+}
+
+join_by_comma() {
+    local IFS=","
+    echo "$*"
+}
+
+dedupe_skill_list() {
+    local seen=" "
+    local output=()
+    for skill in "$@"; do
+        if [[ "$seen" != *" $skill "* ]]; then
+            output+=("$skill")
+            seen+=" $skill "
+        fi
+    done
+    printf '%s\n' "${output[@]}"
+}
+
+build_skill_profile_list() {
+    local profile="$1"
+    case "$profile" in
+        core)
+            printf '%s\n' "${CORE_SKILLS[@]}"
+            ;;
+        dev)
+            dedupe_skill_list "${CORE_SKILLS[@]}" "${AUTO_SKILLS[@]}"
+            ;;
+        full)
+            dedupe_skill_list "${CORE_SKILLS[@]}" "${AUTO_SKILLS[@]}" "${ON_DEMAND_SKILLS[@]}"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+is_repo_skill_link() {
+    local link_path="$1"
+    if [ ! -L "$link_path" ]; then
+        return 1
+    fi
+    local target
+    target=$(readlink "$link_path")
+    case "$target" in
+        "$REPO_DIR/skills/global"/*|"$REPO_DIR/skills/global")
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+backup_existing_path() {
+    local path="$1"
+    local backup_path="${path}.bak.$(timestamp_suffix)"
+    mv "$path" "$backup_path"
+    echo -e "  ${YELLOW}[備份] $(basename "$path") -> $backup_path${NC}"
+}
+
+prepare_skills_directory() {
+    if [ -L "$SKILLS_DIR" ]; then
+        local current_target
+        current_target=$(readlink "$SKILLS_DIR")
+        if [ "$current_target" = "$REPO_DIR/skills/global" ]; then
+            rm "$SKILLS_DIR"
+        else
+            backup_existing_path "$SKILLS_DIR"
+        fi
+    elif [ -e "$SKILLS_DIR" ] && [ ! -d "$SKILLS_DIR" ]; then
+        backup_existing_path "$SKILLS_DIR"
+    fi
+
+    mkdir -p "$SKILLS_DIR"
+}
+
+cleanup_managed_skill_links() {
+    if [ ! -d "$SKILLS_DIR" ]; then
+        return
+    fi
+
+    local entry
+    for entry in "$SKILLS_DIR"/* "$SKILLS_DIR"/.*; do
+        if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
+            continue
+        fi
+        local name
+        name=$(basename "$entry")
+        if [ "$name" = "." ] || [ "$name" = ".." ] || [ "$name" = ".goldband-profile" ]; then
+            continue
+        fi
+
+        if is_repo_skill_link "$entry"; then
+            rm "$entry"
+        fi
+    done
+
+    rm -f "$SKILL_PROFILE_FILE"
+}
+
+link_skill_entry() {
+    local source="$1"
+    local dest="$2"
+
+    if [ -L "$dest" ]; then
+        rm "$dest"
+    elif [ -e "$dest" ]; then
+        backup_existing_path "$dest"
+    fi
+
+    ln -s "$source" "$dest"
+}
+
+write_skill_profile_file() {
+    local profile="$1"
+    shift
+    local skills_csv
+    skills_csv=$(join_by_comma "$@")
+
+    {
+        echo "profile=$profile"
+        echo "installed_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        echo "skills=$skills_csv"
+    } > "$SKILL_PROFILE_FILE"
+}
+
+install_skills_profile() {
+    local profile="$1"
+    shift
+    local selected_skills=("$@")
+
+    prepare_skills_directory
+    cleanup_managed_skill_links
+
+    local installed=0
+    local skill
+    for skill in "${selected_skills[@]}"; do
+        local src="$REPO_DIR/skills/global/$skill"
+        local dest="$SKILLS_DIR/$skill"
+
+        if [ ! -d "$src" ]; then
+            echo -e "  ${YELLOW}[跳過] skill 不存在: $skill${NC}"
+            continue
+        fi
+
+        link_skill_entry "$src" "$dest"
+        installed=$((installed + 1))
+    done
+
+    link_skill_entry "$REPO_DIR/skills/global/README.md" "$SKILLS_DIR/README.md"
+    link_skill_entry "$REPO_DIR/skills/global/skill-rules.json" "$SKILLS_DIR/skill-rules.json"
+
+    write_skill_profile_file "$profile" "${selected_skills[@]}"
+
+    echo -e "  ${GREEN}[安裝] 全域 Skills Profile: $profile (${installed} 個)${NC}"
+}
+
 show_help() {
     echo "用法: ./install.sh [選項]"
     echo ""
     echo "選項:"
-    echo "  all         安裝所有組件（預設）"
-    echo "  skills      只安裝全域 skills"
+    echo "  pack-core   安裝核心包（預設，最小 token）"
+    echo "  pack-quality 安裝品質開發包（core + commands/contexts）"
+    echo "  pack-unity  安裝 Unity 包（quality + unity skills）"
+    echo "  all         安裝所有組件（相容舊用法，等同 pack-quality）"
+    echo "  all-full    安裝所有組件（skills 使用 full profile）"
+    echo "  skills      安裝全域 skills（等同 skills-full）"
+    echo "  skills-core 安裝核心常駐 skills（低 token）"
+    echo "  skills-dev  安裝開發常用 skills（core + auto）"
+    echo "  skills-full 安裝全部全域 skills（16 個）"
     echo "  commands    只安裝 commands"
     echo "  contexts    只安裝 contexts"
     echo "  rules       只安裝 rules"
     echo "  hooks       只安裝 hooks"
     echo "  unity       安裝 Unity 專案 skills 到當前目錄"
-    echo "  uninstall   移除所有 symlinks"
+    echo "  uninstall   移除所有安裝項目（含 profile links）"
     echo "  status      檢查安裝狀態"
     echo "  help        顯示此幫助"
     echo ""
     echo "範例:"
-    echo "  ./install.sh              # 安裝全部"
-    echo "  ./install.sh skills rules # 只安裝 skills 和 rules"
+    echo "  ./install.sh              # 安裝 pack-core（預設）"
+    echo "  ./install.sh pack-quality # 安裝品質開發包"
+    echo "  ./install.sh all-full     # 安裝全部（full profile）"
+    echo "  ./install.sh skills-dev rules # 安裝開發 profile + rules"
+    echo "  ./install.sh skills-core  # 只裝核心 skills（建議日常）"
+    echo "  ./install.sh skills-full  # 全量 skills"
     echo "  ./install.sh unity        # 在 Unity 專案中安裝"
     echo "  ./install.sh status       # 檢查狀態"
 }
 
 install_skills() {
-    link_component "$REPO_DIR/skills/global" "$CLAUDE_DIR/skills" "全域 Skills (16 個)"
+    local skill_list=()
+    while IFS= read -r skill; do
+        [ -n "$skill" ] && skill_list+=("$skill")
+    done < <(build_skill_profile_list "full")
+    install_skills_profile "full" "${skill_list[@]}"
+}
+
+install_skills_core() {
+    local skill_list=()
+    while IFS= read -r skill; do
+        [ -n "$skill" ] && skill_list+=("$skill")
+    done < <(build_skill_profile_list "core")
+    install_skills_profile "core" "${skill_list[@]}"
+}
+
+install_skills_dev() {
+    local skill_list=()
+    while IFS= read -r skill; do
+        [ -n "$skill" ] && skill_list+=("$skill")
+    done < <(build_skill_profile_list "dev")
+    install_skills_profile "dev" "${skill_list[@]}"
+}
+
+install_pack_core() {
+    install_skills_core
+    install_rules
+    install_hooks
+}
+
+install_pack_quality() {
+    install_skills_dev
+    install_commands
+    install_contexts
+    install_rules
+    install_hooks
+}
+
+install_pack_unity() {
+    install_pack_quality
+    install_unity
 }
 
 install_commands() {
@@ -172,7 +410,7 @@ merge_hooks_config() {
 }
 
 install_hooks() {
-    link_component "$REPO_DIR/hooks/scripts" "$CLAUDE_DIR/hooks/scripts" "Hook Scripts (10 個)"
+    link_component "$REPO_DIR/hooks/scripts" "$CLAUDE_DIR/hooks/scripts" "Hook Scripts"
     echo ""
     merge_hooks_config
 }
@@ -195,7 +433,31 @@ show_status() {
     echo -e "${BLUE}安裝狀態檢查${NC}"
     echo ""
 
-    local components=("skills:$CLAUDE_DIR/skills" "commands:$CLAUDE_DIR/commands" "contexts:$CLAUDE_DIR/contexts" "rules:$CLAUDE_DIR/rules" "hooks:$CLAUDE_DIR/hooks/scripts")
+    if [ -L "$SKILLS_DIR" ]; then
+        local skills_target
+        skills_target=$(readlink "$SKILLS_DIR")
+        echo -e "  ${GREEN}[OK]${NC} skills (legacy symlink) -> $skills_target"
+    elif [ -d "$SKILLS_DIR" ]; then
+        if [ -f "$SKILL_PROFILE_FILE" ]; then
+            local profile_line
+            profile_line=$(grep '^profile=' "$SKILL_PROFILE_FILE" 2>/dev/null || true)
+            local profile="${profile_line#profile=}"
+            local skills_line
+            skills_line=$(grep '^skills=' "$SKILL_PROFILE_FILE" 2>/dev/null || true)
+            local skills_csv="${skills_line#skills=}"
+            local skill_count=0
+            if [ -n "$skills_csv" ]; then
+                skill_count=$(echo "$skills_csv" | tr ',' '\n' | sed '/^$/d' | wc -l | tr -d ' ')
+            fi
+            echo -e "  ${GREEN}[OK]${NC} skills profile: ${profile:-unknown} (${skill_count} 個)"
+        else
+            echo -e "  ${YELLOW}[存在]${NC} skills 目錄存在，但不是 goldband profile 管理模式"
+        fi
+    else
+        echo -e "  ${RED}[未安裝]${NC} skills"
+    fi
+
+    local components=("commands:$CLAUDE_DIR/commands" "contexts:$CLAUDE_DIR/contexts" "rules:$CLAUDE_DIR/rules" "hooks:$CLAUDE_DIR/hooks/scripts")
 
     for item in "${components[@]}"; do
         local name="${item%%:*}"
@@ -232,7 +494,35 @@ show_status() {
 
 do_uninstall() {
     echo -e "${YELLOW}移除安裝...${NC}"
-    local paths=("$CLAUDE_DIR/skills" "$CLAUDE_DIR/commands" "$CLAUDE_DIR/contexts" "$CLAUDE_DIR/rules" "$CLAUDE_DIR/hooks/scripts")
+    if [ -L "$SKILLS_DIR" ]; then
+        rm "$SKILLS_DIR"
+        echo -e "  ${GREEN}[移除] $SKILLS_DIR${NC}"
+    elif [ -d "$SKILLS_DIR" ] && [ -f "$SKILL_PROFILE_FILE" ]; then
+        local skills_line
+        skills_line=$(grep '^skills=' "$SKILL_PROFILE_FILE" 2>/dev/null || true)
+        local skills_csv="${skills_line#skills=}"
+        local skill
+        IFS=',' read -r -a skill_array <<< "$skills_csv"
+        for skill in "${skill_array[@]}"; do
+            [ -z "$skill" ] && continue
+            if [ -L "$SKILLS_DIR/$skill" ] && is_repo_skill_link "$SKILLS_DIR/$skill"; then
+                rm "$SKILLS_DIR/$skill"
+            fi
+        done
+        if [ -L "$SKILLS_DIR/README.md" ] && is_repo_skill_link "$SKILLS_DIR/README.md"; then
+            rm "$SKILLS_DIR/README.md"
+        fi
+        if [ -L "$SKILLS_DIR/skill-rules.json" ] && is_repo_skill_link "$SKILLS_DIR/skill-rules.json"; then
+            rm "$SKILLS_DIR/skill-rules.json"
+        fi
+        rm -f "$SKILL_PROFILE_FILE"
+        if [ -z "$(ls -A "$SKILLS_DIR" 2>/dev/null)" ]; then
+            rmdir "$SKILLS_DIR"
+        fi
+        echo -e "  ${GREEN}[移除] skills profile links${NC}"
+    fi
+
+    local paths=("$CLAUDE_DIR/commands" "$CLAUDE_DIR/contexts" "$CLAUDE_DIR/rules" "$CLAUDE_DIR/hooks/scripts")
 
     for p in "${paths[@]}"; do
         if [ -L "$p" ]; then
@@ -264,9 +554,9 @@ echo ""
 echo -e "${YELLOW}倉庫位置：${NC}$REPO_DIR"
 echo ""
 
-# 無參數 = 安裝全部
+# 無參數 = 安裝核心包
 if [ $# -eq 0 ]; then
-    set -- "all"
+    set -- "pack-core"
 fi
 
 case "$1" in
@@ -288,8 +578,28 @@ mkdir -p "$CLAUDE_DIR"
 
 for arg in "$@"; do
     case "$arg" in
+        pack-core)
+            echo -e "${GREEN}安裝 core-security pack（預設）...${NC}"
+            echo ""
+            install_pack_core
+            ;;
+        pack-quality)
+            echo -e "${GREEN}安裝 core-quality pack...${NC}"
+            echo ""
+            install_pack_quality
+            ;;
+        pack-unity)
+            echo -e "${GREEN}安裝 unity-pack...${NC}"
+            echo ""
+            install_pack_unity
+            ;;
         all)
-            echo -e "${GREEN}安裝所有組件...${NC}"
+            echo -e "${GREEN}安裝所有組件（相容舊用法，等同 pack-quality）...${NC}"
+            echo ""
+            install_pack_quality
+            ;;
+        all-full)
+            echo -e "${GREEN}安裝所有組件（full profile）...${NC}"
             echo ""
             install_skills
             install_commands
@@ -298,6 +608,15 @@ for arg in "$@"; do
             install_hooks
             ;;
         skills)
+            install_skills
+            ;;
+        skills-core)
+            install_skills_core
+            ;;
+        skills-dev)
+            install_skills_dev
+            ;;
+        skills-full)
             install_skills
             ;;
         commands)

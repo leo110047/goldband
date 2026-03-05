@@ -28,7 +28,8 @@ process.stdin.on("end", () => {
       !/\.claude\//.test(filePath) &&
       !/\.planning\//.test(filePath) &&
       !/\/reference\//.test(filePath) &&
-      !/\/commands\//.test(filePath)
+      !/\/commands\//.test(filePath) &&
+      !/\/docs\//.test(filePath)
     ) {
       console.error("[Hook] BLOCKED: Unnecessary documentation file creation");
       console.error("[Hook] File: " + filePath);

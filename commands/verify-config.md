@@ -6,30 +6,40 @@ Run the following checks in order and produce a structured report.
 
 ### 1. Symlink Checks
 
-Check these symlinks exist and point to valid targets:
-- `~/.claude/skills` → should point to this repo's `skills/global`
+Check these paths exist and point to valid targets:
+- `~/.claude/skills` → either:
+  - legacy symlink to this repo's `skills/global`, OR
+  - managed directory with `.goldband-profile` file and per-skill symlinks
 - `~/.claude/commands` → should point to this repo's `commands`
 - `~/.claude/contexts` → should point to this repo's `contexts`
 - `~/.claude/rules` → should point to this repo's `rules`
 - `~/.claude/hooks/scripts` → should point to this repo's `hooks/scripts`
 
-For each: report OK if symlink exists and target is valid, WARNING if exists but not a symlink, ERROR if missing.
+For each: report OK if target is valid, WARNING if exists but target is ambiguous, ERROR if missing.
 
 ### 2. Hook Checks
 
 Check `~/.claude/settings.json` for hooks configuration:
-- Count total hooks defined (PreToolUse + PostToolUse + Stop)
+- Count total hooks defined (PreToolUse + PostToolUse + Stop + Notification)
 - For each hook, verify the script file referenced in `command` exists
+- Verify:
+  - PreToolUse has exactly one router command (`hook-router.js`)
+  - PostToolUse has one router command + async worker commands (`post-edit-worker.js --task format/typecheck`)
+  - Stop hook exists and does not rely on matcher filtering
 - Report OK with count if all scripts found, WARNING for missing scripts
 
 ### 3. Skill Checks
 
-For each directory under the skills symlink target:
+For each installed skill under `~/.claude/skills`:
 - Verify SKILL.md exists
 - Check YAML frontmatter has `name` and `description` fields
 - Count lines — report WARNING if over 500 lines
 - Check for reference/ directory and verify linked files exist in SKILL.md
 - Report total skill count
+
+Also report profile metadata when `.goldband-profile` exists:
+- active profile (`core` / `dev` / `full`)
+- installed skill count
 
 ### 4. Context Checks
 
@@ -44,6 +54,7 @@ Count .md files in the rules directory. Verify each is non-empty. Report count.
 Validate these JSON files have correct syntax:
 - `hooks/hooks.json`
 - `skills/global/skill-rules.json`
+- `.claude-plugin/plugin.json`
 
 Use `cat FILE | python3 -c "import sys,json; json.load(sys.stdin); print('OK')"` or similar.
 
@@ -55,7 +66,8 @@ Use `cat FILE | python3 -c "import sys,json; json.load(sys.stdin); print('OK')"`
 ╚════════════════════════════════════════╝
 
 Symlinks:
-  [OK]      skills → /path/to/repo/skills/global
+  [OK]      skills profile: dev (11 個)
+  [OK]      skills links point to /path/to/repo/skills/global/*
   [OK]      commands → /path/to/repo/commands
   ...
 
