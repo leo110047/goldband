@@ -346,7 +346,7 @@ node skills/global/freeze-mode/scripts/freeze-mode.js disable
 
 用途：
 - 在 incident triage / prod 調查時，先鎖成 inspection-only session
-- 會 block `Edit` / `Write`，Bash 只允許唯讀 inspection 指令
+- 會 block `Edit` / `Write`，Bash 只允許明確 allowlisted 的唯讀 inspection 指令
 - 適合「先看清楚，再決定要不要動手」的窗口
 
 ### Usage Telemetry

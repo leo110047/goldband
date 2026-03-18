@@ -27,12 +27,6 @@ const FREEZE_MODE_ALLOWED_BASH = [
     }
   },
   {
-    rule: 'find',
-    matches(command) {
-      return /^find(?:\s|$)/.test(command);
-    }
-  },
-  {
     rule: 'rg',
     matches(command) {
       return /^rg(?:\s|$)/.test(command);
@@ -42,18 +36,6 @@ const FREEZE_MODE_ALLOWED_BASH = [
     rule: 'grep',
     matches(command) {
       return /^grep(?:\s|$)/.test(command);
-    }
-  },
-  {
-    rule: 'sed',
-    matches(command) {
-      return /^sed(?:\s|$)/.test(command);
-    }
-  },
-  {
-    rule: 'awk',
-    matches(command) {
-      return /^awk(?:\s|$)/.test(command);
     }
   },
   {
@@ -81,12 +63,6 @@ const FREEZE_MODE_ALLOWED_BASH = [
     }
   },
   {
-    rule: 'sort',
-    matches(command) {
-      return /^sort(?:\s|$)/.test(command);
-    }
-  },
-  {
     rule: 'uniq',
     matches(command) {
       return /^uniq(?:\s|$)/.test(command);
@@ -95,7 +71,7 @@ const FREEZE_MODE_ALLOWED_BASH = [
   {
     rule: 'diff',
     matches(command) {
-      return /^diff(?:\s|$)/.test(command);
+      return /^diff(?:\s|$)/.test(command) && !/(?:^|\s)--output(?:=|\s)/.test(command);
     }
   },
   {
@@ -143,7 +119,10 @@ const FREEZE_MODE_ALLOWED_BASH = [
   {
     rule: 'git-read-only',
     matches(command) {
-      return /^git\s+(status|diff|log|show|branch|rev-parse|remote)\b/.test(command);
+      return (
+        /^git\s+(status|rev-parse)\b/.test(command)
+        || /^git\s+(diff|log|show)\b/.test(command) && !/(?:^|\s)--output(?:=|\s)/.test(command)
+      );
     }
   }
 ];

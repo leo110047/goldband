@@ -37,13 +37,14 @@ Optional flags:
 While active, the `PreToolUse` router:
 
 - Blocks `Edit` and `Write` tool calls
-- Allows only read-only Bash commands such as `git status|diff|log|show`, `rg`, `grep`, `ls`, `cat`, `find`, and similar inspection tools
+- Allows only explicitly allowlisted read-only Bash commands such as `git status|diff|log|show|rev-parse`, `rg`, `grep`, `ls`, `cat`, `head`, and `tail`
 - Blocks shell chaining, pipes, and redirections because they are harder to classify as read-only
 
 ## Gotchas
 
 - Do not use this as a substitute for change control. It creates friction; it does not replace approvals or runbooks.
 - Do not expect arbitrary shell one-liners to pass. `freeze-mode` is intentionally conservative and favors false positives over accidental mutation.
+- Do not expect whole command families like `sed`, `awk`, `find`, or `sort` to pass. They support mutating forms and are intentionally excluded.
 - Do not leave it enabled while implementing fixes; it will block normal editing and create noise.
 - Do not claim a session was read-only without checking `status`; state is session-scoped and can differ across tabs/sessions.
 - Do not assume plugin data is available. Like other mode state, it falls back to temp storage when `${CLAUDE_PLUGIN_DATA}` is absent.

@@ -237,6 +237,157 @@
     }
   },
   {
+    "id": "pretool-block-sed-inplace-when-freeze-mode-active",
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "command": "sed -i 's/foo/bar/g' README.md"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "freeze-mode is active",
+        "read-only Bash"
+      ]
+    }
+  },
+  {
+    "id": "pretool-block-find-delete-when-freeze-mode-active",
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "command": "find . -delete"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "freeze-mode is active",
+        "read-only Bash"
+      ]
+    }
+  },
+  {
+    "id": "pretool-block-git-branch-delete-when-freeze-mode-active",
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "command": "git branch -D old-branch"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "freeze-mode is active",
+        "read-only Bash"
+      ]
+    }
+  },
+  {
+    "id": "pretool-block-diff-output-when-freeze-mode-active",
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "command": "diff --output=report.txt a.txt b.txt"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "freeze-mode is active",
+        "read-only Bash"
+      ]
+    }
+  },
+  {
+    "id": "pretool-allow-git-diff-when-freeze-mode-active",
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "command": "git diff --stat"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
     "id": "posttool-edit-ts-async-tasks",
     "input": {
       "hook_event_name": "PostToolUse",
