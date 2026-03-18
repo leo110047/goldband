@@ -208,6 +208,11 @@
       "collaborates_with": ["evidence-based-coding"],
       "reason": "Plans must include verification steps and evidence-based file paths"
     },
+    "new-skill-scaffold": {
+      "focus": "generate folder-based skills with progressive disclosure, scripts, and config stubs",
+      "collaborates_with": ["skill-developer", "claude-config-verification"],
+      "reason": "Skill scaffolding should encode repo conventions so new skills start structured instead of as ad-hoc markdown blobs"
+    },
     "subagent-development": {
       "focus": "subagent dispatch and two-stage review patterns",
       "collaborates_with": ["code-review-skill", "evidence-based-coding"],

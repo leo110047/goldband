@@ -58,6 +58,17 @@ Use for ANY technical issue:
 - Do not treat a non-reproducible issue as permission to guess. Gather more diagnostics until the pattern sharpens.
 - Do not let urgency override Phase 1. Time pressure is when thrashing is most expensive.
 
+## Progressive Disclosure
+
+Load extra material only when the debugging path needs it:
+
+- `reference/root-cause-tracing.md` - trace a symptom backward through the call chain
+- `reference/defense-in-depth.md` - add layered guards after you identify the root cause
+- `reference/condition-based-waiting.md` - replace guessed delays with condition polling
+- `scripts/find-polluter.sh` - bisect test files to find the first polluter
+- `examples/condition-based-waiting-example.ts` - concrete polling helpers from a real debugging session
+- `examples/test-academic.md` / `examples/test-pressure-*.md` - evaluation prompts for stress-testing this skill
+
 ## The Four Phases
 
 You MUST complete each phase before proceeding to the next.
@@ -126,7 +137,7 @@ You MUST complete each phase before proceeding to the next.
 
    **WHEN error is deep in call stack:**
 
-   See `root-cause-tracing.md` in this directory for the complete backward tracing technique.
+   See `reference/root-cause-tracing.md` for the complete backward tracing technique.
 
    **Quick version:**
    - Where does bad value originate?
@@ -308,11 +319,12 @@ If systematic investigation reveals issue is truly environmental, timing-depende
 
 ## Supporting Techniques
 
-These techniques are part of systematic debugging and available in this directory:
+These techniques are part of systematic debugging and available via progressive disclosure:
 
-- **`root-cause-tracing.md`** - Trace bugs backward through call stack to find original trigger
-- **`defense-in-depth.md`** - Add validation at multiple layers after finding root cause
-- **`condition-based-waiting.md`** - Replace arbitrary timeouts with condition polling
+- **`reference/root-cause-tracing.md`** - Trace bugs backward through call stack to find original trigger
+- **`reference/defense-in-depth.md`** - Add validation at multiple layers after finding root cause
+- **`reference/condition-based-waiting.md`** - Replace arbitrary timeouts with condition polling
+- **`scripts/find-polluter.sh`** - Bisect test files to find the first polluter without reading every test manually
 
 **Related skills:**
 - **superpowers:test-driven-development** - For creating failing test case (Phase 4, Step 1)

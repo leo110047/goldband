@@ -33,7 +33,7 @@
 
 | 組件 | 數量 | 說明 |
 |------|------|------|
-| **Skills** | 19 全域 + 10 Unity | 涵蓋除錯、安全、架構、測試、效能、API、資料庫、CI/CD、規劃、Subagent、按需安全模式等 |
+| **Skills** | 20 全域 + 10 Unity | 涵蓋除錯、安全、架構、測試、效能、API、資料庫、CI/CD、規劃、Subagent、按需安全模式、skill scaffolding 等 |
 | **Commands** | 7 | `/plan`、`/verify`、`/checkpoint`、`/code-review`、`/discuss`、`/map-codebase`、`/verify-config` |
 | **Rules** | 3 | coding-style、security、git-workflow |
 | **Contexts** | 4 | dev、review、research、debug 模式切換 |
@@ -43,7 +43,7 @@
 
 ## 快速參考卡
 
-### 全域 Skills（19 個）
+### 全域 Skills（20 個）
 
 | Skill | 觸發情境 | 優先級 |
 |-------|---------|--------|
@@ -65,6 +65,7 @@
 | `commit-conventions` | Git commit 格式 | LOW |
 | `decision-log` | 架構決策記錄 | LOW |
 | `file-search` | 找檔案、找程式碼 | LOW |
+| `new-skill-scaffold` | 產生符合 repo 慣例的新 skill scaffold（含 `reference/`、`scripts/`、`config.json`） | LOW |
 | `skill-developer` | 建立/管理 skills | LOW |
 
 ### Commands（7 個）
@@ -102,7 +103,7 @@ cd goldband
 ./install.sh pack-unity        # unity-pack（pack-quality + unity skills）
 ./install.sh skills-core       # 核心常駐 skills（最低 token）
 ./install.sh skills-dev        # 開發常用 skills（core + auto，推薦）
-./install.sh skills-full       # 全量 skills（19 個）
+./install.sh skills-full       # 全量 skills（20 個）
 ./install.sh all               # 相容舊用法，等同 pack-quality
 ./install.sh commands          # 只裝 commands
 ./install.sh all-full          # 全組件 + skills-full（舊行為）
@@ -116,7 +117,7 @@ cd goldband
 
 - `core`: `evidence-based-coding`、`systematic-debugging`、`file-search`、`planning-workflow`、`security-checklist`、`performance-optimization`
 - `dev`: `core` + `api-design`、`backend-patterns`、`careful-mode`、`freeze-mode`、`claude-config-verification`、`code-review-skill`、`database-patterns`、`testing-strategy`
-- `full`: `dev` + `ci-cd-integration`、`commit-conventions`、`decision-log`、`skill-developer`、`subagent-development`
+- `full`: `dev` + `ci-cd-integration`、`commit-conventions`、`decision-log`、`new-skill-scaffold`、`skill-developer`、`subagent-development`
 
 > **Note**: hooks 安裝需要 `jq`。若未安裝，會顯示手動合併提示。macOS 安裝: `brew install jq`
 
@@ -126,8 +127,11 @@ cd goldband
 
 ```
 ├── skills/
-│   ├── global/                         # 19 個全域 skills
+│   ├── global/                         # 20 個全域 skills
 │   │   ├── systematic-debugging/
+│   │   │   ├── reference/
+│   │   │   ├── examples/
+│   │   │   └── scripts/
 │   │   ├── evidence-based-coding/
 │   │   │   └── reference/              # Iron Law、驗證流程、幻覺模式、目標驗證
 │   │   ├── code-review-skill/
@@ -149,6 +153,7 @@ cd goldband
 │   │   ├── ci-cd-integration/
 │   │   ├── decision-log/
 │   │   ├── file-search/
+│   │   ├── new-skill-scaffold/
 │   │   ├── skill-developer/
 │   │   └── skill-rules.json            # 參考文件（Not auto-loaded）
 │   └── projects/
@@ -201,6 +206,7 @@ LOW（工具性質）
 ├─ commit-conventions        Git commit 規範
 ├─ decision-log              架構決策記錄
 ├─ file-search               代碼搜尋
+├─ new-skill-scaffold        產生新 skill scaffold + config/setup stub
 └─ skill-developer           Skill 開發工具
 ```
 

@@ -1,0 +1,5 @@
+{
+  "notes": "Populate user- or team-specific defaults before relying on this generated skill.",
+  "required_values": {},
+  "optional_values": {}
+}

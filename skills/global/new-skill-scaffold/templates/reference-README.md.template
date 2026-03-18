@@ -1,0 +1,23 @@
+# {{TITLE}} Reference
+
+Use this directory for detailed material that should not live in `SKILL.md`.
+
+## Put Here
+
+- API signatures and commands
+- Deep workflow notes
+- Extended examples
+- Failure case writeups
+- Decision records and tradeoffs
+
+## Keep Out of the Entrypoint
+
+- Long tutorials
+- Repeated examples
+- Background material that is only needed on demand
+
+## First Files to Add
+
+- `patterns.md` - the main repeatable patterns
+- `gotchas.md` - model-specific failure modes
+- `examples.md` - concrete examples that do not belong in the entrypoint

@@ -1,0 +1,17 @@
+{
+  "defaultSkillRoot": "skills/global",
+  "rootAliases": {
+    "global": "skills/global",
+    "unity": "skills/projects/unity"
+  },
+  "defaultAllowedTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Bash"
+  ],
+  "defaultReferenceDir": "reference",
+  "defaultScriptFileName": "main.js",
+  "defaultIncludeScriptStub": true,
+  "defaultIncludeConfigStub": true
+}

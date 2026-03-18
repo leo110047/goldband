@@ -42,6 +42,7 @@ ON_DEMAND_SKILLS=(
     "ci-cd-integration"
     "commit-conventions"
     "decision-log"
+    "new-skill-scaffold"
     "skill-developer"
     "subagent-development"
 )
@@ -250,7 +251,7 @@ show_help() {
     echo "  skills      安裝全域 skills（等同 skills-full）"
     echo "  skills-core 安裝核心常駐 skills（低 token）"
     echo "  skills-dev  安裝開發常用 skills（core + auto）"
-    echo "  skills-full 安裝全部全域 skills（19 個）"
+    echo "  skills-full 安裝全部全域 skills（20 個）"
     echo "  commands    只安裝 commands"
     echo "  contexts    只安裝 contexts"
     echo "  rules       只安裝 rules"

@@ -1,0 +1,36 @@
+---
+name: {{NAME}}
+description: |
+{{DESCRIPTION_BLOCK}}
+
+  Replace this line with trigger-first wording that tells Claude when to use the skill.
+allowed-tools:
+{{ALLOWED_TOOLS_YAML}}
+---
+
+# {{TITLE}}
+
+## When to Use
+
+- Replace these bullets with the specific situations that should activate this skill
+- Keep this section trigger-first rather than summary-first
+
+## Scripts and References
+
+- `{{REFERENCE_DIR}}/README.md` - move detailed APIs, examples, and background here
+{{SCRIPT_LINE}}
+{{CONFIG_LINE}}
+
+## Gotchas
+
+- Do not restate obvious basics Claude already knows.
+- Do not leave the description as a human summary; make it describe when the skill should trigger.
+- Do not dump long APIs or examples into `SKILL.md`; move them into `{{REFERENCE_DIR}}/`.
+- Do not add scripts, assets, or config files without documenting them in this entrypoint.
+
+## Suggested Workflow
+
+1. Clarify the trigger and success criteria.
+2. Load only the files needed from `{{REFERENCE_DIR}}/`.
+3. Run scripts or apply templates as needed.
+4. Record new gotchas after each real failure.

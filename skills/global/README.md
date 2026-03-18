@@ -36,11 +36,13 @@ ln -s $(pwd)/skills ~/.claude/skills
 | **commit-conventions** | Git commit 規範（Conventional Commits） |
 | **decision-log** | 架構決策記錄（ADR） |
 | **file-search** | 代碼搜尋（ripgrep + ast-grep） |
+| **new-skill-scaffold** | 產生符合 repo 慣例的新 skill scaffold |
 
 ### 工具 Skills
 
 | Skill | 用途 |
 |-------|------|
+| **new-skill-scaffold** | 產生 skill scaffold、template、config stub |
 | **skill-developer** | 管理和創建 skills |
 
 ## ⚙️ 配置文件
@@ -343,6 +345,7 @@ my-project/
 精通:
 - `backend-patterns` - 掌握架構模式
 - `performance-optimization` - 掌握優化技巧
+- `new-skill-scaffold` - 用 repo 慣例快速起新 skill
 - `skill-developer` - 創建自己的 skills
 
 ## 📝 更新日誌
