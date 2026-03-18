@@ -8,7 +8,7 @@
 
 ## Plugin Data Probe
 
-- Source: `${CLAUDE_PLUGIN_DATA}` / temp fallback
+- Source: `${CLAUDE_PLUGIN_DATA}` / temp fallback / standalone-shell fallback
 - Writable:
 - Readable:
 - Notes:

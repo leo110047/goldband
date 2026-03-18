@@ -50,7 +50,7 @@ While active, the `PreToolUse` router blocks these Bash patterns:
 - Do not enable this mode and assume it catches every dangerous operation. It is a focused blocklist, not a full prod policy engine.
 - Do not leave the mode enabled after the risky window ends; unnecessary friction will eventually train people to ignore it.
 - Do not rely on memory of the mode state. Run `status` before claiming it is armed or disabled.
-- Do not assume `${CLAUDE_PLUGIN_DATA}` exists. The mode state falls back to temp storage when the runtime does not expose plugin data.
+- Do not assume `${CLAUDE_PLUGIN_DATA}` exists in every invocation path. Claude Code `2.1.78` plugin sessions were live-verified to expose it, but standalone script execution can still fall back to temp storage.
 - Do not duplicate the blocked-command list in other docs or scripts; the hook rule module is the source of truth.
 
 ## Suggested Workflow

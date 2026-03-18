@@ -47,7 +47,7 @@ While active, the `PreToolUse` router:
 - Do not expect whole command families like `sed`, `awk`, `find`, or `sort` to pass. They support mutating forms and are intentionally excluded.
 - Do not leave it enabled while implementing fixes; it will block normal editing and create noise.
 - Do not claim a session was read-only without checking `status`; state is session-scoped and can differ across tabs/sessions.
-- Do not assume plugin data is available. Like other mode state, it falls back to temp storage when `${CLAUDE_PLUGIN_DATA}` is absent.
+- Do not assume plugin data is available in every invocation path. Claude Code `2.1.78` plugin sessions were live-verified to expose `${CLAUDE_PLUGIN_DATA}`, but standalone script execution can still fall back to temp storage.
 
 ## Suggested Workflow
 

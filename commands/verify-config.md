@@ -10,6 +10,10 @@ Before relying on persistent plugin state, run:
 
 `node skills/global/claude-config-verification/scripts/probe-plugin-data.js`
 
+Interpretation note:
+- Claude Code `2.1.78` was live-verified to inject `${CLAUDE_PLUGIN_DATA}` inside a plugin `SessionStart` hook.
+- Running this script directly from a normal shell still may report temp fallback, because standalone `node ...` execution is not guaranteed to run inside plugin context.
+
 Report:
 - whether `${CLAUDE_PLUGIN_DATA}` is present
 - whether the resolved path is writable/readable
@@ -84,7 +88,7 @@ Symlinks:
 
 Plugin Data:
   [OK]      CLAUDE_PLUGIN_DATA available at /path/to/data
-  [WARNING] using temp fallback at /tmp/claude-config-verification
+  [WARNING] using temp fallback at /tmp/claude-config-verification (expected outside plugin context or on older runtimes)
 
 Hooks:
   [OK]      8 hooks configured in settings.json

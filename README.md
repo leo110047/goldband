@@ -320,7 +320,7 @@ node hooks/scripts/tools/replay-hook-router.js --iterations 20
 - `block/allow` 比率
 - 誤攔截率（expected allow 但被 block）
 
-量測資料由 router 寫入 JSONL metrics（優先使用 `${CLAUDE_PLUGIN_DATA}`，若 runtime 未提供則退回系統 temp；也可用 `HOOK_ROUTER_METRICS_FILE` 覆寫）。
+量測資料由 router 寫入 JSONL metrics（優先使用 `${CLAUDE_PLUGIN_DATA}`；已於 Claude Code `2.1.78` 的 plugin `SessionStart` live probe 驗證可用。若在舊版 runtime 或非 plugin 上下文執行，則退回系統 temp；也可用 `HOOK_ROUTER_METRICS_FILE` 覆寫）。
 預設 metrics 關閉（`HOOK_ROUTER_METRICS_ENABLED=0`），只有量測時才建議開啟。
 
 ### On-Demand Careful Mode
@@ -333,7 +333,7 @@ node skills/global/careful-mode/scripts/careful-mode.js disable
 
 用途：
 - 在 force-push、hard reset、destroy/delete 類操作前，先開啟額外保護
-- state 依 session 儲存，優先使用 `${CLAUDE_PLUGIN_DATA}`，沒有則退回 temp fallback
+- state 依 session 儲存；Claude Code `2.1.78` 的 plugin session 已實測會注入 `${CLAUDE_PLUGIN_DATA}`，但若在非 plugin 上下文執行 script，仍可能退回 temp fallback
 - 目前 block 規則聚焦在 `rm -rf`、force-push、`git reset --hard`、`terraform destroy`、`kubectl delete`、`helm uninstall`、destructive SQL
 
 ### On-Demand Freeze Mode

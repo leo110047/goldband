@@ -29,7 +29,7 @@ allowed-tools:
 - `scripts/probe-plugin-data.js`
   - Confirms whether `${CLAUDE_PLUGIN_DATA}` is available in the current runtime
   - Verifies the target directory can be created, written, and read back
-  - Falls back to temp storage when the runtime does not expose plugin data
+  - Falls back to temp storage when the current execution context does not expose plugin data
 - `scripts/verify-claude-config.js`
   - Validates JSON files
   - Checks `SKILL.md` frontmatter and linked reference files
@@ -40,7 +40,7 @@ allowed-tools:
 
 ## Gotchas
 
-- Do not assume `${CLAUDE_PLUGIN_DATA}` exists just because the latest article mentions it. Probe the runtime first.
+- Do not assume `${CLAUDE_PLUGIN_DATA}` exists in every execution path. Claude Code `2.1.78` was live-verified to inject it inside a plugin `SessionStart` hook, but standalone script execution may still fall back.
 - Do not stop at JSON syntax validation; stale hook references and broken reference links are equally shipping blockers.
 - Do not claim router changes are safe without replay when policy or worker code changed.
 - Do not add a new global skill without also updating installer profiles and inventory documentation.
@@ -50,6 +50,7 @@ allowed-tools:
 
 - Verification history is appended to `history.jsonl`
 - Preferred storage: `${CLAUDE_PLUGIN_DATA}/claude-config-verification/`
+- Live verification status: confirmed on Claude Code `2.1.78` in a plugin session on `2026-03-18`
 - Fallback storage: system temp directory
 - Report template: `assets/verification-report-template.md`
 
