@@ -1,9 +1,8 @@
 ---
 name: decision-logger
 description: |
-  Logs architectural decisions to docs/DECISIONS.md in ADR format.
-  Use when: making significant architectural or technology choices.
-  Integrates with /craft and /why commands.
+  Use when making a significant architectural, tooling, or process decision
+  that should be captured as an ADR in docs/DECISIONS.md.
 ---
 
 # Decision Logger

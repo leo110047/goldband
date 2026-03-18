@@ -1,7 +1,6 @@
 const fs = require('fs');
-const path = require('path');
 const {
-  getTempDir,
+  getPersistentDataPath,
   readFile,
   writeFile
 } = require('../utils');
@@ -20,7 +19,7 @@ function getContextStateFile(sessionId) {
   }
 
   const safeSessionId = String(sessionId || 'default').replace(/[^a-zA-Z0-9_-]/g, '_');
-  return path.join(getTempDir(), `goldband-hook-router-context-${safeSessionId}.json`);
+  return getPersistentDataPath('hook-router', `context-${safeSessionId}.json`);
 }
 
 function loadContextState(stateFile) {

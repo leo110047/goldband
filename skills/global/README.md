@@ -23,6 +23,7 @@ ln -s $(pwd)/skills ~/.claude/skills
 | **code-review-skill** | 代碼審查，多語言支援 | 🟡 Medium |
 | **backend-patterns** | 後端架構模式 | 🟡 Medium |
 | **performance-optimization** | 性能優化（前端+後端） | 🟡 Medium |
+| **claude-config-verification** | Claude Code 配置 repo 驗證、hook replay、plugin data probe | 🟡 Medium |
 
 ### 專業領域 Skills
 

@@ -33,7 +33,7 @@
 
 | 組件 | 數量 | 說明 |
 |------|------|------|
-| **Skills** | 16 全域 + 5 Unity | 涵蓋除錯、安全、架構、測試、效能、API、資料庫、CI/CD、規劃、Subagent 等 |
+| **Skills** | 17 全域 + 10 Unity | 涵蓋除錯、安全、架構、測試、效能、API、資料庫、CI/CD、規劃、Subagent 等 |
 | **Commands** | 7 | `/plan`、`/verify`、`/checkpoint`、`/code-review`、`/discuss`、`/map-codebase`、`/verify-config` |
 | **Rules** | 3 | coding-style、security、git-workflow |
 | **Contexts** | 4 | dev、review、research、debug 模式切換 |
@@ -43,7 +43,7 @@
 
 ## 快速參考卡
 
-### 全域 Skills（16 個）
+### 全域 Skills（17 個）
 
 | Skill | 觸發情境 | 優先級 |
 |-------|---------|--------|
@@ -57,6 +57,7 @@
 | `database-patterns` | Schema 設計、查詢優化、Migration | MEDIUM |
 | `api-design` | REST 設計、Error format、Pagination | MEDIUM |
 | `ci-cd-integration` | GitHub Actions、部署策略、Pipeline | MEDIUM |
+| `claude-config-verification` | 驗證 Claude Code config/plugin repo、hooks、skills 與 plugin data | MEDIUM |
 | `planning-workflow` | `/plan` 時自動觸發，結構化任務拆解 | MEDIUM |
 | `subagent-development` | Subagent 調度、兩階段 review、prompt 工程 | MEDIUM |
 | `commit-conventions` | Git commit 格式 | LOW |
@@ -99,7 +100,7 @@ cd goldband
 ./install.sh pack-unity        # unity-pack（pack-quality + unity skills）
 ./install.sh skills-core       # 核心常駐 skills（最低 token）
 ./install.sh skills-dev        # 開發常用 skills（core + auto，推薦）
-./install.sh skills-full       # 全量 skills（16 個）
+./install.sh skills-full       # 全量 skills（17 個）
 ./install.sh all               # 相容舊用法，等同 pack-quality
 ./install.sh commands          # 只裝 commands
 ./install.sh all-full          # 全組件 + skills-full（舊行為）
@@ -112,7 +113,7 @@ cd goldband
 ### Skills Profile 分層
 
 - `core`: `evidence-based-coding`、`systematic-debugging`、`file-search`、`planning-workflow`、`security-checklist`、`performance-optimization`
-- `dev`: `core` + `api-design`、`backend-patterns`、`code-review-skill`、`database-patterns`、`testing-strategy`
+- `dev`: `core` + `api-design`、`backend-patterns`、`claude-config-verification`、`code-review-skill`、`database-patterns`、`testing-strategy`
 - `full`: `dev` + `ci-cd-integration`、`commit-conventions`、`decision-log`、`skill-developer`、`subagent-development`
 
 > **Note**: hooks 安裝需要 `jq`。若未安裝，會顯示手動合併提示。macOS 安裝: `brew install jq`
@@ -123,7 +124,7 @@ cd goldband
 
 ```
 ├── skills/
-│   ├── global/                         # 16 個全域 skills
+│   ├── global/                         # 17 個全域 skills
 │   │   ├── systematic-debugging/
 │   │   ├── evidence-based-coding/
 │   │   │   └── reference/              # Iron Law、驗證流程、幻覺模式、目標驗證
@@ -138,6 +139,7 @@ cd goldband
 │   │   ├── testing-strategy/
 │   │   ├── security-checklist/
 │   │   ├── commit-conventions/
+│   │   ├── claude-config-verification/
 │   │   ├── database-patterns/
 │   │   ├── api-design/
 │   │   ├── ci-cd-integration/
@@ -146,7 +148,7 @@ cd goldband
 │   │   ├── skill-developer/
 │   │   └── skill-rules.json            # 參考文件（Not auto-loaded）
 │   └── projects/
-│       └── unity/                      # 5 個 Unity 專案 skills
+│       └── unity/                      # 10 個 Unity 專案 skills
 ├── commands/                           # 7 個斜線命令
 ├── contexts/                           # 4 個模式切換
 ├── rules/                              # 3 個永遠生效的規則
@@ -179,6 +181,7 @@ HIGH
 └─ performance-optimization  效能問題
 
 MEDIUM
+├─ claude-config-verification Claude Code config/plugin repo 驗證
 ├─ code-review-skill         代碼審查（含 Spec Compliance Review）
 ├─ backend-patterns          架構設計
 ├─ testing-strategy          測試策略
@@ -311,14 +314,14 @@ node hooks/scripts/tools/replay-hook-router.js --iterations 20
 - `block/allow` 比率
 - 誤攔截率（expected allow 但被 block）
 
-量測資料由 router 寫入 JSONL metrics（預設在系統 temp 目錄，可用 `HOOK_ROUTER_METRICS_FILE` 覆寫）。
+量測資料由 router 寫入 JSONL metrics（優先使用 `${CLAUDE_PLUGIN_DATA}`，若 runtime 未提供則退回系統 temp；也可用 `HOOK_ROUTER_METRICS_FILE` 覆寫）。
 預設 metrics 關閉（`HOOK_ROUTER_METRICS_ENABLED=0`），只有量測時才建議開啟。
 
 ---
 
 ## Unity 專案 Skills
 
-專為 Unity 遊戲開發的 5 個 skills：
+專為 Unity 遊戲開發的 10 個 skills：
 
 | Skill | 用途 |
 |-------|------|
@@ -327,6 +330,11 @@ node hooks/scripts/tools/replay-hook-router.js --iterations 20
 | `unity-performance` | Profiler、GC 優化、渲染優化 |
 | `unity-architecture` | MVC/ECS/Service Locator |
 | `unity-app-store-deployment` | Google Play + App Store 雙平台上架 |
+| `unity-job-system` | Job System、Burst、NativeContainer、Sim/Render 並行 |
+| `unity-networking` | NGO、NetworkVariable、RPC、Server-Authoritative |
+| `unity-object-pooling` | ObjectPool、零分配策略、預熱與池化規劃 |
+| `unity-profiling` | ProfilerMarker、FrameTiming、GC/Hitch 分析、效能預算 |
+| `unity-testing` | Unity Test Framework、EditMode/PlayMode、CI 測試整合 |
 
 ```bash
 cd /path/to/your-unity-project

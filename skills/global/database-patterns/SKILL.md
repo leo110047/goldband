@@ -1,14 +1,11 @@
 ---
 name: database-patterns
 description: |
-  Database design patterns, query optimization, and data management best practices.
-  Covers schema design, indexing strategies, N+1 detection, migrations, and transactions.
+  Use when designing schemas, indexes, migrations, transactions, ORM patterns,
+  or query structure for a relational or document database.
 
-  Use when: designing database schemas, optimizing queries, planning migrations,
-  working with ORMs, troubleshooting slow queries, implementing transactions.
-
-  EXCLUDE: API design (use api-design skill)
-  EXCLUDE: Active debugging (use systematic-debugging skill)
+  EXCLUDE: API contract design (use api-design skill)
+  EXCLUDE: active debugging of failures (use systematic-debugging skill)
 allowed-tools:
   - Read
   - Grep

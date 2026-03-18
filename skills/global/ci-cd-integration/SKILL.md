@@ -1,13 +1,10 @@
 ---
 name: ci-cd-integration
 description: |
-  CI/CD pipeline patterns and deployment strategies for modern applications.
-  Covers GitHub Actions workflows, testing pipelines, deployment strategies, and automation.
+  Use when setting up or changing CI pipelines, GitHub Actions workflows,
+  build/test/deploy gates, release automation, CI secrets handling, or build caching.
 
-  Use when: setting up CI/CD pipelines, configuring GitHub Actions, implementing deployment strategies,
-  managing CI secrets, automating PR workflows, optimizing build caching.
-
-  Focus: Pipeline design and automation, not application architecture.
+  Best fit for delivery pipeline design and automation, not application architecture.
 allowed-tools:
   - Read
   - Grep

@@ -4,6 +4,17 @@ Perform a comprehensive health check of the goldband installation.
 
 Run the following checks in order and produce a structured report.
 
+### 0. Plugin Data Probe
+
+Before relying on persistent plugin state, run:
+
+`node skills/global/claude-config-verification/scripts/probe-plugin-data.js`
+
+Report:
+- whether `${CLAUDE_PLUGIN_DATA}` is present
+- whether the resolved path is writable/readable
+- whether the runtime had to fall back to temp storage
+
 ### 1. Symlink Checks
 
 Check these paths exist and point to valid targets:
@@ -66,10 +77,14 @@ Use `cat FILE | python3 -c "import sys,json; json.load(sys.stdin); print('OK')"`
 ╚════════════════════════════════════════╝
 
 Symlinks:
-  [OK]      skills profile: dev (11 個)
+  [OK]      skills profile: dev (12 個)
   [OK]      skills links point to /path/to/repo/skills/global/*
   [OK]      commands → /path/to/repo/commands
   ...
+
+Plugin Data:
+  [OK]      CLAUDE_PLUGIN_DATA available at /path/to/data
+  [WARNING] using temp fallback at /tmp/claude-config-verification
 
 Hooks:
   [OK]      8 hooks configured in settings.json

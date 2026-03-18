@@ -49,6 +49,59 @@ function getTempDir() {
 }
 
 /**
+ * Get the plugin data directory when Claude exposes it.
+ * Returns null when the runtime does not provide a stable plugin data path.
+ */
+function getPluginDataDir() {
+  const raw = process.env.CLAUDE_PLUGIN_DATA;
+  if (typeof raw !== 'string') return null;
+
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Get a persistent data directory for this plugin namespace.
+ * Prefers CLAUDE_PLUGIN_DATA when available, falls back to temp storage.
+ */
+function getPersistentDataDir(namespace = 'goldband') {
+  const safeNamespace = String(namespace || 'goldband')
+    .split(/[\\/]+/)
+    .map(part => part.trim())
+    .filter(part => part.length > 0 && part !== '.' && part !== '..')
+    .map(part => part.replace(/[^a-zA-Z0-9._-]/g, '-'))
+    .filter(Boolean);
+  const normalizedNamespace = safeNamespace.length > 0 ? safeNamespace : ['goldband'];
+
+  const pluginDataDir = getPluginDataDir();
+  const candidates = pluginDataDir
+    ? [path.join(pluginDataDir, ...normalizedNamespace), path.join(getTempDir(), ...normalizedNamespace)]
+    : [path.join(getTempDir(), ...normalizedNamespace)];
+
+  for (const candidate of candidates) {
+    try {
+      return ensureDir(candidate);
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  return path.join(getTempDir(), ...normalizedNamespace);
+}
+
+/**
+ * Build a persistent data file path within a namespace.
+ */
+function getPersistentDataPath(namespace, ...parts) {
+  const baseDir = getPersistentDataDir(namespace);
+  if (parts.length === 0) {
+    return baseDir;
+  }
+
+  return path.join(baseDir, ...parts);
+}
+
+/**
  * Ensure a directory exists (create if not)
  * @param {string} dirPath - Directory path to create
  * @returns {string} The directory path
@@ -495,6 +548,9 @@ module.exports = {
   getSessionsDir,
   getLearnedSkillsDir,
   getTempDir,
+  getPluginDataDir,
+  getPersistentDataDir,
+  getPersistentDataPath,
   ensureDir,
 
   // Date/Time

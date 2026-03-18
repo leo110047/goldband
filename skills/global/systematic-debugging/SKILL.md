@@ -50,6 +50,14 @@ Use for ANY technical issue:
 - You're in a hurry (rushing guarantees rework)
 - Manager wants it fixed NOW (systematic is faster than thrashing)
 
+## Gotchas
+
+- Do not propose a fix before you can state the observed symptom, reproduction path, and evidence source.
+- Do not stack multiple "small fixes" together. One hypothesis, one test, one result.
+- Do not stop at the first plausible cause; compare against working examples and recent changes.
+- Do not treat a non-reproducible issue as permission to guess. Gather more diagnostics until the pattern sharpens.
+- Do not let urgency override Phase 1. Time pressure is when thrashing is most expensive.
+
 ## The Four Phases
 
 You MUST complete each phase before proceeding to the next.

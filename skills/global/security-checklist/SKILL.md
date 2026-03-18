@@ -1,13 +1,10 @@
 ---
 name: security-checklist
 description: |
-  Security best practices and vulnerability prevention for web applications.
-  Covers OWASP Top 10, authentication, authorization, input validation, and secure coding practices.
+  Use when working on authentication, authorization, input validation, secret handling,
+  sensitive data storage, API hardening, deployment security, or security review.
 
-  Use when: implementing authentication, handling user input, storing sensitive data, building APIs,
-  deploying applications, reviewing security, or conducting security audits.
-
-  Focus: Preventing common vulnerabilities, not penetration testing or ethical hacking.
+  Best fit for defensive security checks and secure coding, not offensive testing.
 allowed-tools:
   - Read
   - Grep

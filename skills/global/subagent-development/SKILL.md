@@ -1,11 +1,10 @@
 ---
 name: subagent-development
 description: |
-  Patterns for fresh-subagent-per-task development with two-stage review.
-  Use when: tasks can be isolated, need fresh context, or benefit from parallel execution.
+  Use when a task can be isolated into a fresh-context subagent, parallelized safely,
+  or reviewed in two stages for spec compliance and code quality.
 
-  Covers subagent dispatch, prompt engineering, spec compliance review,
-  and code quality review of subagent output.
+  Best fit for self-contained work, not shared-context debugging.
 priority: MEDIUM
 allowed-tools:
   - Task

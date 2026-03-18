@@ -1,11 +1,10 @@
 ---
 name: planning-workflow
 description: |
-  Structured planning templates for implementation tasks.
-  Use when: creating implementation plans with /plan, breaking down features into verifiable steps.
+  Use when turning a request into an implementation plan, especially before
+  multi-file changes, refactors, or work that needs explicit phases and verification.
 
-  Ensures plans are precise, verifiable, and follow evidence-based principles.
-  Every task must be small enough to verify, every step must include expected outcomes.
+  Best fit for design-first execution with verifiable steps and approval gates.
 priority: MEDIUM
 allowed-tools:
   - Read

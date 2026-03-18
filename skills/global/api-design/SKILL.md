@@ -1,14 +1,12 @@
 ---
 name: api-design
 description: |
-  API design patterns and best practices for building consistent, well-documented APIs.
-  Covers REST conventions, error responses, pagination, versioning, and OpenAPI.
+  Use when defining HTTP endpoints, request/response contracts, error formats,
+  pagination, versioning, or OpenAPI for a public or internal API.
 
-  Use when: designing REST APIs, choosing HTTP methods, structuring error responses,
-  implementing pagination, versioning APIs, writing OpenAPI specs.
-
-  EXCLUDE: Backend implementation patterns (use backend-patterns skill)
-  EXCLUDE: Database design (use database-patterns skill)
+  Best fit for interface contracts and cross-endpoint consistency.
+  EXCLUDE: backend implementation patterns (use backend-patterns skill)
+  EXCLUDE: database schema/query design (use database-patterns skill)
 allowed-tools:
   - Read
   - Grep

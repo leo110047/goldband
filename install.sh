@@ -30,6 +30,7 @@ CORE_SKILLS=(
 AUTO_SKILLS=(
     "api-design"
     "backend-patterns"
+    "claude-config-verification"
     "code-review-skill"
     "database-patterns"
     "testing-strategy"
@@ -247,7 +248,7 @@ show_help() {
     echo "  skills      安裝全域 skills（等同 skills-full）"
     echo "  skills-core 安裝核心常駐 skills（低 token）"
     echo "  skills-dev  安裝開發常用 skills（core + auto）"
-    echo "  skills-full 安裝全部全域 skills（16 個）"
+    echo "  skills-full 安裝全部全域 skills（17 個）"
     echo "  commands    只安裝 commands"
     echo "  contexts    只安裝 contexts"
     echo "  rules       只安裝 rules"

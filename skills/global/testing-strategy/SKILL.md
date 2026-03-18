@@ -1,11 +1,10 @@
 ---
 name: testing-strategy
 description: |
-  Comprehensive testing strategy covering unit tests, integration tests, E2E tests, and test-driven development.
-  Use when: writing tests, improving test coverage, implementing TDD, fixing flaky tests, setting up testing infrastructure,
-  choosing testing frameworks, or establishing testing standards.
+  Use when designing new tests, improving coverage, choosing test types/frameworks,
+  implementing TDD, or stabilizing flaky tests before they become debugging sessions.
 
-  Focus: Test design, coverage, and reliability, not debugging test failures (use systematic-debugging for that).
+  Best fit for test design and reliability, not investigating failing behavior.
 allowed-tools:
   - Read
   - Grep
@@ -29,6 +28,14 @@ allowed-tools:
 - Reviewing test quality
 
 **NOT for debugging test failures** - Use `systematic-debugging` skill when tests fail unexpectedly.
+
+## Gotchas
+
+- Do not use coverage percentage as a proxy for test quality or product safety.
+- Do not debug a failing system here; switch to `systematic-debugging` when behavior is already broken.
+- Do not reach for E2E first when unit or integration tests can prove the behavior faster.
+- Do not mock the code under test just to make assertions easier.
+- Do not ship arbitrary sleeps or timing guesses in flaky-test fixes.
 
 ## Testing Pyramid
 

@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { ensureDir, getTempDir } = require('../utils');
+const { ensureDir, getPersistentDataPath } = require('../utils');
 
 const DEFAULT_MAX_BYTES = 1024 * 1024;
 const DEFAULT_RETENTION_DAYS = 7;
@@ -16,7 +16,7 @@ function metricsEnabled() {
 }
 
 function getMetricsFile() {
-  return process.env.HOOK_ROUTER_METRICS_FILE || path.join(getTempDir(), 'goldband-hook-router-metrics.jsonl');
+  return process.env.HOOK_ROUTER_METRICS_FILE || getPersistentDataPath('hook-router', 'metrics.jsonl');
 }
 
 function rotateIfOversized(metricsFile) {

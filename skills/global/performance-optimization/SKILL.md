@@ -1,16 +1,11 @@
 ---
 name: performance-optimization
 description: |
-  Optimize application performance when things are SLOW or need IMPROVEMENT.
-  Covers frontend (React rendering, bundle size, lazy loading) and backend (database queries, N+1 problems, caching).
+  Use when something is slow: page load, render lag, query latency, throughput,
+  bundle size, Core Web Vitals, memory pressure, or any measured bottleneck.
 
-  Use when: application is slow, performance bottlenecks, users complain about lag, optimizing queries,
-  reducing load times, improving Core Web Vitals, profiling bottlenecks, reducing bundle sizes.
-
-  PRIORITY: This skill takes priority when user mentions "slow", "optimize", "performance", "bottleneck".
-  EXCLUDE: Architectural design (use backend-patterns skill instead)
-
-  Focus: Solving existing performance problems through measurement and optimization, not designing new systems.
+  PRIORITY: takes precedence when the request is about slowness, lag, bottlenecks, or optimization.
+  EXCLUDE: architectural design without a measured performance problem (use backend-patterns skill instead)
 ---
 
 # Performance Optimization - Making Software Fast
@@ -44,6 +39,14 @@ description: |
 - **Separate from**: Architecture discussions (use `backend-patterns` skill)
 - **Defers to**: `systematic-debugging` when bugs are present
 - Always measure before optimizing -- evidence over intuition
+
+## Gotchas
+
+- Do not optimize before establishing a baseline and identifying the actual bottleneck.
+- Do not turn a design discussion into a performance project without measurements.
+- Do not apply `useMemo`, caching, indexes, or queueing as default fixes without profiling evidence.
+- Do not celebrate benchmark-only wins that make correctness, operability, or complexity worse.
+- Do not measure on toy inputs when the complaint is production-scale latency or throughput.
 
 ## Performance Measurement
 

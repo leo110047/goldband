@@ -1,10 +1,8 @@
 ---
 name: commit-conventions
 description: |
-  Git commit message conventions following Conventional Commits specification.
-  Use when: creating commits, reviewing commit history, setting up commit hooks, or establishing team standards.
-
-  Helps generate changelogs, automate versioning, and maintain clean git history.
+  Use when writing commit messages, reviewing git history, setting up Conventional
+  Commits, or standardizing changelog/versioning workflows across a team.
 allowed-tools:
   - Bash  # Git operations
   - Read  # Read git log

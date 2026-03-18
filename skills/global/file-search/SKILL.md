@@ -1,6 +1,6 @@
 ---
 name: file-search
-description: This skill should be used when agents need to search codebases for text patterns or structural code patterns. Provides fast search using ripgrep for text and ast-grep for syntax-aware code search.
+description: Use when you need to locate files, usages, symbols, text patterns, or structural code matches quickly with ripgrep or ast-grep.
 license: MIT
 ---
 

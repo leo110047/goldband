@@ -1,19 +1,14 @@
 ---
 name: code-review-excellence
 description: |
-  Provides comprehensive code review guidance for C#, Python, TypeScript, React 19, Vue 3, Rust, Java, Go, and C/C++.
-  Helps catch bugs, improve code quality, and give constructive feedback.
+  Use when reviewing pull requests or code changes for correctness, maintainability,
+  security, performance risks, or standards compliance across C#, Python,
+  TypeScript, React 19, Vue 3, Rust, Java, Go, and C/C++.
 
-  Use when: reviewing pull requests, conducting PR reviews, code review, reviewing code changes,
-  establishing review standards, mentoring developers, architecture reviews, security audits,
-  checking code quality, giving feedback on code, .NET code review, ASP.NET review,
-  Entity Framework review, LINQ review.
+  DEFER TO systematic-debugging WHEN: test failures, bugs, errors, or unexpected behavior appear during review.
+  Rule: stop review, debug first, then resume review.
 
-  DEFER TO systematic-debugging WHEN: test failures, bugs, errors, or unexpected behavior detected during review.
-  Rule: When bugs are found during review, STOP review and invoke systematic-debugging skill first.
-  Only resume review after bugs are systematically investigated and fixed.
-
-  Focus: Code quality, maintainability, and standards compliance, not active bug fixing.
+  Best fit for review quality and decision-making, not active bug fixing.
 allowed-tools:
   - Read
   - Grep
@@ -58,6 +53,14 @@ Transform code reviews from gatekeeping to knowledge sharing through constructiv
 - Do not attempt to optimize during review
 
 **Rule:** Review is for quality and standards, not for active debugging or optimization.
+
+## Gotchas
+
+- Do not continue reviewing once you have identified an active bug or failing test that blocks correctness. Switch to `systematic-debugging`.
+- Do not spend review time on formatting or lint output that automation should enforce.
+- Do not leave speculative comments without reading the relevant code path or tests.
+- Do not bury blocking issues inside a wall of nits. Separate severity clearly.
+- Do not turn review into preference policing when the existing pattern is already coherent.
 
 ## Core Principles
 

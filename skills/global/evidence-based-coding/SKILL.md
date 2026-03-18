@@ -1,13 +1,10 @@
 ---
 name: evidence-based-coding
 description: |
-  Prevent AI hallucinations by enforcing evidence-based coding practices.
-  ALWAYS verify assumptions with actual code/files/tests before making claims.
+  Use when making any claim about code, APIs, configs, files, tests, or fixes,
+  especially before proposing changes or declaring work complete.
 
-  Use when: suggesting code changes, claiming "this function does X", referencing APIs,
-  proposing fixes, or making any statement about the codebase.
-
-  CRITICAL: This skill enforces the principle "Show me the evidence" - never assume, always verify.
+  CRITICAL: verify with actual code, tool output, or tests before you claim anything.
 priority: CRITICAL
 enforced-globally: true
 allowed-tools:

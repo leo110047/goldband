@@ -19,9 +19,8 @@
  */
 
 const fs = require('fs');
-const path = require('path');
 const {
-  getTempDir,
+  getPersistentDataPath,
   writeFile,
   log,
   output
@@ -60,7 +59,8 @@ function run() {
   const critThreshold = parseThreshold('CONTEXT_CRIT_THRESHOLD', 85);
 
   const sessionId = process.env.CLAUDE_SESSION_ID || 'default';
-  const stateFile = path.join(getTempDir(), `claude-ctx-${sessionId}.json`);
+  const safeSessionId = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const stateFile = getPersistentDataPath('hook-router', `context-monitor-${safeSessionId}.json`);
 
   // Read or initialize state
   let state = { count: 0, lastSeverity: 'none', lastNotifyCount: 0 };

@@ -5,9 +5,9 @@
  */
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { getPersistentDataPath } = require('../lib/utils');
 
 const DEFAULT_DEBOUNCE_WINDOWS = {
   format: 2000,
@@ -38,7 +38,7 @@ function parsePositiveInt(value, fallback) {
 }
 
 function getDebounceStateFile() {
-  return process.env.HOOK_ROUTER_DEBOUNCE_FILE || path.join(os.tmpdir(), 'goldband-hook-worker-debounce.json');
+  return process.env.HOOK_ROUTER_DEBOUNCE_FILE || getPersistentDataPath('hook-router', 'worker-debounce.json');
 }
 
 function getDebounceWindowMs(task) {

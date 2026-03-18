@@ -1,16 +1,13 @@
 ---
 name: backend-patterns
 description: |
-  Backend architecture patterns and best practices for scalable server-side applications.
-  Covers API design, repository patterns, authentication strategies, error handling, and microservices.
+  Use when designing backend service boundaries, repository/service layers,
+  authentication architecture, error handling structure, microservice seams,
+  or overall server-side system shape.
 
-  Use when: designing REST APIs, implementing authentication, setting up error handling,
-  building microservices, creating backend services, API architecture, database schema design.
-
-  EXCLUDE: Performance optimization (use performance-optimization skill instead)
-  EXCLUDE: Active debugging (use systematic-debugging skill instead)
-
-  Focus: Architectural decisions and design patterns, not fixing existing bugs or performance issues.
+  Best fit for structural decisions, not active bug fixing or performance tuning.
+  EXCLUDE: performance optimization (use performance-optimization skill instead)
+  EXCLUDE: active debugging (use systematic-debugging skill instead)
 ---
 
 # Backend Development Patterns
@@ -23,6 +20,16 @@ Backend architecture patterns and best practices for scalable server-side applic
 - **Separate from**: Performance tuning (use `performance-optimization` skill)
 - **Defers to**: `systematic-debugging` when bugs are present
 - Focus on structure and design, not fixing existing problems
+
+---
+
+## Gotchas
+
+- Do not cargo-cult Repository/Service/Middleware layers into small systems that do not have boundary pressure.
+- Do not use this skill to paper over an active bug or failing test. Switch to `systematic-debugging` first.
+- Do not recommend microservices, queues, or eventing unless there is a concrete operational reason.
+- Do not add abstractions whose only justification is "clean architecture" without a real seam to protect.
+- Do not move domain logic into controllers/handlers just to keep service files short.
 
 ---
 
