@@ -587,6 +587,17 @@ merge_hooks_config() {
 
     echo -e "  ${GREEN}[合併] Hooks 設定已自動合併到 settings.json${NC}"
 
+    # Merge statusLine if present
+    local statusline_content
+    statusline_content=$(jq '.statusLine // null' "$hooks_json")
+    if [ "$statusline_content" != "null" ] && [ -n "$statusline_content" ]; then
+        local expanded_statusline
+        expanded_statusline=$(echo "$statusline_content" | sed "s|\\\${CLAUDE_DIR}|$CLAUDE_DIR|g")
+        jq --argjson sl "$expanded_statusline" '.statusLine = $sl' "$settings_json" > "${settings_json}.tmp" \
+            && mv "${settings_json}.tmp" "$settings_json"
+        echo -e "  ${GREEN}[合併] statusLine 設定已自動合併到 settings.json${NC}"
+    fi
+
     # Merge permissions if present (merge allow/deny arrays, don't overwrite)
     if [ "$permissions_content" != "null" ] && [ -n "$permissions_content" ]; then
         jq --argjson new_perms "$permissions_content" '
@@ -601,6 +612,7 @@ merge_hooks_config() {
 
 install_hooks() {
     link_component "$REPO_DIR/hooks/scripts" "$CLAUDE_DIR/hooks/scripts" "Hook Scripts"
+    link_component "$REPO_DIR/hooks/statusline-command.sh" "$CLAUDE_DIR/statusline-command.sh" "Status Line Script"
     echo ""
     merge_hooks_config
 }
@@ -647,7 +659,7 @@ show_status() {
         echo -e "  ${RED}[未安裝]${NC} skills"
     fi
 
-    local components=("commands:$CLAUDE_DIR/commands" "contexts:$CLAUDE_DIR/contexts" "rules:$CLAUDE_DIR/rules" "hooks:$CLAUDE_DIR/hooks/scripts")
+    local components=("commands:$CLAUDE_DIR/commands" "contexts:$CLAUDE_DIR/contexts" "rules:$CLAUDE_DIR/rules" "hooks:$CLAUDE_DIR/hooks/scripts" "statusline:$CLAUDE_DIR/statusline-command.sh")
 
     for item in "${components[@]}"; do
         local name="${item%%:*}"
@@ -761,13 +773,19 @@ do_uninstall() {
         fi
     done
 
-    # Clean up hooks from settings.json
+    # Remove statusline script symlink
+    if [ -L "$CLAUDE_DIR/statusline-command.sh" ]; then
+        rm "$CLAUDE_DIR/statusline-command.sh"
+        echo -e "  ${GREEN}[移除] statusline-command.sh${NC}"
+    fi
+
+    # Clean up hooks and statusLine from settings.json
     local settings_json="$CLAUDE_DIR/settings.json"
     if [ -f "$settings_json" ] && command -v jq &> /dev/null; then
         cp "$settings_json" "${settings_json}.bak"
-        jq 'del(.hooks)' "$settings_json" > "${settings_json}.tmp" \
+        jq 'del(.hooks) | del(.statusLine)' "$settings_json" > "${settings_json}.tmp" \
             && mv "${settings_json}.tmp" "$settings_json"
-        echo -e "  ${GREEN}[移除] settings.json 中的 hooks 設定（已備份為 .bak）${NC}"
+        echo -e "  ${GREEN}[移除] settings.json 中的 hooks/statusLine 設定（已備份為 .bak）${NC}"
     fi
 
     if [ -d "$CODEX_SKILLS_DIR" ] && [ -f "$CODEX_SKILL_PROFILE_FILE" ]; then
