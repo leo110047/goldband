@@ -93,3 +93,4 @@ prefix_rule(
     ],
 )
 prefix_rule(pattern=["npm", "test"], decision="allow")
+prefix_rule(pattern=["git", "add", "README.md", "install.sh", "scripts/test-gstack-integration.sh", "vendor/gstack", "codex/rules/default.rules"], decision="allow")

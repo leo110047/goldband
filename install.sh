@@ -413,6 +413,7 @@ resolve_gstack_repo_dir() {
     fi
 
     candidates+=(
+        "$REPO_DIR/vendor/gstack"
         "$HOME/.claude/skills/gstack"
         "$HOME/.codex/skills/gstack"
         "$HOME/gstack"
@@ -449,7 +450,7 @@ install_gstack_host() {
     if ! repo_dir="$(resolve_gstack_repo_dir)"; then
         echo -e "${RED}找不到 gstack repo。${NC}"
         echo -e "  可設定 ${CYAN}GSTACK_REPO_DIR=/path/to/gstack${NC} 後重試"
-        echo -e "  或將 gstack clone 到 ${CYAN}\$HOME/gstack${NC} / ${CYAN}$REPO_DIR/../gstack${NC}"
+        echo -e "  預設會先找 repo 內建的 ${CYAN}$REPO_DIR/vendor/gstack${NC}"
         exit 1
     fi
 
@@ -462,7 +463,7 @@ install_gstack_host() {
     (
         cd "$repo_dir" || {
             echo "  [錯誤] 無法進入 gstack repo: $repo_dir"
-            return 1
+            exit 1
         }
         ./setup --host "$host"
     )

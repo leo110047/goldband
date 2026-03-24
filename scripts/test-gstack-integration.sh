@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_HOME="$(mktemp -d /tmp/goldband-gstack-home.XXXXXX)"
 TMP_GSTACK="$(mktemp -d /tmp/goldband-gstack-repo.XXXXXX)"
-trap 'rm -rf "$TMP_HOME" "$TMP_GSTACK"' EXIT
+TMP_ROOT="$(mktemp -d /tmp/goldband-gstack-root.XXXXXX)"
+trap 'rm -rf "$TMP_HOME" "$TMP_GSTACK" "$TMP_ROOT"' EXIT
 
 mkdir -p \
   "$TMP_GSTACK/careful" \
@@ -90,13 +91,24 @@ esac
 EOF
 chmod +x "$TMP_GSTACK/setup"
 
+mkdir -p "$TMP_ROOT/vendor"
+cp "$ROOT_DIR/install.sh" "$TMP_ROOT/install.sh"
+cp "$ROOT_DIR/AGENTS.md" "$TMP_ROOT/AGENTS.md"
+cp -R "$ROOT_DIR/skills" "$TMP_ROOT/skills"
+cp -R "$ROOT_DIR/hooks" "$TMP_ROOT/hooks"
+cp -R "$ROOT_DIR/commands" "$TMP_ROOT/commands"
+cp -R "$ROOT_DIR/codex" "$TMP_ROOT/codex"
+cp -R "$ROOT_DIR/.claude-plugin" "$TMP_ROOT/.claude-plugin"
+cp -R "$TMP_GSTACK" "$TMP_ROOT/vendor/gstack"
+chmod +x "$TMP_ROOT/install.sh"
+
 echo "[1/5] skill checks"
 "$ROOT_DIR/scripts/check-skills.sh"
 
 echo "[2/5] installer smoke"
-HOME="$TMP_HOME" GSTACK_REPO_DIR="$TMP_GSTACK" "$ROOT_DIR/install.sh" gstack >/tmp/goldband-gstack-install.log
-HOME="$TMP_HOME" GSTACK_REPO_DIR="$TMP_GSTACK" "$ROOT_DIR/install.sh" gstack-codex >/tmp/goldband-gstack-codex.log
-HOME="$TMP_HOME" GSTACK_REPO_DIR="$TMP_GSTACK" "$ROOT_DIR/install.sh" all-with-gstack >/tmp/goldband-all-with-gstack.log
+HOME="$TMP_HOME" "$TMP_ROOT/install.sh" gstack >/tmp/goldband-gstack-install.log
+HOME="$TMP_HOME" "$TMP_ROOT/install.sh" gstack-codex >/tmp/goldband-gstack-codex.log
+HOME="$TMP_HOME" "$TMP_ROOT/install.sh" all-with-gstack >/tmp/goldband-all-with-gstack.log
 
 echo "[3/5] verify symlinks"
 test -L "$TMP_HOME/.claude/skills/gstack"
@@ -104,12 +116,12 @@ test -L "$TMP_HOME/.codex/skills/gstack"
 test -f "$TMP_HOME/.codex/skills/gstack-review/SKILL.md"
 
 echo "[4/5] status output"
-STATUS_OUTPUT="$(HOME="$TMP_HOME" GSTACK_REPO_DIR="$TMP_GSTACK" "$ROOT_DIR/install.sh" status)"
+STATUS_OUTPUT="$(HOME="$TMP_HOME" "$TMP_ROOT/install.sh" status)"
 echo "$STATUS_OUTPUT" | grep -q "gstack Claude install"
 echo "$STATUS_OUTPUT" | grep -q "gstack Codex runtime"
 
 echo "[5/5] verifier output"
-VERIFIER_OUTPUT="$(HOME="$TMP_HOME" node "$ROOT_DIR/skills/global/claude-config-verification/scripts/verify-claude-config.js" --json)"
+VERIFIER_OUTPUT="$(HOME="$TMP_HOME" node "$TMP_ROOT/skills/global/claude-config-verification/scripts/verify-claude-config.js" --json)"
 echo "$VERIFIER_OUTPUT" | grep -q '"claudeInstalled": true'
 echo "$VERIFIER_OUTPUT" | grep -q '"codexInstalled": true'
 
