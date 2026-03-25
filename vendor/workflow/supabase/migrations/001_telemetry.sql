@@ -1,5 +1,5 @@
 -- gstack telemetry schema
--- Tables for tracking usage, installations, and update checks.
+-- Tables for tracking usage and installations.
 
 -- Main telemetry events (skill runs, upgrades)
 CREATE TABLE telemetry_events (
@@ -35,14 +35,6 @@ CREATE TABLE installations (
   os TEXT
 );
 
--- Install pings from update checks
-CREATE TABLE update_checks (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  checked_at TIMESTAMPTZ DEFAULT now(),
-  gstack_version TEXT NOT NULL,
-  os TEXT NOT NULL
-);
-
 -- RLS: anon key can INSERT and SELECT (all telemetry data is anonymous)
 ALTER TABLE telemetry_events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_insert_only" ON telemetry_events FOR INSERT WITH CHECK (true);
@@ -53,10 +45,6 @@ CREATE POLICY "anon_insert_only" ON installations FOR INSERT WITH CHECK (true);
 CREATE POLICY "anon_select" ON installations FOR SELECT USING (true);
 -- Allow upsert (update last_seen)
 CREATE POLICY "anon_update_last_seen" ON installations FOR UPDATE USING (true) WITH CHECK (true);
-
-ALTER TABLE update_checks ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_insert_only" ON update_checks FOR INSERT WITH CHECK (true);
-CREATE POLICY "anon_select" ON update_checks FOR SELECT USING (true);
 
 -- Crash clustering view
 CREATE VIEW crash_clusters AS

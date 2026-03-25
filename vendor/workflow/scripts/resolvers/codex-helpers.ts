@@ -63,7 +63,7 @@ policy:
 
 export function codexSkillName(skillDir: string): string {
   if (skillDir === '.' || skillDir === '') return 'gstack';
-  // Don't double-prefix: gstack-upgrade → gstack-upgrade (not gstack-gstack-upgrade)
+  // Don't double-prefix directories that already start with gstack-
   if (skillDir.startsWith('gstack-')) return skillDir;
   return `gstack-${skillDir}`;
 }

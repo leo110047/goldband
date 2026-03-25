@@ -42,20 +42,20 @@ afterEach(() => {
 describe('gstack-config', () => {
   // ─── get ──────────────────────────────────────────────────
   test('get on missing file returns empty, exit 0', () => {
-    const { exitCode, stdout } = run(['get', 'auto_upgrade']);
+    const { exitCode, stdout } = run(['get', 'foo']);
     expect(exitCode).toBe(0);
     expect(stdout).toBe('');
   });
 
   test('get existing key returns value', () => {
-    writeFileSync(join(stateDir, 'config.yaml'), 'auto_upgrade: true\n');
-    const { exitCode, stdout } = run(['get', 'auto_upgrade']);
+    writeFileSync(join(stateDir, 'config.yaml'), 'foo: true\n');
+    const { exitCode, stdout } = run(['get', 'foo']);
     expect(exitCode).toBe(0);
     expect(stdout).toBe('true');
   });
 
   test('get missing key returns empty', () => {
-    writeFileSync(join(stateDir, 'config.yaml'), 'auto_upgrade: true\n');
+    writeFileSync(join(stateDir, 'config.yaml'), 'foo: true\n');
     const { exitCode, stdout } = run(['get', 'nonexistent']);
     expect(exitCode).toBe(0);
     expect(stdout).toBe('');
@@ -70,28 +70,28 @@ describe('gstack-config', () => {
 
   // ─── set ──────────────────────────────────────────────────
   test('set creates file and writes key on missing file', () => {
-    const { exitCode } = run(['set', 'auto_upgrade', 'true']);
+    const { exitCode } = run(['set', 'foo', 'true']);
     expect(exitCode).toBe(0);
     const content = readFileSync(join(stateDir, 'config.yaml'), 'utf-8');
-    expect(content).toContain('auto_upgrade: true');
+    expect(content).toContain('foo: true');
   });
 
   test('set appends new key to existing file', () => {
     writeFileSync(join(stateDir, 'config.yaml'), 'foo: bar\n');
-    const { exitCode } = run(['set', 'auto_upgrade', 'true']);
+    const { exitCode } = run(['set', 'baz', 'true']);
     expect(exitCode).toBe(0);
     const content = readFileSync(join(stateDir, 'config.yaml'), 'utf-8');
     expect(content).toContain('foo: bar');
-    expect(content).toContain('auto_upgrade: true');
+    expect(content).toContain('baz: true');
   });
 
   test('set replaces existing key in-place', () => {
-    writeFileSync(join(stateDir, 'config.yaml'), 'auto_upgrade: false\n');
-    const { exitCode } = run(['set', 'auto_upgrade', 'true']);
+    writeFileSync(join(stateDir, 'config.yaml'), 'foo: false\n');
+    const { exitCode } = run(['set', 'foo', 'true']);
     expect(exitCode).toBe(0);
     const content = readFileSync(join(stateDir, 'config.yaml'), 'utf-8');
-    expect(content).toContain('auto_upgrade: true');
-    expect(content).not.toContain('auto_upgrade: false');
+    expect(content).toContain('foo: true');
+    expect(content).not.toContain('foo: false');
   });
 
   test('set creates state dir if missing', () => {
@@ -103,11 +103,11 @@ describe('gstack-config', () => {
 
   // ─── list ─────────────────────────────────────────────────
   test('list shows all keys', () => {
-    writeFileSync(join(stateDir, 'config.yaml'), 'auto_upgrade: true\nupdate_check: false\n');
+    writeFileSync(join(stateDir, 'config.yaml'), 'foo: true\nbar: false\n');
     const { exitCode, stdout } = run(['list']);
     expect(exitCode).toBe(0);
-    expect(stdout).toContain('auto_upgrade: true');
-    expect(stdout).toContain('update_check: false');
+    expect(stdout).toContain('foo: true');
+    expect(stdout).toContain('bar: false');
   });
 
   test('list on missing file returns empty, exit 0', () => {

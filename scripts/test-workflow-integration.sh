@@ -35,11 +35,8 @@ description: test fixture
 ---
 $(if [ "$skill" = "investigate" ]; then cat <<'SKILL_BODY'
 ```bash
-_UPD=$(~/.claude/skills/gstack/bin/gstack-update-check 2>/dev/null || true)
 source <(~/.claude/skills/gstack/bin/gstack-repo-mode 2>/dev/null) || true
 ```
-
-If output shows upgrades, read `~/.claude/skills/gstack/gstack-upgrade/SKILL.md`.
 SKILL_BODY
 fi)
 EOF
@@ -146,7 +143,9 @@ test -f "$TMP_HOME/.codex/skills/goldband-review/SKILL.md"
 test -f "$TMP_HOME/.codex/skills/goldband-qa/SKILL.md"
 test -f "$TMP_HOME/.codex/skills/goldband-ship/SKILL.md"
 test ! -e "$TMP_HOME/.claude/skills/review"
+test ! -e "$TMP_HOME/.claude/skills/goldband-upgrade"
 test ! -e "$TMP_HOME/.codex/skills/workflow-review"
+test ! -e "$TMP_HOME/.codex/skills/goldband-upgrade"
 test ! -e "$TMP_HOME/.codex/skills/gstack"
 test ! -e "$TMP_HOME/.codex/skills/goldband-gstack-upgrade"
 grep -q '^name: goldband-investigate$' "$TMP_HOME/.claude/skills/goldband-investigate/SKILL.md"
@@ -158,7 +157,6 @@ grep -q '^name: goldband-investigate$' "$TMP_HOME/.codex/skills/goldband-investi
 grep -q '^name: goldband-review$' "$TMP_HOME/.codex/skills/goldband-review/SKILL.md"
 grep -q '^name: goldband-qa$' "$TMP_HOME/.codex/skills/goldband-qa/SKILL.md"
 grep -q '^name: goldband-ship$' "$TMP_HOME/.codex/skills/goldband-ship/SKILL.md"
-grep -q '~/.claude/skills/workflow/bin/gstack-update-check' "$TMP_HOME/.claude/skills/goldband-investigate/SKILL.md"
 grep -q '\$HOME/.codex/skills/workflow' "$TMP_HOME/.codex/skills/goldband-investigate/SKILL.md"
 grep -q '\.agents/skills/workflow' "$TMP_HOME/.codex/skills/goldband-investigate/SKILL.md"
 if grep -q '~/.claude/skills/gstack' "$TMP_HOME/.claude/skills/goldband-investigate/SKILL.md"; then

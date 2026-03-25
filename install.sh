@@ -519,7 +519,6 @@ goldband-setup-browser-cookies|setup-browser-cookies|workflow-setup-browser-cook
 goldband-setup-deploy|setup-deploy|workflow-setup-deploy|設定 deploy 與 production 驗證資訊。
 goldband-ship|ship|workflow-ship|發版與提 PR 流程。
 goldband-unfreeze|unfreeze|workflow-unfreeze|解除 freeze 限制。
-goldband-upgrade|workflow-upgrade|workflow-upgrade|更新內建 workflow runtime。
 EOF
 }
 
@@ -667,8 +666,8 @@ cleanup_workflow_user_entries() {
         [ -n "$codex_target" ] && codex_cleanup+=("$codex_target")
     done < <(workflow_wrapper_manifest)
 
-    claude_cleanup+=("gstack-upgrade" "goldband-gstack-upgrade" "gstack" "gstack.bak")
-    codex_cleanup+=("goldband-gstack-upgrade" "gstack")
+    claude_cleanup+=("goldband-upgrade" "gstack-upgrade" "goldband-gstack-upgrade" "gstack" "gstack.bak")
+    codex_cleanup+=("goldband-upgrade" "goldband-gstack-upgrade" "gstack")
 
     local entry
     for entry in "${claude_cleanup[@]}"; do
