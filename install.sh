@@ -26,56 +26,30 @@ CODEX_RULES_DIR="$CODEX_DIR/rules"
 CODEX_SKILLS_DIR="$HOME/.agents/skills"
 CODEX_SKILL_PROFILE_FILE="$CODEX_SKILLS_DIR/.goldband-profile"
 
-# Skill profile groups
-CORE_SKILLS=(
-    "evidence-based-coding"
-    "systematic-debugging"
-    "file-search"
-    "planning-workflow"
-    "security-checklist"
-    "performance-optimization"
-)
-
-AUTO_SKILLS=(
-    "api-design"
-    "backend-patterns"
-    "careful-mode"
-    "freeze-mode"
-    "claude-config-verification"
-    "code-review-skill"
-    "database-patterns"
-    "testing-strategy"
-)
-
-ON_DEMAND_SKILLS=(
-    "ci-cd-integration"
-    "commit-conventions"
-    "decision-log"
-    "new-skill-scaffold"
-    "skill-developer"
-    "subagent-development"
-)
-
-CODEX_CORE_SKILLS=(
-    "evidence-based-coding"
-    "systematic-debugging"
-    "file-search"
-    "planning-workflow"
-    "security-checklist"
-    "performance-optimization"
-)
-
-CODEX_PORTABLE_SKILLS=(
-    "api-design"
-    "backend-patterns"
-    "code-review-skill"
-    "database-patterns"
-    "testing-strategy"
-    "ci-cd-integration"
-    "commit-conventions"
-    "decision-log"
-    "subagent-development"
-)
+skill_catalog() {
+    cat <<'EOF'
+evidence-based-coding|core|core
+systematic-debugging|core|core
+file-search|core|core
+planning-workflow|core|core
+security-checklist|core|core
+performance-optimization|core|core
+api-design|dev|full
+backend-patterns|dev|full
+careful-mode|dev|
+freeze-mode|dev|
+claude-config-verification|dev|
+code-review-skill|dev|full
+database-patterns|dev|full
+testing-strategy|dev|full
+ci-cd-integration|full|full
+commit-conventions|full|full
+decision-log|full|full
+new-skill-scaffold|full|
+skill-developer|full|
+subagent-development|full|full
+EOF
+}
 
 # ─────────────────────────────────────
 # 工具函數
@@ -140,22 +114,47 @@ dedupe_skill_list() {
     printf '%s\n' "${output[@]}"
 }
 
-build_skill_profile_list() {
-    local profile="$1"
-    case "$profile" in
-        core)
-            printf '%s\n' "${CORE_SKILLS[@]}"
-            ;;
-        dev)
-            dedupe_skill_list "${CORE_SKILLS[@]}" "${AUTO_SKILLS[@]}"
-            ;;
-        full)
-            dedupe_skill_list "${CORE_SKILLS[@]}" "${AUTO_SKILLS[@]}" "${ON_DEMAND_SKILLS[@]}"
-            ;;
-        *)
-            return 1
-            ;;
+profile_rank() {
+    case "$1" in
+        core) echo 1 ;;
+        dev) echo 2 ;;
+        full) echo 3 ;;
+        *) echo 0 ;;
     esac
+}
+
+build_skill_catalog_list() {
+    local tool="$1"
+    local profile="$2"
+    local requested_rank
+    requested_rank="$(profile_rank "$profile")"
+    [ "$requested_rank" -gt 0 ] || return 1
+
+    local field_index
+    case "$tool" in
+        claude) field_index=2 ;;
+        codex) field_index=3 ;;
+        *) return 1 ;;
+    esac
+
+    skill_catalog | awk -F'|' -v field="$field_index" -v requested="$requested_rank" '
+        function rank(value) {
+            if (value == "core") return 1;
+            if (value == "dev") return 2;
+            if (value == "full") return 3;
+            return 0;
+        }
+        {
+            tier = $field;
+            if (rank(tier) > 0 && rank(tier) <= requested) {
+                print $1;
+            }
+        }
+    '
+}
+
+build_skill_profile_list() {
+    build_skill_catalog_list "claude" "$1"
 }
 
 is_repo_skill_link_under() {
@@ -257,18 +256,7 @@ install_skills_profile() {
 }
 
 build_codex_skill_profile_list() {
-    local profile="$1"
-    case "$profile" in
-        core)
-            printf '%s\n' "${CODEX_CORE_SKILLS[@]}"
-            ;;
-        full)
-            dedupe_skill_list "${CODEX_CORE_SKILLS[@]}" "${CODEX_PORTABLE_SKILLS[@]}"
-            ;;
-        *)
-            return 1
-            ;;
-    esac
+    build_skill_catalog_list "codex" "$1"
 }
 
 prepare_codex_skills_directory() {
