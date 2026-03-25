@@ -44,27 +44,27 @@ Also report Codex profile metadata when `~/.agents/skills/.goldband-profile` exi
 - active profile (`core` / `full`)
 - installed skill count
 
-### 2.5. Optional gstack Checks
+### 2.5. Optional Workflow Runtime Checks
 
-If gstack is installed, also check:
+If the workflow runtime is installed, also check:
 
-- `~/.claude/skills/gstack`
+- `~/.claude/skills/workflow`
   - `VERSION`
   - `setup`
   - `careful/SKILL.md`
   - `freeze/SKILL.md`
   - `review/SKILL.md`
   - `qa/SKILL.md`
-- `~/.codex/skills/gstack`
+- `~/.codex/skills/workflow`
   - `VERSION`
-- generated Codex gstack skills under `~/.codex/skills/` (`gstack-*`)
+- generated Codex workflow wrappers under `~/.codex/skills/` (`goldband-*`)
 
-If gstack is not installed, report INFO and continue.
+If the workflow runtime is not installed, report INFO and continue.
 
-If both goldband `careful-mode` / `freeze-mode` and gstack safety skills are available,
+If both goldband `careful-mode` / `freeze-mode` and workflow safety skills are available,
 report a WARNING with integration guidance:
 - use goldband for hard global guardrails
-- use gstack for workflow-local guardrails
+- use workflow skills for task-local guardrails
 
 ### 3. Hook Checks
 
@@ -146,7 +146,7 @@ Codex Install:
   [OK]      codex skills profile: full (15 個)
   ...
 
-gstack:
+workflow:
   [OK]      Claude install — 0.x.y
   [OK]      careful/SKILL.md
   [OK]      freeze/SKILL.md

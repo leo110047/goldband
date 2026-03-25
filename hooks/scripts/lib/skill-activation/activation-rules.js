@@ -152,58 +152,58 @@ const RULES = [
 
 const GSTACK_RULES = [
   {
-    skill: 'gstack/investigate',
+    skill: 'goldband-investigate',
     priority: 'high',
-    hint: 'Use /investigate from gstack for workflow-driven root-cause debugging and scoped edit boundaries.',
+    hint: 'Use /goldband-investigate for workflow-driven root-cause debugging and scoped edit boundaries.',
     keywords: ['investigate', 'root cause', 'trace data flow', 'debug workflow'],
     patterns: [/\b(debug|bug|error|crash|500|failing test)\b/i]
   },
   {
-    skill: 'gstack/review',
+    skill: 'goldband-review',
     priority: 'high',
-    hint: 'Use /review from gstack for a staff-engineer style PR review pass.',
+    hint: 'Use /goldband-review for a staff-engineer style PR review pass.',
     keywords: ['review pr', 'review branch', 'audit this diff', 'staff engineer review'],
     patterns: [/\b(review|pr|pull request)\b/i]
   },
   {
-    skill: 'gstack/qa',
+    skill: 'goldband-qa',
     priority: 'high',
-    hint: 'Use /qa from gstack for browser-based UI, staging, and E2E verification.',
+    hint: 'Use /goldband-qa for browser-based UI, staging, and E2E verification.',
     keywords: ['qa', 'browser', 'staging url', 'ui bug', 'e2e', 'playwright'],
     patterns: [/\b(browser|ui|e2e|staging|qa)\b/i]
   },
   {
-    skill: 'gstack/cso',
+    skill: 'goldband-cso',
     priority: 'high',
-    hint: 'Use /cso from gstack for deeper OWASP + STRIDE security review.',
+    hint: 'Use /cso for deeper OWASP + STRIDE security review.',
     keywords: ['cso', 'owasp', 'stride', 'security audit', 'threat model'],
     patterns: [/\b(security|owasp|stride|threat model)\b/i]
   },
   {
-    skill: 'gstack/ship',
+    skill: 'goldband-ship',
     priority: 'medium',
-    hint: 'Use /ship from gstack for release workflow, PR creation, and pre-landing checks.',
+    hint: 'Use /goldband-ship for release workflow, PR creation, and pre-landing checks.',
     keywords: ['ship', 'release', 'open pr', 'deploy prep'],
     patterns: [/\b(ship|release|open pr|deployment)\b/i]
   },
   {
-    skill: 'gstack/plan-eng-review',
+    skill: 'goldband-plan-eng-review',
     priority: 'medium',
-    hint: 'Use /plan-eng-review from gstack for architecture and implementation plan review.',
+    hint: 'Use /goldband-plan-eng-review for architecture and implementation plan review.',
     keywords: ['eng review', 'architecture review', 'implementation review'],
     patterns: [/\b(plan|architecture|design)\b.{0,24}\b(review|feature|implementation)\b/i]
   },
   {
-    skill: 'gstack/guard',
+    skill: 'goldband-guard',
     priority: 'medium',
-    hint: 'Use /guard from gstack for workflow-local safety rails (careful + scoped freeze).',
+    hint: 'Use /goldband-guard for workflow-local safety rails (careful + scoped freeze).',
     keywords: ['guard mode', 'safety net', 'be careful', 'guardrails'],
     patterns: [/\b(be careful|guard|safety net|guardrails)\b/i]
   },
   {
-    skill: 'gstack/freeze',
+    skill: 'goldband-freeze',
     priority: 'medium',
-    hint: 'Use /freeze from gstack when you want to restrict edits to one directory, not a fully read-only session.',
+    hint: 'Use /goldband-freeze when you want to restrict edits to one directory, not a fully read-only session.',
     keywords: ['restrict edits', 'only edit this folder', 'scope edits', 'lock edits to directory'],
     patterns: [/\b(restrict|scope|limit|lock)\b.{0,24}\b(edit|edits|changes)\b/i]
   }
@@ -221,12 +221,12 @@ function findUpward(startDir, relativePath) {
   return null;
 }
 
-function isGstackAvailable() {
+function isWorkflowPackAvailable() {
   const cwd = process.cwd();
   const home = process.env.HOME || '';
   return Boolean(
-    findUpward(cwd, path.join('.claude', 'skills', 'gstack', 'SKILL.md'))
-    || (home && fs.existsSync(path.join(home, '.claude', 'skills', 'gstack', 'SKILL.md')))
+    findUpward(cwd, path.join('.claude', 'skills', 'workflow', 'SKILL.md'))
+    || (home && fs.existsSync(path.join(home, '.claude', 'skills', 'workflow', 'SKILL.md')))
   );
 }
 
@@ -279,6 +279,11 @@ function compareMatches(left, right) {
 function applyConflictRules(matches, normalizedPrompt) {
   const names = new Set(matches.map(match => match.skill));
   const hasBugSignal = names.has('systematic-debugging');
+  const hasIntegratedInvestigate = names.has('goldband-investigate');
+
+  if (hasIntegratedInvestigate && hasBugSignal) {
+    return matches.filter(match => match.skill !== 'systematic-debugging');
+  }
 
   if (hasBugSignal) {
     return matches.filter(match => match.skill !== 'code-review-skill');
@@ -305,7 +310,7 @@ function matchPrompt(prompt) {
   const normalizedPrompt = normalizePrompt(originalPrompt);
   if (!normalizedPrompt) return [];
 
-  const activeRules = isGstackAvailable()
+  const activeRules = isWorkflowPackAvailable()
     ? [...RULES, ...GSTACK_RULES]
     : RULES;
   const matches = [];

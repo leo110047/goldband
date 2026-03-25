@@ -256,9 +256,9 @@ function readProfileFile(profilePath) {
   return fields;
 }
 
-function checkGstackInstall(homeDir) {
-  const claudeDir = path.join(homeDir, '.claude', 'skills', 'gstack');
-  const codexDir = path.join(homeDir, '.codex', 'skills', 'gstack');
+function checkWorkflowInstall(homeDir) {
+  const claudeDir = path.join(homeDir, '.claude', 'skills', 'workflow');
+  const codexDir = path.join(homeDir, '.codex', 'skills', 'workflow');
   const result = {
     claudeInstalled: false,
     claudeVersion: null,
@@ -299,10 +299,10 @@ function checkGstackInstall(homeDir) {
 
     const codexSkillsRoot = path.join(homeDir, '.codex', 'skills');
     const generatedSkills = fs.existsSync(codexSkillsRoot)
-      ? fs.readdirSync(codexSkillsRoot).filter(name => /^gstack-/.test(name))
+      ? fs.readdirSync(codexSkillsRoot).filter(name => /^goldband-/.test(name))
       : [];
     result.codexChecks.push({
-      file: '~/.codex/skills/gstack-*',
+      file: '~/.codex/skills/goldband-*',
       ok: generatedSkills.length > 0,
       detail: `${generatedSkills.length} generated skills`
     });
@@ -316,7 +316,7 @@ function checkGstackInstall(homeDir) {
       .filter(Boolean);
     if (installedSkills.includes('careful-mode') || installedSkills.includes('freeze-mode')) {
       result.warnings.push(
-        'goldband careful-mode/freeze-mode and gstack safety skills are both available; use goldband for hard global guardrails, gstack for workflow-local guardrails.'
+        'goldband careful-mode/freeze-mode and workflow safety skills are both available; use goldband for hard global guardrails, workflow skills for task-local guardrails.'
       );
     }
   }
@@ -436,7 +436,7 @@ function buildSummary(rootDir, args) {
   const replay = args.routerReplay ? runRouterReplay(rootDir) : null;
   const codexRuleChecks = [];
   const additionalWarnings = [];
-  const gstackInstall = checkGstackInstall(homeDir);
+  const workflowInstall = checkWorkflowInstall(homeDir);
 
   if (isCodexAvailable()) {
     codexRuleChecks.push(
@@ -477,7 +477,7 @@ function buildSummary(rootDir, args) {
   const warnings = [
     ...frontmatterChecks.flatMap(item => item.warnings.map(warning => `${item.file}: ${warning}`)),
     ...additionalWarnings,
-    ...gstackInstall.warnings
+    ...workflowInstall.warnings
   ];
 
   return {
@@ -487,7 +487,7 @@ function buildSummary(rootDir, args) {
     requiredFileChecks,
     hookCheck,
     codexRuleChecks,
-    gstackInstall,
+    workflowInstall,
     skillCount: skillFiles.length,
     warnings,
     replay,
@@ -505,8 +505,8 @@ function printHuman(summary) {
     const passedCodexChecks = summary.codexRuleChecks.filter(item => item.ok).length;
     console.log(`Codex:   ${passedCodexChecks}/${summary.codexRuleChecks.length} execpolicy checks passed`);
   }
-  if (summary.gstackInstall.claudeInstalled || summary.gstackInstall.codexInstalled) {
-    console.log(`gstack:  Claude=${summary.gstackInstall.claudeInstalled ? 'yes' : 'no'} Codex=${summary.gstackInstall.codexInstalled ? 'yes' : 'no'}`);
+  if (summary.workflowInstall.claudeInstalled || summary.workflowInstall.codexInstalled) {
+    console.log(`workflow:  Claude=${summary.workflowInstall.claudeInstalled ? 'yes' : 'no'} Codex=${summary.workflowInstall.codexInstalled ? 'yes' : 'no'}`);
   }
   console.log('');
   console.log('JSON:');
@@ -534,21 +534,21 @@ function printHuman(summary) {
     }
   }
 
-  if (summary.gstackInstall.claudeInstalled || summary.gstackInstall.codexInstalled) {
+  if (summary.workflowInstall.claudeInstalled || summary.workflowInstall.codexInstalled) {
     console.log('');
-    console.log('gstack:');
-    if (summary.gstackInstall.claudeInstalled) {
-      console.log(`  [OK] Claude install — ${summary.gstackInstall.claudeVersion || 'unknown'}`);
-      for (const item of summary.gstackInstall.claudeChecks) {
+    console.log('workflow:');
+    if (summary.workflowInstall.claudeInstalled) {
+      console.log(`  [OK] Claude install — ${summary.workflowInstall.claudeVersion || 'unknown'}`);
+      for (const item of summary.workflowInstall.claudeChecks) {
         console.log(`  [${item.ok ? 'OK' : 'FAIL'}] ${item.file}`);
       }
     } else {
       console.log('  [INFO] Claude install not present');
     }
 
-    if (summary.gstackInstall.codexInstalled) {
-      console.log(`  [OK] Codex runtime — ${summary.gstackInstall.codexVersion || 'unknown'}`);
-      for (const item of summary.gstackInstall.codexChecks) {
+    if (summary.workflowInstall.codexInstalled) {
+      console.log(`  [OK] Codex runtime — ${summary.workflowInstall.codexVersion || 'unknown'}`);
+      for (const item of summary.workflowInstall.codexChecks) {
         const suffix = item.detail ? ` — ${item.detail}` : '';
         console.log(`  [${item.ok ? 'OK' : 'FAIL'}] ${item.file}${suffix}`);
       }

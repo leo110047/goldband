@@ -28,23 +28,28 @@
 git clone https://github.com/leo110047/goldband.git
 cd goldband
 
-# 2. 安裝 Claude Code（預設 copy 模式，路徑移動不影響）
-./install.sh            # pack-core（最小 token，推薦）
-./install.sh pack-quality   # core + commands/contexts
-./install.sh all-full       # 全量
+# 2. 安裝 Claude Code
+./install.sh            # pack-core：最小安裝，只有核心 guardrails
+./install.sh pack-quality   # 日常開發推薦
+./install.sh all-full       # Claude 端全量
 
 # 3. 安裝 Codex（可選）
 ./install.sh codex-full
 
-# 4. 安裝內建 gstack workflow pack（可選）
-./install.sh gstack
-./install.sh gstack-codex
-./install.sh all-with-gstack
+# 4. 安裝內建 workflow pack（可選）
+./install.sh workflow
+./install.sh workflow-codex
+./install.sh all-with-workflow
 
 # 5. 重啟 Claude Code / Codex，完成
 ```
 
-**升級**：重新執行相同指令即可覆蓋更新。
+**升級**：重新執行相同指令即可覆蓋更新。  
+**推薦起手式**：
+
+- 只想先把底層 guardrails 裝好：`./install.sh pack-quality`
+- Claude + Codex 都要：`./install.sh all-tools`
+- Claude + Codex + 內建 workflow 都要：`./install.sh all-with-workflow`
 
 > **Note**: hooks 安裝需要 `jq`。macOS: `brew install jq`
 >
@@ -71,6 +76,44 @@ full  →  dev + ci-cd-integration、commit-conventions、decision-log、
 ./install.sh uninstall     # 移除
 ```
 
+## 推薦用法
+
+把 `goldband` 當成唯一入口就好：
+
+- `goldband` 負責全域 guardrails、Claude hooks、Codex 規則、共用技能
+- 內建 workflow pack 負責高階流程，例如 `/goldband-investigate`、`/goldband-review`、`/goldband-qa`、`/goldband-ship`
+
+實際分工建議：
+
+- 一般功能開發：`/plan` → 實作 → `/verify`
+- PR / diff 審查：`/code-review`，需要更完整流程時用 `/goldband-review`
+- Bug / error / failing test：有 workflow pack 時優先 `/goldband-investigate`
+- UI / 瀏覽器 / E2E：`/goldband-qa` 或 `/goldband-browse`
+- 安全審查：`/goldband-cso`
+- 發版前收尾：`/goldband-ship`
+
+## 安全模式怎麼選
+
+- `careful-mode`
+  - 全域硬保護
+  - 用在 prod、shared env、會動到刪除或破壞性指令時
+- `freeze-mode`
+  - 全域唯讀調查
+  - 用在 incident triage、只想查不想改時
+- `/careful`
+  - workflow-local warning
+  - 用在一般任務裡想多一層提醒
+- `/freeze`
+  - 限制 edits 到指定範圍
+  - 用在 debug 某個目錄或模組時
+- `/goldband-guard`
+  - task-local safety bundle
+
+一句話：
+
+- 要硬保護，用 `careful-mode` / `freeze-mode`
+- 要 workflow，優先用 `/goldband-investigate`、`/goldband-review`、`/goldband-qa`、`/goldband-ship`
+
 ---
 
 ## 快速參考卡
@@ -79,7 +122,7 @@ full  →  dev + ci-cd-integration、commit-conventions、decision-log、
 
 | Skill | 觸發情境 | 優先級 |
 |-------|---------|--------|
-| `systematic-debugging` | bug、error、test fail、壞了 | CRITICAL |
+| `systematic-debugging` | bug、error、test fail、壞了；作為共用 debug doctrine | CRITICAL |
 | `evidence-based-coding` | 全域強制，所有主張必須有證據 + Iron Law 完成驗證 | CRITICAL |
 | `security-checklist` | 安全檢查、OWASP、漏洞掃描 | HIGH |
 | `performance-optimization` | 慢、優化、瓶頸、延遲 | HIGH |
@@ -127,13 +170,23 @@ full  →  dev + ci-cd-integration、commit-conventions、decision-log、
                 ↓
 跨 session ─→ /checkpoint pause → 下次 /checkpoint resume
                 ↓
-遇到 bug ──→ 直接說「這個 test fail 了」或 /systematic-debugging
+遇到 bug ──→ 有 workflow pack 時優先 /goldband-investigate，否則用 /systematic-debugging
                 ↓
 寫完 ──────→ /code-review（加 --spec 做 Spec Compliance Review）
                 ↓
 修完問題 ──→ /verify pre-pr（或 --goal "目標" 做三層驗證）
                 ↓
 全 PASS ───→ commit & push
+```
+
+如果你只想記一個最小工作流：
+
+```text
+做功能：/plan → 實作 → /verify
+查問題：/goldband-investigate
+審 PR：/goldband-review
+碰 prod：careful-mode
+只讀調查：freeze-mode
 ```
 
 ---
@@ -162,29 +215,44 @@ full  →  dev + ci-cd-integration、commit-conventions、decision-log、
 ./install.sh codex-core   # 核心設定 + core skills
 ./install.sh codex-full   # 完整設定 + 15 個 portable skills
 ./install.sh all-tools    # Claude Code + Codex 一次全裝
-./install.sh gstack
-./install.sh gstack-codex
-./install.sh all-with-gstack
+./install.sh workflow
+./install.sh workflow-codex
+./install.sh all-with-workflow
 ```
 
 Claude runtime 綁定的 skills（`careful-mode`、`freeze-mode` 等）不安裝到 Codex 端。
 
-### 與 gstack 整合
+### 內建 Workflow Pack
 
-goldband 現在內建 vendor 版 gstack 於 `vendor/gstack/`，預設安裝時不再依賴外部 `/Users/.../gstack` repo。
-若你要測試自己的 gstack fork，可用 `GSTACK_REPO_DIR=/path/to/gstack` 覆寫來源。
+goldband 目前內建一套 workflow runtime，預設會直接安裝，不需要額外保留外部 repo。
+若你要測試另一份 runtime checkout，可用 `WORKFLOW_REPO_DIR=/path/to/runtime` 覆寫來源。
 
-goldband 管全域 guardrails / host adapter，gstack 管高階 workflow skills。
+goldband 管全域 guardrails / host adapter，內建 workflow pack 管高階流程技能。
 
 - goldband `careful-mode`: 全域硬阻擋 destructive Bash
 - goldband `freeze-mode`: inspection-only / read-only session
-- gstack `/careful`: workflow-local warning layer
-- gstack `/freeze`: 限制 Edit/Write 到指定目錄
-- gstack `/guard`: `/careful` + `/freeze`
+- goldband `systematic-debugging`: root-cause-first 的 debug doctrine
+- `/goldband-careful`: workflow-local warning layer
+- `/goldband-freeze`: 限制 Edit/Write 到指定目錄
+- `/goldband-guard`: `/goldband-careful` + `/goldband-freeze`
+- `/goldband-investigate`: 主要 debug workflow 入口，承接 `systematic-debugging` 的方法論
 
 建議：
 - prod、shared env、唯讀調查 → 用 goldband 模式
-- scoped edit、review / QA / ship workflow → 用 gstack skills
+- scoped edit、review / QA / ship workflow → 用 `goldband-*` workflow skills
+- 遇到 bug / crash / failing test → 有 workflow pack 時優先 `/goldband-investigate`；沒有時回到 `systematic-debugging`
+
+常見安裝組合：
+
+- 只裝 goldband：`./install.sh all-tools`
+- goldband + 內建 workflow：`./install.sh all-with-workflow`
+- 只補裝 Claude 端 workflow：`./install.sh workflow`
+- 只補裝 Codex 端 workflow：`./install.sh workflow-codex`
+
+安裝後的推薦入口：
+
+- Claude Code：`/goldband-investigate`、`/goldband-review`、`/goldband-qa`、`/goldband-ship`、`/goldband-browse`
+- Codex：`goldband-investigate`、`goldband-review`、`goldband-qa`、`goldband-ship`
 
 ---
 

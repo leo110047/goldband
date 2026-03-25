@@ -18,33 +18,33 @@
  *         Also logs to stderr (visible in terminal).
  */
 
-const fs = require('fs');
+const fs = require("fs");
 const {
   getPersistentDataPath,
   writeFile,
   log,
-  output
-} = require('../lib/utils');
+  output,
+} = require("../lib/utils");
 
 const DEBOUNCE_INTERVAL = 5;
 const MAX_STDIN = 1024 * 1024;
 
 function parseThreshold(envVar, fallback) {
   const raw = parseInt(process.env[envVar] || String(fallback), 10);
-  return (Number.isFinite(raw) && raw > 0 && raw <= 10000) ? raw : fallback;
+  return Number.isFinite(raw) && raw > 0 && raw <= 10000 ? raw : fallback;
 }
 
 // Read and drain stdin (required for PostToolUse hooks)
-let stdinData = '';
-process.stdin.setEncoding('utf8');
+let stdinData = "";
+process.stdin.setEncoding("utf8");
 
-process.stdin.on('data', chunk => {
+process.stdin.on("data", (chunk) => {
   if (stdinData.length < MAX_STDIN) {
     stdinData += chunk;
   }
 });
 
-process.stdin.on('end', () => {
+process.stdin.on("end", () => {
   try {
     run();
   } catch {
@@ -55,23 +55,31 @@ process.stdin.on('end', () => {
 });
 
 function run() {
-  const warnThreshold = parseThreshold('CONTEXT_WARN_THRESHOLD', 60);
-  const critThreshold = parseThreshold('CONTEXT_CRIT_THRESHOLD', 85);
+  const warnThreshold = parseThreshold("CONTEXT_WARN_THRESHOLD", 60);
+  const critThreshold = parseThreshold("CONTEXT_CRIT_THRESHOLD", 85);
 
-  const sessionId = process.env.CLAUDE_SESSION_ID || 'default';
-  const safeSessionId = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '_');
-  const stateFile = getPersistentDataPath('hook-router', `context-monitor-${safeSessionId}.json`);
+  const sessionId = process.env.CLAUDE_SESSION_ID || "default";
+  const safeSessionId = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, "_");
+  const stateFile = getPersistentDataPath(
+    "hook-router",
+    `context-monitor-${safeSessionId}.json`,
+  );
 
   // Read or initialize state
-  let state = { count: 0, lastSeverity: 'none', lastNotifyCount: 0 };
+  let state = { count: 0, lastSeverity: "none", lastNotifyCount: 0 };
   try {
-    const fd = fs.openSync(stateFile, 'a+');
+    const fd = fs.openSync(stateFile, "a+");
     try {
       const buf = Buffer.alloc(512);
       const bytesRead = fs.readSync(fd, buf, 0, 512, 0);
       if (bytesRead > 0) {
-        const parsed = JSON.parse(buf.toString('utf8', 0, bytesRead).trim());
-        if (parsed && typeof parsed.count === 'number' && parsed.count > 0 && parsed.count <= 1000000) {
+        const parsed = JSON.parse(buf.toString("utf8", 0, bytesRead).trim());
+        if (
+          parsed &&
+          typeof parsed.count === "number" &&
+          parsed.count > 0 &&
+          parsed.count <= 1000000
+        ) {
           state = { ...state, ...parsed };
         }
       }
@@ -86,16 +94,18 @@ function run() {
   const count = state.count + 1;
 
   // Determine current severity
-  let severity = 'none';
+  let severity = "none";
   if (count >= critThreshold) {
-    severity = 'CRITICAL';
+    severity = "CRITICAL";
   } else if (count >= warnThreshold) {
-    severity = 'WARNING';
+    severity = "WARNING";
   }
 
   // Decide whether to emit a message
-  const severityEscalated = severity !== 'none' && severity !== state.lastSeverity;
-  const passedDebounce = severity !== 'none' && (count - state.lastNotifyCount) >= DEBOUNCE_INTERVAL;
+  const severityEscalated =
+    severity !== "none" && severity !== state.lastSeverity;
+  const passedDebounce =
+    severity !== "none" && count - state.lastNotifyCount >= DEBOUNCE_INTERVAL;
   const shouldNotify = severityEscalated || passedDebounce;
 
   let lastNotifyCount = state.lastNotifyCount;
@@ -103,7 +113,7 @@ function run() {
 
   if (shouldNotify) {
     lastNotifyCount = count;
-    if (severity === 'CRITICAL') {
+    if (severity === "CRITICAL") {
       message = `[ContextMonitor] CRITICAL: ${count} tool calls — context is likely saturated. Run /compact now to free context.`;
     } else {
       message = `[ContextMonitor] WARNING: ${count} tool calls — consider /compact if transitioning phases.`;
@@ -111,20 +121,22 @@ function run() {
   }
 
   // Persist state
-  const newState = JSON.stringify({ count, lastSeverity: severity, lastNotifyCount });
+  const newState = JSON.stringify({
+    count,
+    lastSeverity: severity,
+    lastNotifyCount,
+  });
   try {
     writeFile(stateFile, newState);
   } catch {
     // Silent fail
   }
 
-  // Output: stderr for terminal visibility + stdout JSON for Claude
+  // Output: stderr for terminal visibility only — do NOT inject into Claude context
   if (message) {
     log(message);
-    output({ additionalContext: message });
-  } else {
-    process.stdout.write(stdinData);
   }
+  process.stdout.write(stdinData);
 
   process.exit(0);
 }

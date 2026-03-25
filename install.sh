@@ -204,41 +204,7 @@ prepare_skills_directory() {
 }
 
 cleanup_managed_skill_links() {
-    if [ ! -d "$SKILLS_DIR" ]; then
-        return
-    fi
-
-    # Use profile file as source of truth (works for both copy and symlink installs)
-    if [ -f "$SKILL_PROFILE_FILE" ]; then
-        local skills_line
-        skills_line=$(grep '^skills=' "$SKILL_PROFILE_FILE" 2>/dev/null || true)
-        local skills_csv="${skills_line#skills=}"
-        local skill
-        IFS=',' read -r -a skill_array <<< "$skills_csv"
-        for skill in "${skill_array[@]}"; do
-            [ -z "$skill" ] && continue
-            rm -rf "${SKILLS_DIR:?}/$skill"
-        done
-        rm -rf "$SKILLS_DIR/README.md" "$SKILLS_DIR/skill-rules.json"
-    else
-        # Fallback: legacy symlink detection
-        local entry
-        for entry in "$SKILLS_DIR"/* "$SKILLS_DIR"/.*; do
-            if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
-                continue
-            fi
-            local name
-            name=$(basename "$entry")
-            if [ "$name" = "." ] || [ "$name" = ".." ] || [ "$name" = ".goldband-profile" ]; then
-                continue
-            fi
-            if is_repo_skill_link "$entry"; then
-                rm "$entry"
-            fi
-        done
-    fi
-
-    rm -f "$SKILL_PROFILE_FILE"
+    cleanup_managed_profile_entries "$SKILLS_DIR" "$SKILL_PROFILE_FILE" "README.md" "skill-rules.json"
 }
 
 link_skill_entry() {
@@ -277,29 +243,17 @@ install_skills_profile() {
     local selected_skills=("$@")
 
     prepare_skills_directory
-    cleanup_managed_skill_links
-
-    local installed=0
-    local skill
-    for skill in "${selected_skills[@]}"; do
-        local src="$REPO_DIR/skills/global/$skill"
-        local dest="$SKILLS_DIR/$skill"
-
-        if [ ! -d "$src" ]; then
-            echo -e "  ${YELLOW}[跳過] skill 不存在: $skill${NC}"
-            continue
-        fi
-
-        link_skill_entry "$src" "$dest"
-        installed=$((installed + 1))
-    done
-
-    link_skill_entry "$REPO_DIR/skills/global/README.md" "$SKILLS_DIR/README.md"
-    link_skill_entry "$REPO_DIR/skills/global/skill-rules.json" "$SKILLS_DIR/skill-rules.json"
-
-    write_skill_profile_file "$profile" "${selected_skills[@]}"
-
-    echo -e "  ${GREEN}[安裝] 全域 Skills Profile: $profile (${installed} 個)${NC}"
+    install_managed_skill_profile \
+        "$SKILLS_DIR" \
+        "$SKILL_PROFILE_FILE" \
+        "$profile" \
+        "全域 Skills Profile" \
+        "skill" \
+        "write_skill_profile_file" \
+        "$REPO_DIR/skills/global/README.md:README.md" \
+        "$REPO_DIR/skills/global/skill-rules.json:skill-rules.json" \
+        -- \
+        "${selected_skills[@]}"
 }
 
 build_codex_skill_profile_list() {
@@ -328,40 +282,7 @@ prepare_codex_skills_directory() {
 }
 
 cleanup_managed_codex_skill_links() {
-    if [ ! -d "$CODEX_SKILLS_DIR" ]; then
-        return
-    fi
-
-    # Use profile file as source of truth (works for both copy and symlink installs)
-    if [ -f "$CODEX_SKILL_PROFILE_FILE" ]; then
-        local skills_line
-        skills_line=$(grep '^skills=' "$CODEX_SKILL_PROFILE_FILE" 2>/dev/null || true)
-        local skills_csv="${skills_line#skills=}"
-        local skill
-        IFS=',' read -r -a skill_array <<< "$skills_csv"
-        for skill in "${skill_array[@]}"; do
-            [ -z "$skill" ] && continue
-            rm -rf "${CODEX_SKILLS_DIR:?}/$skill"
-        done
-    else
-        # Fallback: legacy symlink detection
-        local entry
-        for entry in "$CODEX_SKILLS_DIR"/* "$CODEX_SKILLS_DIR"/.*; do
-            if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
-                continue
-            fi
-            local name
-            name=$(basename "$entry")
-            if [ "$name" = "." ] || [ "$name" = ".." ] || [ "$name" = ".goldband-profile" ]; then
-                continue
-            fi
-            if is_repo_skill_link "$entry"; then
-                rm "$entry"
-            fi
-        done
-    fi
-
-    rm -f "$CODEX_SKILL_PROFILE_FILE"
+    cleanup_managed_profile_entries "$CODEX_SKILLS_DIR" "$CODEX_SKILL_PROFILE_FILE"
 }
 
 write_codex_skill_profile_file() {
@@ -383,16 +304,92 @@ install_codex_skills_profile() {
     local selected_skills=("$@")
 
     prepare_codex_skills_directory
-    cleanup_managed_codex_skill_links
+    install_managed_skill_profile \
+        "$CODEX_SKILLS_DIR" \
+        "$CODEX_SKILL_PROFILE_FILE" \
+        "$profile" \
+        "Codex Skills Profile" \
+        "Codex skill" \
+        "write_codex_skill_profile_file" \
+        -- \
+        "${selected_skills[@]}"
+}
+
+cleanup_managed_profile_entries() {
+    local target_dir="$1"
+    local profile_file="$2"
+    shift 2
+    local extra_entries=("$@")
+
+    if [ ! -d "$target_dir" ]; then
+        return
+    fi
+
+    if [ -f "$profile_file" ]; then
+        local skills_line
+        skills_line=$(grep '^skills=' "$profile_file" 2>/dev/null || true)
+        local skills_csv="${skills_line#skills=}"
+        local skill
+        IFS=',' read -r -a skill_array <<< "$skills_csv"
+        for skill in "${skill_array[@]}"; do
+            [ -z "$skill" ] && continue
+            rm -rf "${target_dir:?}/$skill"
+        done
+        local entry
+        for entry in "${extra_entries[@]}"; do
+            [ -z "$entry" ] && continue
+            rm -rf "${target_dir:?}/$entry"
+        done
+    else
+        local entry
+        for entry in "$target_dir"/* "$target_dir"/.*; do
+            if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
+                continue
+            fi
+            local name
+            name=$(basename "$entry")
+            if [ "$name" = "." ] || [ "$name" = ".." ] || [ "$name" = ".goldband-profile" ]; then
+                continue
+            fi
+            if is_repo_skill_link "$entry"; then
+                rm "$entry"
+            fi
+        done
+    fi
+
+    rm -f "$profile_file"
+}
+
+install_managed_skill_profile() {
+    local target_dir="$1"
+    local profile_file="$2"
+    local profile="$3"
+    local label="$4"
+    local missing_label="$5"
+    local profile_writer="$6"
+    shift 6
+
+    local extra_links=()
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "--" ]; then
+            shift
+            break
+        fi
+        extra_links+=("$1")
+        shift
+    done
+    local selected_skills=("$@")
+
+    cleanup_managed_profile_entries "$target_dir" "$profile_file"
 
     local installed=0
     local skill
     for skill in "${selected_skills[@]}"; do
         local src="$REPO_DIR/skills/global/$skill"
-        local dest="$CODEX_SKILLS_DIR/$skill"
+        local dest="$target_dir/$skill"
 
         if [ ! -d "$src" ]; then
-            echo -e "  ${YELLOW}[跳過] Codex skill 不存在: $skill${NC}"
+            echo -e "  ${YELLOW}[跳過] ${missing_label} 不存在: $skill${NC}"
             continue
         fi
 
@@ -400,24 +397,31 @@ install_codex_skills_profile() {
         installed=$((installed + 1))
     done
 
-    write_codex_skill_profile_file "$profile" "${selected_skills[@]}"
+    local link_spec
+    for link_spec in "${extra_links[@]}"; do
+        local extra_src="${link_spec%%:*}"
+        local extra_dest_name="${link_spec##*:}"
+        link_skill_entry "$extra_src" "$target_dir/$extra_dest_name"
+    done
 
-    echo -e "  ${GREEN}[安裝] Codex Skills Profile: $profile (${installed} 個)${NC}"
+    "$profile_writer" "$profile" "${selected_skills[@]}"
+
+    echo -e "  ${GREEN}[安裝] ${label}: $profile (${installed} 個)${NC}"
 }
 
-resolve_gstack_repo_dir() {
+resolve_workflow_repo_dir() {
     local candidates=()
 
-    if [ -n "${GSTACK_REPO_DIR:-}" ]; then
-        candidates+=("$GSTACK_REPO_DIR")
+    if [ -n "${WORKFLOW_REPO_DIR:-}" ]; then
+        candidates+=("$WORKFLOW_REPO_DIR")
     fi
 
     candidates+=(
-        "$REPO_DIR/vendor/gstack"
-        "$HOME/.claude/skills/gstack"
-        "$HOME/.codex/skills/gstack"
-        "$HOME/gstack"
-        "$REPO_DIR/../gstack"
+        "$REPO_DIR/vendor/workflow"
+        "$HOME/.claude/skills/workflow"
+        "$HOME/.codex/skills/workflow"
+        "$HOME/workflow"
+        "$REPO_DIR/../workflow"
     )
 
     local candidate
@@ -434,7 +438,7 @@ resolve_gstack_repo_dir() {
     return 1
 }
 
-read_gstack_version() {
+read_workflow_version() {
     local repo_dir="$1"
     if [ -f "$repo_dir/VERSION" ]; then
         tr -d '\n' < "$repo_dir/VERSION"
@@ -443,30 +447,261 @@ read_gstack_version() {
     return 1
 }
 
-install_gstack_host() {
+write_goldband_wrapper_skill() {
+    local source_skill="$1"
+    local dest_dir="$2"
+    local source_name="$3"
+    local wrapper_name="$4"
+
+    [ -f "$source_skill" ] || return 1
+
+    rm -rf "$dest_dir"
+    mkdir -p "$dest_dir"
+
+    awk \
+        -v source_name="$source_name" \
+        -v wrapper_name="$wrapper_name" \
+        '
+        BEGIN {
+            name_done = 0
+            trigger_done = 0
+        }
+        !name_done && $0 ~ /^name: / {
+            print "name: " wrapper_name
+            name_done = 1
+            next
+        }
+        !trigger_done {
+            old_trigger = "/" source_name "."
+            new_trigger = "/" wrapper_name "."
+            if (index($0, old_trigger)) {
+                sub(old_trigger, new_trigger)
+                trigger_done = 1
+            }
+        }
+        { print }
+        ' "$source_skill" \
+        | sed 's|\${CLAUDE_SKILL_DIR}/\.\./|\${CLAUDE_SKILL_DIR}/../workflow/|g' \
+        > "$dest_dir/SKILL.md"
+}
+
+workflow_wrapper_manifest() {
+    cat <<'EOF'
+goldband-autoplan|autoplan|workflow-autoplan|自動跑完整計畫審查流程。
+goldband-benchmark|benchmark|workflow-benchmark|效能基準與回歸檢查。
+goldband-browse|browse|workflow-browse|真實 Chromium 瀏覽器工具。
+goldband-canary|canary|workflow-canary|發版後觀察與快速驗證。
+goldband-careful|careful|workflow-careful|高風險操作前提醒確認。
+goldband-codex|codex||用 Codex 做第二意見 review。
+goldband-cso|cso|workflow-cso|深度安全審查。
+goldband-design-consultation|design-consultation|workflow-design-consultation|設計方向與系統規劃。
+goldband-design-review|design-review|workflow-design-review|設計審查與修正。
+goldband-document-release|document-release|workflow-document-release|同步更新 README 與發版文件。
+goldband-freeze|freeze|workflow-freeze|限制編輯範圍，避免改太多。
+goldband-guard|guard|workflow-guard|careful + freeze 的任務保護。
+goldband-investigate|investigate|workflow-investigate|系統化除錯與根因調查。
+goldband-land-and-deploy|land-and-deploy|workflow-land-and-deploy|merge、deploy、上線後驗證。
+goldband-office-hours|office-hours|workflow-office-hours|從產品角度重想問題與方向。
+goldband-plan-ceo-review|plan-ceo-review|workflow-plan-ceo-review|用 CEO 視角重審計畫。
+goldband-plan-design-review|plan-design-review|workflow-plan-design-review|實作前先做設計審查。
+goldband-plan-eng-review|plan-eng-review|workflow-plan-eng-review|實作前先做工程規劃審查。
+goldband-qa|qa|workflow-qa|用真實瀏覽器做 QA 與驗證。
+goldband-qa-only|qa-only|workflow-qa-only|只測不修，輸出 bug report。
+goldband-review|review|workflow-review|針對目前 diff 做上線前審查。
+goldband-retro|retro|workflow-retro|回顧近期輸出與改善方向。
+goldband-setup-browser-cookies|setup-browser-cookies|workflow-setup-browser-cookies|匯入瀏覽器 cookies 供 QA 使用。
+goldband-setup-deploy|setup-deploy|workflow-setup-deploy|設定 deploy 與 production 驗證資訊。
+goldband-ship|ship|workflow-ship|發版與提 PR 流程。
+goldband-unfreeze|unfreeze|workflow-unfreeze|解除 freeze 限制。
+goldband-upgrade|workflow-upgrade|workflow-upgrade|更新內建 workflow runtime。
+EOF
+}
+
+goldband_wrapper_description() {
+    local wrapper_name="$1"
+    workflow_wrapper_manifest \
+        | awk -F'|' -v name="$wrapper_name" '
+            $1 == name {
+                print "  " $4
+                found = 1
+            }
+            END { exit(found ? 0 : 1) }
+        '
+}
+
+localize_goldband_wrapper_description() {
+    local skill_file="$1"
+    local wrapper_name="$2"
+    local temp_file
+    temp_file="$(mktemp)"
+
+    goldband_wrapper_description "$wrapper_name" > "$temp_file"
+    awk -v desc_file="$temp_file" '
+        BEGIN {
+            in_description = 0
+            replaced = 0
+        }
+        replaced == 0 && $0 ~ /^description: \|$/ {
+            print $0
+            in_description = 1
+            next
+        }
+        in_description == 1 {
+            if ($0 ~ /^allowed-tools:/ || $0 ~ /^hooks:/ || $0 == "---") {
+                while ((getline line < desc_file) > 0) {
+                    print line
+                }
+                close(desc_file)
+                print $0
+                in_description = 0
+                replaced = 1
+                next
+            }
+            next
+        }
+        { print }
+        END {
+            if (in_description == 1 && replaced == 0) {
+                while ((getline line < desc_file) > 0) {
+                    print line
+                }
+                close(desc_file)
+            }
+        }
+        ' "$skill_file" > "${skill_file}.tmp"
+
+    mv "${skill_file}.tmp" "$skill_file"
+    rm -f "$temp_file"
+}
+
+create_goldband_workflow_aliases() {
+    local claude_runtime_root="$HOME/.claude/skills/workflow"
+    local codex_skills_root="$HOME/.codex/skills"
+    local alias_name
+    local claude_target
+    local codex_target
+    local _description
+
+    while IFS='|' read -r alias_name claude_target codex_target _description; do
+        if [ -d "$claude_runtime_root" ] && [ -n "$claude_target" ]; then
+            local alias_path="$HOME/.claude/skills/$alias_name"
+            local source_skill="$claude_runtime_root/$claude_target/SKILL.md"
+            if [ -f "$source_skill" ]; then
+                write_goldband_wrapper_skill "$source_skill" "$alias_path" "$claude_target" "$alias_name"
+                localize_goldband_wrapper_description "$alias_path/SKILL.md" "$alias_name"
+            fi
+        fi
+
+        if [ -d "$codex_skills_root" ] && [ -n "$codex_target" ]; then
+            local alias_path="$codex_skills_root/$alias_name"
+            local source_skill="$codex_skills_root/$codex_target/SKILL.md"
+            local source_name="${codex_target#workflow-}"
+            if [ -f "$source_skill" ]; then
+                write_goldband_wrapper_skill "$source_skill" "$alias_path" "$source_name" "$alias_name"
+                localize_goldband_wrapper_description "$alias_path/SKILL.md" "$alias_name"
+            fi
+        fi
+    done < <(workflow_wrapper_manifest)
+}
+
+cleanup_workflow_user_entries() {
+    local claude_skills_dir="$HOME/.claude/skills"
+    local codex_skills_dir="$HOME/.codex/skills"
+    local alias_name
+    local claude_target
+    local codex_target
+    local _description
+    local claude_cleanup=()
+    local codex_cleanup=()
+
+    while IFS='|' read -r alias_name claude_target codex_target _description; do
+        [ -n "$claude_target" ] && claude_cleanup+=("$claude_target")
+        [ -n "$codex_target" ] && codex_cleanup+=("$codex_target")
+    done < <(workflow_wrapper_manifest)
+
+    claude_cleanup+=("gstack-upgrade" "goldband-gstack-upgrade" "gstack" "gstack.bak")
+    codex_cleanup+=("goldband-gstack-upgrade" "gstack")
+
+    local entry
+    for entry in "${claude_cleanup[@]}"; do
+        [ -n "$entry" ] || continue
+        rm -rf "$claude_skills_dir/$entry"
+    done
+    for entry in "${codex_cleanup[@]}"; do
+        [ -n "$entry" ] || continue
+        rm -rf "$codex_skills_dir/$entry"
+    done
+}
+
+normalize_workflow_runtime_install() {
+    local host="$1"
+    local legacy_runtime_name="g""stack"
+
+    if [ "$host" = "claude" ] || [ "$host" = "auto" ]; then
+        local legacy_claude_root="$HOME/.claude/skills/$legacy_runtime_name"
+        local workflow_claude_root="$HOME/.claude/skills/workflow"
+
+        if [ -e "$legacy_claude_root" ]; then
+            rm -rf "$workflow_claude_root"
+            mv "$legacy_claude_root" "$workflow_claude_root"
+        fi
+    fi
+
+    if [ "$host" = "codex" ] || [ "$host" = "auto" ]; then
+        local legacy_codex_root="$HOME/.codex/skills/$legacy_runtime_name"
+        local workflow_codex_root="$HOME/.codex/skills/workflow"
+        local legacy_skill
+        local workflow_skill
+        local legacy_prefix="${legacy_runtime_name}-"
+
+        if [ -e "$legacy_codex_root" ]; then
+            rm -rf "$workflow_codex_root"
+            mv "$legacy_codex_root" "$workflow_codex_root"
+        fi
+
+        for legacy_skill in "$HOME/.codex/skills"/"$legacy_prefix"*; do
+            [ -e "$legacy_skill" ] || continue
+            workflow_skill="$HOME/.codex/skills/workflow-${legacy_skill##*/$legacy_prefix}"
+            rm -rf "$workflow_skill"
+            mv "$legacy_skill" "$workflow_skill"
+        done
+    fi
+}
+
+install_workflow_host() {
     local host="$1"
     local repo_dir
+    local setup_output
 
-    if ! repo_dir="$(resolve_gstack_repo_dir)"; then
-        echo -e "${RED}找不到 gstack repo。${NC}"
-        echo -e "  可設定 ${CYAN}GSTACK_REPO_DIR=/path/to/gstack${NC} 後重試"
-        echo -e "  預設會先找 repo 內建的 ${CYAN}$REPO_DIR/vendor/gstack${NC}"
+    if ! repo_dir="$(resolve_workflow_repo_dir)"; then
+        echo -e "${RED}找不到 workflow runtime。${NC}"
+        echo -e "  可設定 ${CYAN}WORKFLOW_REPO_DIR=/path/to/runtime${NC} 後重試"
+        echo -e "  預設會先找 repo 內建的 ${CYAN}$REPO_DIR/vendor/workflow${NC}"
         exit 1
     fi
 
     local version="unknown"
-    version="$(read_gstack_version "$repo_dir" 2>/dev/null || echo "unknown")"
-    echo -e "${GREEN}安裝 gstack (${host})...${NC}"
+    version="$(read_workflow_version "$repo_dir" 2>/dev/null || echo "unknown")"
+    echo -e "${GREEN}安裝 workflow runtime (${host})...${NC}"
     echo -e "  repo: ${CYAN}$repo_dir${NC}"
     echo -e "  version: ${CYAN}$version${NC}"
     echo ""
-    (
+    if ! setup_output="$(
         cd "$repo_dir" || {
-            echo "  [錯誤] 無法進入 gstack repo: $repo_dir"
+            echo "  [錯誤] 無法進入 workflow runtime: $repo_dir"
             exit 1
         }
-        ./setup --host "$host"
-    )
+        ./setup --host "$host" 2>&1
+    )"; then
+        printf '%s\n' "$setup_output" | sed 's/gstack/workflow/g'
+        exit 1
+    fi
+    if [ -n "$setup_output" ]; then
+        printf '%s\n' "$setup_output" | sed 's/gstack/workflow/g'
+    fi
+    normalize_workflow_runtime_install "$host"
+    create_goldband_workflow_aliases
+    cleanup_workflow_user_entries
 }
 
 show_help() {
@@ -496,11 +731,11 @@ show_help() {
     echo "  codex-agents 只安裝 ~/.codex/AGENTS.md"
     echo "  codex-rules  只安裝 ~/.codex/rules"
     echo "  codex-skills 安裝 Codex portable skills 到 ~/.agents/skills"
-    echo "  gstack      安裝 gstack 到 Claude Code（薄封裝，呼叫 gstack ./setup --host claude）"
-    echo "  gstack-codex 安裝 gstack 到 Codex（薄封裝，呼叫 gstack ./setup --host codex）"
-    echo "  gstack-auto 安裝 gstack 到自動偵測到的 host"
+    echo "  workflow      安裝內建 workflow 到 Claude Code"
+    echo "  workflow-codex 安裝內建 workflow 到 Codex"
+    echo "  workflow-auto 安裝 workflow 到自動偵測到的 host"
     echo "  all-tools   安裝 Claude all-full + Codex full"
-    echo "  all-with-gstack 安裝 Claude + Codex 全組件，並呼叫 gstack ./setup --host auto"
+    echo "  all-with-workflow 安裝 Claude + Codex 全組件，並安裝 workflow runtime"
     echo "  uninstall   移除所有安裝項目（含 profile links）"
     echo "  status      檢查安裝狀態"
     echo "  help        顯示此幫助"
@@ -517,9 +752,9 @@ show_help() {
     echo "  ./install.sh skills-core  # 只裝核心 skills（建議日常）"
     echo "  ./install.sh skills-full  # 全量 skills"
     echo "  ./install.sh codex-full   # Codex 全量設定"
-    echo "  ./install.sh gstack       # 安裝 gstack 到 Claude Code"
-    echo "  ./install.sh gstack-codex # 安裝 gstack 到 Codex"
-    echo "  GSTACK_REPO_DIR=../gstack ./install.sh all-with-gstack"
+    echo "  ./install.sh workflow       # 安裝 workflow 到 Claude Code"
+    echo "  ./install.sh workflow-codex # 安裝 workflow 到 Codex"
+    echo "  WORKFLOW_REPO_DIR=../runtime ./install.sh all-with-workflow"
     echo "  ./install.sh all-tools    # Claude + Codex 全部安裝"
     echo "  ./install.sh unity        # 在 Unity 專案中安裝"
     echo "  ./install.sh status       # 檢查狀態"
@@ -619,9 +854,9 @@ install_all_tools() {
     install_codex_full
 }
 
-install_all_with_gstack() {
+install_all_with_workflow() {
     install_all_tools
-    install_gstack_host "auto"
+    install_workflow_host "auto"
 }
 
 install_commands() {
@@ -858,30 +1093,30 @@ show_status() {
     fi
 
     echo ""
-    echo -e "${BLUE}gstack 狀態${NC}"
+    echo -e "${BLUE}workflow 狀態${NC}"
 
-    local gstack_claude_dir="$HOME/.claude/skills/gstack"
-    local gstack_codex_dir="$HOME/.codex/skills/gstack"
-    local gstack_version
+    local workflow_claude_dir="$HOME/.claude/skills/workflow"
+    local workflow_codex_dir="$HOME/.codex/skills/workflow"
+    local workflow_version
 
-    if [ -d "$gstack_claude_dir" ]; then
-        gstack_version="$(read_gstack_version "$gstack_claude_dir" 2>/dev/null || echo "unknown")"
-        echo -e "  ${GREEN}[OK]${NC} gstack Claude install (${gstack_version})"
+    if [ -d "$workflow_claude_dir" ]; then
+        workflow_version="$(read_workflow_version "$workflow_claude_dir" 2>/dev/null || echo "unknown")"
+        echo -e "  ${GREEN}[OK]${NC} workflow Claude install (${workflow_version})"
     else
-        echo -e "  ${YELLOW}[未安裝]${NC} gstack Claude install"
+        echo -e "  ${YELLOW}[未安裝]${NC} workflow Claude install"
     fi
 
-    if [ -d "$gstack_codex_dir" ]; then
-        gstack_version="$(read_gstack_version "$gstack_codex_dir" 2>/dev/null || echo "unknown")"
-        echo -e "  ${GREEN}[OK]${NC} gstack Codex runtime (${gstack_version})"
+    if [ -d "$workflow_codex_dir" ]; then
+        workflow_version="$(read_workflow_version "$workflow_codex_dir" 2>/dev/null || echo "unknown")"
+        echo -e "  ${GREEN}[OK]${NC} workflow Codex runtime (${workflow_version})"
     else
-        echo -e "  ${YELLOW}[未安裝]${NC} gstack Codex runtime"
+        echo -e "  ${YELLOW}[未安裝]${NC} workflow Codex runtime"
     fi
 
-    if [ -d "$gstack_codex_dir" ]; then
+    if [ -d "$workflow_codex_dir" ]; then
         local generated_count
-        generated_count=$(find "$HOME/.codex/skills" -maxdepth 1 -type l -name 'gstack-*' 2>/dev/null | wc -l | tr -d ' ')
-        echo -e "  ${GREEN}[OK]${NC} gstack Codex generated skills: ${generated_count:-0}"
+        generated_count=$(find "$HOME/.codex/skills" -maxdepth 1 -name 'goldband-*' 2>/dev/null | wc -l | tr -d ' ')
+        echo -e "  ${GREEN}[OK]${NC} workflow Codex generated skills: ${generated_count:-0}"
     fi
 }
 
@@ -1095,24 +1330,24 @@ for arg in "$@"; do
         codex-skills)
             install_codex_skills
             ;;
-        gstack)
-            install_gstack_host "claude"
+        workflow)
+            install_workflow_host "claude"
             ;;
-        gstack-codex)
-            install_gstack_host "codex"
+        workflow-codex)
+            install_workflow_host "codex"
             ;;
-        gstack-auto)
-            install_gstack_host "auto"
+        workflow-auto)
+            install_workflow_host "auto"
             ;;
         all-tools)
             echo -e "${GREEN}安裝 Claude + Codex 全組件...${NC}"
             echo ""
             install_all_tools
             ;;
-        all-with-gstack)
-            echo -e "${GREEN}安裝 Claude + Codex 全組件 + gstack...${NC}"
+        all-with-workflow)
+            echo -e "${GREEN}安裝 Claude + Codex 全組件 + workflow...${NC}"
             echo ""
-            install_all_with_gstack
+            install_all_with_workflow
             ;;
         unity)
             install_unity

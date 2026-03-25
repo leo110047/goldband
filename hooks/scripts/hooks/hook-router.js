@@ -135,6 +135,8 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(() => {
-  process.exit(0);
+main().catch(error => {
+  const message = error && error.stack ? error.stack : String(error || 'Unknown hook router error');
+  console.error(`[HookRouterError] ${message}`);
+  process.exit(1);
 });

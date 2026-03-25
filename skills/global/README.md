@@ -18,7 +18,7 @@ ln -s $(pwd)/skills ~/.claude/skills
 
 | Skill | 用途 | 優先級 |
 |-------|------|--------|
-| **systematic-debugging** | 系統性調試，避免猜測式修復 | 🔴 CRITICAL |
+| **systematic-debugging** | 系統性調試，避免猜測式修復；作為共用 debug doctrine | 🔴 CRITICAL |
 | **evidence-based-coding** | 防止 AI 幻覺，要求證據支持所有聲明 | 🔴 CRITICAL |
 | **code-review-skill** | 代碼審查，多語言支援 | 🟡 Medium |
 | **backend-patterns** | 後端架構模式 | 🟡 Medium |
@@ -53,6 +53,7 @@ ln -s $(pwd)/skills ~/.claude/skills
 
 - **防止衝突**: 當多個 skills 可能同時觸發時，自動選擇最合適的
 - **優先級管理**: `systematic-debugging` 和 `evidence-based-coding` 擁有最高優先級
+- **與 workflow pack 整合**: 若已安裝 workflow pack，`/goldband-investigate` 是主要 debug workflow 入口，`systematic-debugging` 提供底層方法論
 - **反幻覺規則**: 強制要求證據支持所有聲明
 
 ## 🔍 Skill 衝突解決
