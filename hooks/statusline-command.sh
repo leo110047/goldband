@@ -4,12 +4,30 @@ input=$(cat)
 
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
 model=$(echo "$input" | jq -r '.model.display_name // empty')
-used=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
+used=$(echo "$input" | jq -r '.context_window.used_percentage // "0"')
 vim_mode=$(echo "$input" | jq -r '.vim.mode // empty')
 
 # Shorten home directory to ~
 home="$HOME"
 short_cwd="${cwd/#$home/\~}"
+
+# Fixed cyan color — no percentage-based color changes
+_pct_color() {
+  printf '\033[36m'
+}
+
+# Block progress bar  e.g. ████░░░░░░ for 40%
+_progress_bar() {
+  local pct=$1
+  local width=10
+  local filled=$(( pct * width / 100 ))
+  local empty=$(( width - filled ))
+  local bar=""
+  local i
+  for (( i=0; i<filled; i++ )); do bar="${bar}█"; done
+  for (( i=0; i<empty;  i++ )); do bar="${bar}░"; done
+  printf '%s' "$bar"
+}
 
 # Build parts
 parts=()
@@ -19,10 +37,11 @@ if [ -n "$short_cwd" ]; then
   parts+=("$(printf '\033[34m📁 %s\033[0m' "$short_cwd")")
 fi
 
-# Git branch  (nerd font branch icon)
+# Git branch  (nerd font branch icon via $'...' to ensure correct byte output)
 branch=$(GIT_OPTIONAL_LOCKS=0 git -C "$cwd" symbolic-ref --short HEAD 2>/dev/null)
 if [ -n "$branch" ]; then
-  parts+=("$(printf '\033[35m\ue0a0 %s\033[0m' "$branch")")
+  branch_icon='🌲'
+  parts+=("$(printf '\033[35m%s %s\033[0m' "$branch_icon" "$branch")")
 fi
 
 # Model  🤖
@@ -30,18 +49,9 @@ if [ -n "$model" ]; then
   parts+=("$(printf '\033[36m🤖 %s\033[0m' "$model")")
 fi
 
-# Context usage  🧠
-if [ -n "$used" ]; then
-  used_int=${used%.*}
-  if [ "$used_int" -ge 80 ]; then
-    color='\033[31m'
-  elif [ "$used_int" -ge 50 ]; then
-    color='\033[33m'
-  else
-    color='\033[32m'
-  fi
-  parts+=("$(printf "${color}🧠 %s%%\033[0m" "$used_int")")
-fi
+# Context usage  🧠  (always shown, even at 0%)
+used_int=${used%.*}
+parts+=("$(printf '\033[33m🧠 %s%%\033[0m' "$used_int")")
 
 # Vim mode
 if [ -n "$vim_mode" ]; then
@@ -50,14 +60,7 @@ fi
 
 # Subscription quota via Anthropic OAuth usage API (cached 60 s)
 _quota_color() {
-  local pct=$1
-  if [ "$pct" -ge 80 ]; then
-    printf '\033[31m'
-  elif [ "$pct" -ge 50 ]; then
-    printf '\033[33m'
-  else
-    printf '\033[32m'
-  fi
+  _pct_color "$1"
 }
 
 QUOTA_CACHE="/tmp/claude_quota_cache.json"
@@ -114,9 +117,9 @@ except Exception:
 " 2>/dev/null)"
 
   if [ -n "$five_h" ] && [ -n "$seven_d" ]; then
-    c5=$(_quota_color "$five_h")
-    c7=$(_quota_color "$seven_d")
-    parts+=("$(printf "⚡${c5}Current:%d%%\033[0m  ${c7}Weekly:%d%%\033[0m" "$five_h" "$seven_d")")
+    bar5=$(_progress_bar "$five_h")
+    bar7=$(_progress_bar "$seven_d")
+    parts+=("$(printf '⚡\033[32mCurrent:%s %d%%\033[0m  \033[32mWeekly:%s %d%%\033[0m' "$bar5" "$five_h" "$bar7" "$seven_d")")
   fi
 fi
 
