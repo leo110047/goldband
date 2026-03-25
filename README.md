@@ -44,7 +44,7 @@ cd goldband
 # 5. 重啟 Claude Code / Codex，完成
 ```
 
-**升級**：重新執行相同指令即可覆蓋更新。  
+**升級**：重新執行相同指令即可覆蓋更新；日常從 terminal 輸入 `claude` / `codex` 時，goldband 也會先做一次安全的 self-update 檢查。
 **推薦起手式**：
 
 - 只想先把底層 guardrails 裝好：`./install.sh pack-quality`
@@ -53,7 +53,7 @@ cd goldband
 
 > **Note**: hooks 安裝需要 `jq`。macOS: `brew install jq`
 >
-> **--dev 模式**：`./install.sh --dev` 改用 symlink 指向 repo，適合正在修改 goldband 本身時使用。
+> goldband 現在統一採用 repo-linked install；重新執行 `./install.sh ...` 會把舊 copy install 轉成 symlink。
 
 ### Skills Profile
 
@@ -72,6 +72,7 @@ full  →  dev + ci-cd-integration、commit-conventions、decision-log、
 ./install.sh skills-core   # 最低 token
 ./install.sh skills-dev    # 開發推薦
 ./install.sh skills-full   # 全量
+./install.sh launchers     # 只重裝 claude/codex 啟動入口與自動更新檢查
 ./install.sh status        # 檢查安裝狀態
 ./install.sh uninstall     # 移除
 ```
@@ -91,6 +92,12 @@ full  →  dev + ci-cd-integration、commit-conventions、decision-log、
 - UI / 瀏覽器 / E2E：`/goldband-qa` 或 `/goldband-browse`
 - 安全審查：`/goldband-cso`
 - 發版前收尾：`/goldband-ship`
+
+啟動入口：
+
+- terminal 直接輸入 `claude` 或 `codex` 時，goldband 會先檢查 repo 是否能安全 fast-forward 到 `origin/main`
+- 只會在 `goldband` repo 乾淨、branch 是 `main`、tracking `origin/main` 時自動 `git pull --ff-only`
+- 沒網路、repo dirty、branch 漂移、或無法 fast-forward 時會直接跳過，不阻塞啟動
 
 ## 安全模式怎麼選
 
@@ -154,7 +161,7 @@ full  →  dev + ci-cd-integration、commit-conventions、decision-log、
 | `/code-review` | 兩階段安全+品質審查 | `--spec`、`--spec <file>` |
 | `/map-codebase` | 產出 codebase 結構分析文件 | `tech`、`arch`、`quality`、`conventions`、`testing` |
 | `/verify-config` | Claude + Codex 配置健康檢查 | `quick` |
-| `/goldband-language` | 切換 goldband wrappers 的提問語言 | `zh-TW`、`en` |
+| `/goldband-language` | 切換 goldband wrappers 的提問與說明語言 | `zh-TW`、`en` |
 
 ---
 
@@ -259,11 +266,11 @@ vendored workflow telemetry 目前維持 local-only；若你另外 self-host ven
 - 只裝 goldband：`./install.sh all-tools`
 - goldband + 內建 workflow：`./install.sh all-with-workflow`
 
-goldband workflow wrappers 的提問語言可切換：
+goldband workflow wrappers 的提問與說明語言可切換：
 - 繁中：`~/.codex/skills/workflow/bin/workflow-config set goldband_language zh-TW`
 - 英文：`~/.codex/skills/workflow/bin/workflow-config set goldband_language en`
 - 未設定時預設 `zh-TW`
-- Claude CLI 可直接用 `/goldband-language` 互動切換；切換時也會同步更新已安裝的 `goldband-*` skill descriptions 與 command descriptions
+- Claude CLI 可直接用 `/goldband-language` 互動切換；會先問要切到哪個語言，再同步更新已安裝的 `goldband-*` skill descriptions
 - 只補裝 Claude 端 workflow：`./install.sh workflow`
 - 只補裝 Codex 端 workflow：`./install.sh workflow-codex`
 

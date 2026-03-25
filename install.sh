@@ -12,19 +12,22 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Default: copy mode. Use --dev for symlink mode (when actively editing goldband itself).
-LINK_MODE=false
-
 REPO_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 CLAUDE_DIR="$HOME/.claude"
 SKILLS_DIR="$CLAUDE_DIR/skills"
 SKILL_PROFILE_FILE="$SKILLS_DIR/.goldband-profile"
+CLAUDE_BIN_DIR="$CLAUDE_DIR/bin"
+CLAUDE_SHELL_DIR="$CLAUDE_DIR/shell"
+SHELL_UPDATE_BIN="$CLAUDE_BIN_DIR/goldband-self-update"
+SHELL_LAUNCHERS_FILE="$CLAUDE_SHELL_DIR/goldband-launchers.sh"
+ZSHRC_FILE="${ZDOTDIR:-$HOME}/.zshrc"
 CODEX_DIR="$HOME/.codex"
 CODEX_CONFIG_FILE="$CODEX_DIR/config.toml"
 CODEX_AGENTS_FILE="$CODEX_DIR/AGENTS.md"
 CODEX_RULES_DIR="$CODEX_DIR/rules"
 CODEX_SKILLS_DIR="$HOME/.agents/skills"
 CODEX_SKILL_PROFILE_FILE="$CODEX_SKILLS_DIR/.goldband-profile"
+LEGACY_DEV_FLAG_USED=false
 
 skill_catalog() {
     cat <<'EOF'
@@ -65,32 +68,22 @@ link_component() {
         return
     fi
 
-    if $LINK_MODE; then
-        if [ -L "$dest" ]; then
-            local current_target
-            current_target=$(readlink "$dest")
-            if [ "$current_target" = "$src" ]; then
-                echo -e "  ${GREEN}[已安裝] $name${NC}"
-                return
-            fi
-            rm "$dest"
-        elif [ -e "$dest" ]; then
-            echo -e "  ${YELLOW}[備份] $name — 備份現有到 ${dest}.bak${NC}"
-            mv "$dest" "${dest}.bak"
+    if [ -L "$dest" ]; then
+        local current_target
+        current_target=$(readlink "$dest")
+        if [ "$current_target" = "$src" ]; then
+            echo -e "  ${GREEN}[已安裝] $name${NC}"
+            return
         fi
-        mkdir -p "$(dirname "$dest")"
-        ln -s "$src" "$dest"
-        echo -e "  ${GREEN}[安裝 (symlink)] $name${NC}"
-    else
-        if [ -L "$dest" ]; then
-            rm "$dest"
-        elif [ -e "$dest" ]; then
-            rm -rf "$dest"
-        fi
-        mkdir -p "$(dirname "$dest")"
-        cp -r "$src" "$dest"
-        echo -e "  ${GREEN}[安裝] $name${NC}"
+        rm "$dest"
+    elif [ -e "$dest" ]; then
+        echo -e "  ${YELLOW}[備份] $name — 備份現有到 ${dest}.bak${NC}"
+        mv "$dest" "${dest}.bak"
     fi
+
+    mkdir -p "$(dirname "$dest")"
+    ln -s "$src" "$dest"
+    echo -e "  ${GREEN}[安裝 (repo-linked)] $name${NC}"
 }
 
 timestamp_suffix() {
@@ -186,6 +179,86 @@ backup_existing_path() {
     echo -e "  ${YELLOW}[備份] $(basename "$path") -> $backup_path${NC}"
 }
 
+shell_launcher_block() {
+    cat <<'EOF'
+# >>> goldband shell launchers >>>
+if [ -f "$HOME/.claude/shell/goldband-launchers.sh" ]; then
+    source "$HOME/.claude/shell/goldband-launchers.sh"
+fi
+# <<< goldband shell launchers <<<
+EOF
+}
+
+upsert_shell_launcher_block() {
+    local rc_file="$1"
+    local begin_marker="# >>> goldband shell launchers >>>"
+    local end_marker="# <<< goldband shell launchers <<<"
+    local temp_file
+
+    mkdir -p "$(dirname "$rc_file")"
+    [ -f "$rc_file" ] || touch "$rc_file"
+    temp_file="$(mktemp)"
+
+    awk -v begin="$begin_marker" -v end="$end_marker" '
+        BEGIN { skipping = 0 }
+        $0 == begin { skipping = 1; next }
+        skipping == 1 && $0 == end { skipping = 0; next }
+        skipping == 0 { print }
+    ' "$rc_file" > "$temp_file" || {
+        rm -f "$temp_file"
+        return 1
+    }
+
+    if [ -s "$temp_file" ]; then
+        printf '\n' >> "$temp_file" || {
+            rm -f "$temp_file"
+            return 1
+        }
+    fi
+    shell_launcher_block >> "$temp_file" || {
+        rm -f "$temp_file"
+        return 1
+    }
+
+    mv "$temp_file" "$rc_file"
+}
+
+remove_shell_launcher_block() {
+    local rc_file="$1"
+    local begin_marker="# >>> goldband shell launchers >>>"
+    local end_marker="# <<< goldband shell launchers <<<"
+    local temp_file
+
+    [ -f "$rc_file" ] || return 0
+    temp_file="$(mktemp)"
+
+    awk -v begin="$begin_marker" -v end="$end_marker" '
+        BEGIN { skipping = 0 }
+        $0 == begin { skipping = 1; next }
+        skipping == 1 && $0 == end { skipping = 0; next }
+        skipping == 0 { print }
+    ' "$rc_file" > "$temp_file" || {
+        rm -f "$temp_file"
+        return 1
+    }
+
+    mv "$temp_file" "$rc_file"
+}
+
+install_shell_launchers() {
+    link_component "$REPO_DIR/shell/goldband-self-update.sh" "$SHELL_UPDATE_BIN" "Shell self-update script"
+    link_component "$REPO_DIR/shell/goldband-launchers.sh" "$SHELL_LAUNCHERS_FILE" "Shell launcher wrappers"
+    upsert_shell_launcher_block "$ZSHRC_FILE"
+    echo -e "  ${GREEN}[安裝] zsh 啟動整合${NC}"
+}
+
+shell_launchers_installed() {
+    [ -L "$SHELL_UPDATE_BIN" ] || return 1
+    [ -L "$SHELL_LAUNCHERS_FILE" ] || return 1
+    [ -f "$ZSHRC_FILE" ] || return 1
+    grep -q '^# >>> goldband shell launchers >>>$' "$ZSHRC_FILE"
+}
+
 prepare_skills_directory() {
     if [ -L "$SKILLS_DIR" ]; then
         local current_target
@@ -216,11 +289,7 @@ link_skill_entry() {
         backup_existing_path "$dest"
     fi
 
-    if $LINK_MODE; then
-        ln -s "$source" "$dest"
-    else
-        cp -r "$source" "$dest"
-    fi
+    ln -s "$source" "$dest"
 }
 
 write_skill_profile_file() {
@@ -631,86 +700,6 @@ localize_goldband_wrapper_description() {
     rm -f "$temp_file"
 }
 
-goldband_command_description() {
-    local command_name="$1"
-    local language="${2:-zh-TW}"
-
-    case "$command_name:$language" in
-        checkpoint:en) printf '%s\n' 'Create, verify, pause, or resume workflow checkpoints. Supports cross-session state persistence.' ;;
-        code-review:en) printf '%s\n' 'Two-stage code review — spec compliance (--spec) and code quality. Security-first, blocks on CRITICAL/HIGH issues.' ;;
-        discuss:en) printf '%s\n' 'Identify gray areas and capture structured decisions before planning.' ;;
-        goldband-language:en) printf '%s\n' 'Switch or inspect the language used by goldband workflow wrapper prompts and descriptions.' ;;
-        map-codebase:en) printf '%s\n' 'Generate structured codebase analysis documents for planning and onboarding.' ;;
-        plan:en) printf '%s\n' 'Restate requirements, assess risks, and create a step-by-step implementation plan. WAIT for user CONFIRM before touching code.' ;;
-        verify:en) printf '%s\n' 'Run build, type, lint, test, and console.log checks. Supports --goal for three-level goal-backward verification.' ;;
-        verify-config:en) printf '%s\n' 'Perform a comprehensive health check of the goldband installation and repo assets.' ;;
-        checkpoint:*) printf '%s\n' '建立、驗證、暫停或續接 workflow checkpoint，支援跨 session 狀態保存。' ;;
-        code-review:*) printf '%s\n' '兩階段 code review：spec compliance（--spec）與 code quality，遇到 CRITICAL/HIGH 問題時阻擋。' ;;
-        discuss:*) printf '%s\n' '辨識灰色地帶，先把結構化決策鎖定，再進入規劃。' ;;
-        goldband-language:*) printf '%s\n' '切換或查詢 goldband workflow wrappers 的提問與說明語言。' ;;
-        map-codebase:*) printf '%s\n' '產出結構化 codebase 分析文件，供規劃與 onboarding 使用。' ;;
-        plan:*) printf '%s\n' '重述需求、評估風險並建立分階段實作計畫；在使用者確認前禁止動 code。' ;;
-        verify:*) printf '%s\n' '執行 build、type、lint、test 與 console.log 檢查，支援 --goal 的三層回推驗證。' ;;
-        verify-config:*) printf '%s\n' '全面檢查 goldband 安裝狀態與 repo 資產健康度。' ;;
-        *) return 1 ;;
-    esac
-}
-
-localize_installed_command_descriptions() {
-    local language="${1:-zh-TW}"
-    local commands_dir="$CLAUDE_DIR/commands"
-    local command_file
-    local command_name
-    local description
-
-    [ -d "$commands_dir" ] || return 0
-    if [ -L "$commands_dir" ]; then
-        return 0
-    fi
-
-    for command_file in "$commands_dir"/*.md; do
-        [ -f "$command_file" ] || continue
-        command_name="$(basename "$command_file" .md)"
-        description="$(goldband_command_description "$command_name" "$language" 2>/dev/null || true)"
-        [ -n "$description" ] || continue
-
-        awk -v desc="$description" '
-            BEGIN {
-                inserted = 0
-                frontmatter_markers = 0
-            }
-            NR == 1 && $0 != "---" {
-                print "---"
-                print "description: " desc
-                print "---"
-                print ""
-                print $0
-                inserted = 1
-                next
-            }
-            !inserted && $0 == "---" {
-                frontmatter_markers++
-                print
-                next
-            }
-            !inserted && frontmatter_markers == 1 && $0 ~ /^description: / {
-                print "description: " desc
-                inserted = 1
-                next
-            }
-            !inserted && frontmatter_markers == 1 && $0 == "---" {
-                print "description: " desc
-                print $0
-                inserted = 1
-                next
-            }
-            { print }
-        ' "$command_file" > "${command_file}.tmp"
-
-        mv "${command_file}.tmp" "$command_file"
-    done
-}
-
 localize_goldband_wrapper_language_policy() {
     local skill_file="$1"
 
@@ -993,6 +982,7 @@ show_help() {
     echo "  contexts    只安裝 contexts"
     echo "  rules       只安裝 rules"
     echo "  hooks       只安裝 hooks"
+    echo "  launchers   安裝 shell 啟動整合（claude/codex 啟動前自動檢查更新）"
     echo "  unity       安裝 Unity 專案 skills 到當前目錄"
     echo "  ----- Codex -----"
     echo "  codex-core  安裝 Codex 核心設定（global AGENTS/config/rules + core skills）"
@@ -1010,10 +1000,6 @@ show_help() {
     echo "  uninstall   移除所有安裝項目（含 profile links）"
     echo "  status      檢查安裝狀態"
     echo "  help        顯示此幫助"
-    echo ""
-    echo "Flag:"
-    echo "  --dev       symlink 模式（預設為複製）"
-    echo "              適合正在修改 goldband 本身時使用"
     echo ""
     echo "範例:"
     echo "  ./install.sh              # 安裝 pack-core（預設）"
@@ -1059,6 +1045,7 @@ install_pack_core() {
     install_skills_core
     install_rules
     install_hooks
+    install_shell_launchers
 }
 
 install_pack_quality() {
@@ -1067,6 +1054,7 @@ install_pack_quality() {
     install_contexts
     install_rules
     install_hooks
+    install_shell_launchers
 }
 
 install_pack_unity() {
@@ -1107,6 +1095,7 @@ install_codex_core() {
     install_codex_agents
     install_codex_rules
     install_codex_skills_core
+    install_shell_launchers
 }
 
 install_codex_full() {
@@ -1114,6 +1103,7 @@ install_codex_full() {
     install_codex_agents
     install_codex_rules
     install_codex_skills
+    install_shell_launchers
 }
 
 install_all_tools() {
@@ -1122,6 +1112,7 @@ install_all_tools() {
     install_contexts
     install_rules
     install_hooks
+    install_shell_launchers
     install_codex_full
 }
 
@@ -1132,12 +1123,6 @@ install_all_with_workflow() {
 
 install_commands() {
     link_component "$REPO_DIR/commands" "$CLAUDE_DIR/commands" "Commands (8 個)"
-    local workflow_config_bin
-    local goldband_language="zh-TW"
-    if workflow_config_bin="$(find_workflow_config_bin 2>/dev/null)"; then
-        goldband_language="$(read_goldband_wrapper_language "$workflow_config_bin")"
-    fi
-    localize_installed_command_descriptions "$goldband_language"
 }
 
 install_contexts() {
@@ -1146,6 +1131,10 @@ install_contexts() {
 
 install_rules() {
     link_component "$REPO_DIR/rules" "$CLAUDE_DIR/rules" "Rules (3 個)"
+}
+
+install_launchers() {
+    install_shell_launchers
 }
 
 merge_hooks_config() {
@@ -1306,11 +1295,19 @@ show_status() {
             target=$(readlink "$path")
             echo -e "  ${GREEN}[OK]${NC} $name -> $target"
         elif [ -e "$path" ]; then
-            echo -e "  ${GREEN}[OK]${NC} $name"
+            echo -e "  ${YELLOW}[legacy copy]${NC} $name — 建議重跑 ./install.sh 轉成 repo-linked"
         else
             echo -e "  ${RED}[未安裝]${NC} $name"
         fi
     done
+
+    if shell_launchers_installed; then
+        echo -e "  ${GREEN}[OK]${NC} shell launchers (zsh)"
+    elif [ -e "$SHELL_UPDATE_BIN" ] || [ -e "$SHELL_LAUNCHERS_FILE" ]; then
+        echo -e "  ${YELLOW}[部分安裝]${NC} shell launchers — 建議重跑 ./install.sh launchers"
+    else
+        echo -e "  ${YELLOW}[未安裝]${NC} shell launchers (zsh)"
+    fi
 
     # Check hooks in settings.json
     echo ""
@@ -1343,7 +1340,7 @@ show_status() {
             target=$(readlink "$path")
             echo -e "  ${GREEN}[OK]${NC} $name -> $target"
         elif [ -e "$path" ]; then
-            echo -e "  ${GREEN}[OK]${NC} $name"
+            echo -e "  ${YELLOW}[legacy copy]${NC} $name — 建議重跑 ./install.sh 轉成 repo-linked"
         else
             echo -e "  ${RED}[未安裝]${NC} $name"
         fi
@@ -1433,7 +1430,7 @@ do_uninstall() {
         echo -e "  ${GREEN}[移除] skills${NC}"
     fi
 
-    local paths=("$CLAUDE_DIR/commands" "$CLAUDE_DIR/contexts" "$CLAUDE_DIR/rules" "$CLAUDE_DIR/hooks/scripts")
+    local paths=("$CLAUDE_DIR/commands" "$CLAUDE_DIR/contexts" "$CLAUDE_DIR/rules" "$CLAUDE_DIR/hooks/scripts" "$SHELL_UPDATE_BIN" "$SHELL_LAUNCHERS_FILE")
 
     for p in "${paths[@]}"; do
         if [ -L "$p" ]; then
@@ -1452,6 +1449,14 @@ do_uninstall() {
     elif [ -f "$CLAUDE_DIR/statusline-command.sh" ]; then
         rm "$CLAUDE_DIR/statusline-command.sh"
         echo -e "  ${GREEN}[移除] statusline-command.sh${NC}"
+    fi
+
+    remove_shell_launcher_block "$ZSHRC_FILE"
+    if [ -d "$CLAUDE_BIN_DIR" ] && [ -z "$(ls -A "$CLAUDE_BIN_DIR" 2>/dev/null)" ]; then
+        rmdir "$CLAUDE_BIN_DIR"
+    fi
+    if [ -d "$CLAUDE_SHELL_DIR" ] && [ -z "$(ls -A "$CLAUDE_SHELL_DIR" 2>/dev/null)" ]; then
+        rmdir "$CLAUDE_SHELL_DIR"
     fi
 
     # Clean up hooks and statusLine from settings.json
@@ -1506,11 +1511,11 @@ echo ""
 echo -e "${YELLOW}倉庫位置：${NC}$REPO_DIR"
 echo ""
 
-# Parse --dev flag (symlink mode)
+# Parse legacy flags
 _filtered_args=()
 for _arg in "$@"; do
     if [ "$_arg" = "--dev" ]; then
-        LINK_MODE=true
+        LEGACY_DEV_FLAG_USED=true
     else
         _filtered_args+=("$_arg")
     fi
@@ -1518,8 +1523,8 @@ done
 set -- "${_filtered_args[@]}"
 unset _filtered_args _arg
 
-if $LINK_MODE; then
-    echo -e "${CYAN}模式：symlink (--dev)${NC}"
+if $LEGACY_DEV_FLAG_USED; then
+    echo -e "${YELLOW}[提示] --dev 已無作用；goldband 現在預設使用 repo-linked 安裝${NC}"
     echo ""
 fi
 
@@ -1573,6 +1578,7 @@ for arg in "$@"; do
             install_contexts
             install_rules
             install_hooks
+            install_shell_launchers
             ;;
         skills)
             install_skills
@@ -1597,6 +1603,9 @@ for arg in "$@"; do
             ;;
         hooks)
             install_hooks
+            ;;
+        launchers)
+            install_launchers
             ;;
         codex-core)
             echo -e "${GREEN}安裝 Codex core...${NC}"

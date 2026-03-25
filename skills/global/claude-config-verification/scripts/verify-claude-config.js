@@ -267,6 +267,47 @@ function readWorkflowVersion(runtimeDir) {
   return 'unknown';
 }
 
+function checkShellLaunchers(homeDir) {
+  const updateBin = path.join(homeDir, '.claude', 'bin', 'goldband-self-update');
+  const launcherFile = path.join(homeDir, '.claude', 'shell', 'goldband-launchers.sh');
+  const result = {
+    installed: false,
+    checks: []
+  };
+
+  const hasUpdateBin = fs.existsSync(updateBin);
+  const hasLauncherFile = fs.existsSync(launcherFile);
+  const zshCandidates = [];
+  const envZdotdir = typeof process.env.ZDOTDIR === 'string' ? process.env.ZDOTDIR.trim() : '';
+  if (envZdotdir.length > 0) {
+    zshCandidates.push(path.join(envZdotdir, '.zshrc'));
+  }
+  zshCandidates.push(path.join(homeDir, '.zshrc'));
+
+  const uniqueCandidates = [...new Set(zshCandidates)];
+  const matchedZshrc = uniqueCandidates.find(candidate => {
+    if (!fs.existsSync(candidate)) return false;
+    const raw = fs.readFileSync(candidate, 'utf8');
+    return (
+      raw.includes('# >>> goldband shell launchers >>>') &&
+      raw.includes('source "$HOME/.claude/shell/goldband-launchers.sh"')
+    );
+  });
+  const hasZshSourceBlock = Boolean(matchedZshrc);
+  const zshLabel = envZdotdir.length > 0
+    ? `${path.join(envZdotdir, '.zshrc')} (ZDOTDIR) or ~/.zshrc goldband shell launchers block (zsh only)`
+    : '~/.zshrc goldband shell launchers block (zsh only)';
+
+  result.checks = [
+    { file: '~/.claude/bin/goldband-self-update', ok: hasUpdateBin },
+    { file: '~/.claude/shell/goldband-launchers.sh', ok: hasLauncherFile },
+    { file: zshLabel, ok: hasZshSourceBlock }
+  ];
+  result.installed = result.checks.every(item => item.ok);
+
+  return result;
+}
+
 function checkWorkflowInstall(homeDir) {
   const claudeDir = path.join(homeDir, '.claude', 'skills', 'workflow');
   const codexDir = path.join(homeDir, '.codex', 'skills', 'workflow');
@@ -465,6 +506,7 @@ function buildSummary(rootDir, args) {
   const codexRuleChecks = [];
   const additionalWarnings = [];
   const workflowInstall = checkWorkflowInstall(homeDir);
+  const shellLaunchers = checkShellLaunchers(homeDir);
   const workflowInstallErrors = [];
 
   if (workflowInstall.claudeInstalled) {
@@ -521,6 +563,7 @@ function buildSummary(rootDir, args) {
     ...referenceChecks.flatMap(item => item.missing.map(ref => `${item.file}: missing ${ref}`)),
     ...hookCheck.errors,
     ...workflowInstallErrors,
+    ...shellLaunchers.checks.filter(item => !item.ok).map(item => `shell launchers: missing ${item.file}`),
     ...codexRuleChecks.filter(item => !item.ok).map(item => `${item.label}: ${item.message}`)
   ];
 
@@ -542,6 +585,7 @@ function buildSummary(rootDir, args) {
     hookCheck,
     codexRuleChecks,
     workflowInstall,
+    shellLaunchers,
     skillCount: skillFiles.length,
     warnings,
     replay,
@@ -564,6 +608,7 @@ function printHuman(summary) {
       `workflow:  Claude=${summary.workflowInstall.claudeInstalled ? 'yes' : 'no'} Codex=${summary.workflowInstall.codexInstalled ? 'yes' : 'no'} State=${summary.workflowInstall.stateInstalled ? 'yes' : 'no'}`
     );
   }
+  console.log(`Shell:   ${summary.shellLaunchers.installed ? 'OK' : 'FAIL'}`);
   console.log('');
   console.log('JSON:');
   for (const item of summary.jsonChecks) {
@@ -611,6 +656,12 @@ function printHuman(summary) {
     } else {
       console.log('  [INFO] Codex runtime not present');
     }
+  }
+
+  console.log('');
+  console.log('Shell Launchers:');
+  for (const item of summary.shellLaunchers.checks) {
+    console.log(`  [${item.ok ? 'OK' : 'FAIL'}] ${item.file}`);
   }
 
   if (summary.warnings.length > 0) {

@@ -33,6 +33,9 @@ Check these paths exist and point to valid targets:
 - `~/.claude/contexts` → should point to this repo's `contexts`
 - `~/.claude/rules` → should point to this repo's `rules`
 - `~/.claude/hooks/scripts` → should point to this repo's `hooks/scripts`
+- `~/.claude/bin/goldband-self-update` → should exist
+- `~/.claude/shell/goldband-launchers.sh` → should exist
+- `~/.zshrc` → should contain the goldband shell launcher source block (`zsh` only)
 
 For each: report OK if target is valid, WARNING if exists but target is ambiguous, ERROR if missing.
 

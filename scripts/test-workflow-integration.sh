@@ -5,9 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_HOME="$(mktemp -d /tmp/goldband-workflow-home.XXXXXX)"
 TMP_WORKFLOW="$(mktemp -d /tmp/goldband-workflow-repo.XXXXXX)"
 TMP_ROOT="$(mktemp -d /tmp/goldband-workflow-root.XXXXXX)"
+TMP_UPDATE_ORIGIN="$(mktemp -d /tmp/goldband-update-origin.XXXXXX)"
+TMP_UPDATE_SEED="$(mktemp -d /tmp/goldband-update-seed.XXXXXX)"
+TMP_UPDATE_WORK="$(mktemp -d /tmp/goldband-update-work.XXXXXX)"
 LEGACY_RUNTIME_NAME="g""stack"
 LEGACY_GOLDBAND_UPGRADE="goldband-${LEGACY_RUNTIME_NAME}-upgrade"
-trap 'rm -rf "$TMP_HOME" "$TMP_WORKFLOW" "$TMP_ROOT"' EXIT
+trap 'rm -rf "$TMP_HOME" "$TMP_WORKFLOW" "$TMP_ROOT" "$TMP_UPDATE_ORIGIN" "$TMP_UPDATE_SEED" "$TMP_UPDATE_WORK"' EXIT
 
 mkdir -p \
   "$TMP_WORKFLOW/bin" \
@@ -162,8 +165,11 @@ cp "$ROOT_DIR/AGENTS.md" "$TMP_ROOT/AGENTS.md"
 cp -R "$ROOT_DIR/skills" "$TMP_ROOT/skills"
 cp -R "$ROOT_DIR/hooks" "$TMP_ROOT/hooks"
 cp -R "$ROOT_DIR/commands" "$TMP_ROOT/commands"
+cp -R "$ROOT_DIR/contexts" "$TMP_ROOT/contexts"
+cp -R "$ROOT_DIR/rules" "$TMP_ROOT/rules"
 cp -R "$ROOT_DIR/codex" "$TMP_ROOT/codex"
 cp -R "$ROOT_DIR/.claude-plugin" "$TMP_ROOT/.claude-plugin"
+cp -R "$ROOT_DIR/shell" "$TMP_ROOT/shell"
 cp -R "$TMP_WORKFLOW" "$TMP_ROOT/vendor/workflow"
 chmod +x "$TMP_ROOT/install.sh"
 
@@ -175,11 +181,21 @@ HOME="$TMP_HOME" "$TMP_ROOT/install.sh" workflow >/tmp/goldband-workflow-install
 HOME="$TMP_HOME" "$TMP_ROOT/install.sh" workflow-codex >/tmp/goldband-workflow-codex.log
 HOME="$TMP_HOME" "$TMP_ROOT/install.sh" all-with-workflow >/tmp/goldband-all-with-workflow.log
 
-echo "[3/5] verify symlinks"
+echo "[3/6] verify symlinks"
 test -d "$TMP_HOME/.claude/skills/workflow"
 test -d "$TMP_HOME/.codex/skills/workflow"
 test -d "$TMP_HOME/.workflow/projects"
 test -f "$TMP_HOME/.codex/skills/workflow/VERSION"
+test -L "$TMP_HOME/.claude/commands"
+test -L "$TMP_HOME/.claude/contexts"
+test -L "$TMP_HOME/.claude/rules"
+test -L "$TMP_HOME/.claude/hooks/scripts"
+test -L "$TMP_HOME/.claude/statusline-command.sh"
+test -L "$TMP_HOME/.codex/config.toml"
+test -L "$TMP_HOME/.codex/AGENTS.md"
+test -L "$TMP_HOME/.codex/rules"
+test -L "$TMP_HOME/.claude/bin/goldband-self-update"
+test -L "$TMP_HOME/.claude/shell/goldband-launchers.sh"
 test ! -e "$TMP_HOME/.claude/skills/workflow/SKILL.md"
 test ! -e "$TMP_HOME/.codex/skills/workflow/SKILL.md"
 test -e "$TMP_HOME/.claude/skills/workflow/freeze"
@@ -197,12 +213,15 @@ test -f "$TMP_HOME/.codex/skills/goldband-qa/SKILL.md"
 test -f "$TMP_HOME/.codex/skills/goldband-ship/SKILL.md"
 test -f "$TMP_HOME/.claude/commands/goldband-language.md"
 test -f "$TMP_HOME/.claude/commands/scripts/set-goldband-language.sh"
+grep -q '^# >>> goldband shell launchers >>>$' "$TMP_HOME/.zshrc"
+grep -q 'source "\$HOME/.claude/shell/goldband-launchers.sh"' "$TMP_HOME/.zshrc"
 test ! -e "$TMP_HOME/.claude/skills/review"
 test ! -e "$TMP_HOME/.claude/skills/goldband-upgrade"
 test ! -e "$TMP_HOME/.codex/skills/workflow-review"
 test ! -e "$TMP_HOME/.codex/skills/goldband-upgrade"
 test ! -e "$TMP_HOME/.codex/skills/$LEGACY_RUNTIME_NAME"
 test ! -e "$TMP_HOME/.codex/skills/$LEGACY_GOLDBAND_UPGRADE"
+test "$(readlink "$TMP_HOME/.claude/commands")" = "$TMP_ROOT/commands"
 grep -q '^name: goldband-investigate$' "$TMP_HOME/.claude/skills/goldband-investigate/SKILL.md"
 grep -q '^name: goldband-review$' "$TMP_HOME/.claude/skills/goldband-review/SKILL.md"
 grep -q '^name: goldband-qa$' "$TMP_HOME/.claude/skills/goldband-qa/SKILL.md"
@@ -213,7 +232,6 @@ grep -q '^name: goldband-review$' "$TMP_HOME/.codex/skills/goldband-review/SKILL
 grep -q '^name: goldband-qa$' "$TMP_HOME/.codex/skills/goldband-qa/SKILL.md"
 grep -q '^name: goldband-ship$' "$TMP_HOME/.codex/skills/goldband-ship/SKILL.md"
 test "$(sed -n '1p' "$TMP_HOME/.claude/commands/goldband-language.md")" = "---"
-grep -q '^description: 重述需求、評估風險並建立分階段實作計畫；在使用者確認前禁止動 code。$' "$TMP_HOME/.claude/commands/plan.md"
 grep -q '提問、建議、選項、摘要與指令說明語言' "$TMP_HOME/.claude/commands/goldband-language.md"
 grep -q '^  系統化除錯與根因調查。$' "$TMP_HOME/.codex/skills/goldband-investigate/SKILL.md"
 grep -q 'workflow-config get goldband_language' "$TMP_HOME/.codex/skills/goldband-investigate/SKILL.md"
@@ -232,22 +250,71 @@ if grep -q ".agents/skills/$LEGACY_RUNTIME_NAME" "$TMP_HOME/.codex/skills/goldba
 fi
 
 HOME="$TMP_HOME" "$TMP_HOME/.claude/commands/scripts/set-goldband-language.sh" set en >/tmp/goldband-language-sync.log
-grep -q '^description: Restate requirements, assess risks, and create a step-by-step implementation plan. WAIT for user CONFIRM before touching code.$' "$TMP_HOME/.claude/commands/plan.md"
-grep -q '^description: Switch or inspect the language used by goldband workflow wrapper prompts and descriptions.$' "$TMP_HOME/.claude/commands/goldband-language.md"
 grep -q '^  Systematic debugging and root-cause investigation.$' "$TMP_HOME/.codex/skills/goldband-investigate/SKILL.md"
 
-echo "[4/5] status output"
+FAKE_BIN="$TMP_HOME/fake-bin"
+mkdir -p "$FAKE_BIN"
+cat > "$FAKE_BIN/fake-update" <<'EOF'
+#!/usr/bin/env bash
+echo "update:$1" >> "$HOME/launcher.log"
+EOF
+cat > "$FAKE_BIN/claude" <<'EOF'
+#!/usr/bin/env bash
+echo "claude:$*" >> "$HOME/launcher.log"
+EOF
+cat > "$FAKE_BIN/codex" <<'EOF'
+#!/usr/bin/env bash
+echo "codex:$*" >> "$HOME/launcher.log"
+EOF
+chmod +x "$FAKE_BIN/fake-update" "$FAKE_BIN/claude" "$FAKE_BIN/codex"
+HOME="$TMP_HOME" PATH="$FAKE_BIN:$PATH" GOLDBAND_SELF_UPDATE_BIN="$FAKE_BIN/fake-update" bash <<'EOF'
+source "$HOME/.claude/shell/goldband-launchers.sh"
+claude alpha
+codex beta
+EOF
+grep -q '^update:claude$' "$TMP_HOME/launcher.log"
+grep -q '^claude:alpha$' "$TMP_HOME/launcher.log"
+grep -q '^update:codex$' "$TMP_HOME/launcher.log"
+grep -q '^codex:beta$' "$TMP_HOME/launcher.log"
+
+git init --bare --initial-branch=main "$TMP_UPDATE_ORIGIN/origin.git" >/dev/null
+git clone "$TMP_UPDATE_ORIGIN/origin.git" "$TMP_UPDATE_SEED/repo" >/dev/null 2>&1
+git -C "$TMP_UPDATE_SEED/repo" config user.name "goldband-test"
+git -C "$TMP_UPDATE_SEED/repo" config user.email "goldband@example.com"
+echo "v1" > "$TMP_UPDATE_SEED/repo/README.md"
+git -C "$TMP_UPDATE_SEED/repo" add README.md
+git -C "$TMP_UPDATE_SEED/repo" commit -m "init" >/dev/null
+git -C "$TMP_UPDATE_SEED/repo" push -u origin main >/dev/null
+git clone "$TMP_UPDATE_ORIGIN/origin.git" "$TMP_UPDATE_WORK/repo" >/dev/null 2>&1
+OLD_HEAD="$(git -C "$TMP_UPDATE_WORK/repo" rev-parse HEAD)"
+git clone "$TMP_UPDATE_ORIGIN/origin.git" "$TMP_UPDATE_SEED/repo-next" >/dev/null 2>&1
+git -C "$TMP_UPDATE_SEED/repo-next" config user.name "goldband-test"
+git -C "$TMP_UPDATE_SEED/repo-next" config user.email "goldband@example.com"
+echo "v2" >> "$TMP_UPDATE_SEED/repo-next/README.md"
+git -C "$TMP_UPDATE_SEED/repo-next" commit -am "update" >/dev/null
+git -C "$TMP_UPDATE_SEED/repo-next" push origin main >/dev/null
+GOLDBAND_SELF_UPDATE_REPO_DIR="$TMP_UPDATE_WORK/repo" "$TMP_HOME/.claude/bin/goldband-self-update" >/tmp/goldband-self-update.log 2>&1
+NEW_HEAD="$(git -C "$TMP_UPDATE_WORK/repo" rev-parse HEAD)"
+test "$OLD_HEAD" != "$NEW_HEAD"
+grep -q '\[goldband\] updated' /tmp/goldband-self-update.log
+
+echo "[4/6] status output"
 STATUS_OUTPUT="$(HOME="$TMP_HOME" "$TMP_ROOT/install.sh" status)"
 echo "$STATUS_OUTPUT" | grep -q "workflow Claude install"
 echo "$STATUS_OUTPUT" | grep -q "workflow Codex runtime (0.0.0-test)"
 echo "$STATUS_OUTPUT" | grep -q "goldband wrapper language (en)"
+echo "$STATUS_OUTPUT" | grep -q "shell launchers (zsh)"
 
-echo "[5/5] verifier output"
+echo "[5/6] verifier output"
 VERIFIER_OUTPUT="$(HOME="$TMP_HOME" node "$TMP_ROOT/skills/global/claude-config-verification/scripts/verify-claude-config.js" --json)"
 echo "$VERIFIER_OUTPUT" | grep -q '"claudeInstalled": true'
 echo "$VERIFIER_OUTPUT" | grep -q '"codexInstalled": true'
 echo "$VERIFIER_OUTPUT" | grep -q '"stateInstalled": true'
 echo "$VERIFIER_OUTPUT" | grep -q '"codexVersion": "0.0.0-test"'
 echo "$VERIFIER_OUTPUT" | grep -q '~/.codex/skills/goldband-\*'
+
+echo "[6/6] language command flow docs"
+grep -q '不要先讀目前設定' "$TMP_ROOT/commands/goldband-language.md"
+grep -q '第一個提問固定用中英雙語短句' "$TMP_ROOT/commands/goldband-language.md"
 
 echo "[OK] workflow integration smoke test passed"

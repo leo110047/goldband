@@ -9,7 +9,7 @@ description: 切換或查詢 goldband workflow wrappers 的提問與說明語言
 ## Arguments
 
 `$ARGUMENTS` 可以是：
-- 空白：先顯示目前設定，然後直接詢問要切到哪個語言
+- 空白：直接詢問要切到哪個語言
 - `zh-TW`、`zh`、`tw`、`中文`、`繁中`：切到繁體中文
 - `en`、`english`、`英文`：切到英文
 
@@ -31,18 +31,17 @@ description: 切換或查詢 goldband workflow wrappers 的提問與說明語言
    - 其他值 → 回覆支援的選項，停止
 
 4. 如果沒有參數：
-   - 執行 `~/.claude/commands/scripts/set-goldband-language.sh get`
-   - 根據目前語言回報目前值
+   - 不要先讀目前設定
    - 直接問使用者要切到哪個語言，只給兩個選項：
      - `zh-TW`
      - `en`
+   - 第一個提問用中英雙語短句，避免先依賴當前語言設定
    - 等使用者回答後，再執行設定與驗證
 
 5. 如果有合法參數：
    - 執行 `~/.claude/commands/scripts/set-goldband-language.sh set <normalized>`
    - 這一步會同時更新：
      - `goldband_language` config
-     - `~/.claude/commands/*.md` 的 frontmatter description
      - `~/.claude/skills/goldband-*` 與 `~/.codex/skills/goldband-*` 的 skill description
    - 再執行一次 `~/.claude/commands/scripts/set-goldband-language.sh get` 驗證
    - 根據新語言回報切換結果
@@ -51,7 +50,7 @@ description: 切換或查詢 goldband workflow wrappers 的提問與說明語言
 ## Output Style
 
 - 若這次有合法參數，直接用正規化後的新語言回覆
-- 若這次沒有參數，先讀目前 `goldband_language`，並用目前語言回覆與提問
+- 若這次沒有參數，第一個提問固定用中英雙語短句；使用者選完後改用新語言回覆
 - `zh-TW` 模式使用繁體中文；`en` 模式使用英文
 - 要明確顯示「目前值 / 新值」
 - code、identifiers、commands、paths、env vars 保持英文

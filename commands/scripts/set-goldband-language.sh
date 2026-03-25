@@ -35,30 +35,6 @@ read_language() {
   fi
 }
 
-command_description() {
-  local command_name="$1"
-  local language="$2"
-  case "$command_name:$language" in
-    checkpoint:en) printf '%s\n' 'Create, verify, pause, or resume workflow checkpoints. Supports cross-session state persistence.' ;;
-    code-review:en) printf '%s\n' 'Two-stage code review — spec compliance (--spec) and code quality. Security-first, blocks on CRITICAL/HIGH issues.' ;;
-    discuss:en) printf '%s\n' 'Identify gray areas and capture structured decisions before planning.' ;;
-    goldband-language:en) printf '%s\n' 'Switch or inspect the language used by goldband workflow wrapper prompts and descriptions.' ;;
-    map-codebase:en) printf '%s\n' 'Generate structured codebase analysis documents for planning and onboarding.' ;;
-    plan:en) printf '%s\n' 'Restate requirements, assess risks, and create a step-by-step implementation plan. WAIT for user CONFIRM before touching code.' ;;
-    verify:en) printf '%s\n' 'Run build, type, lint, test, and console.log checks. Supports --goal for three-level goal-backward verification.' ;;
-    verify-config:en) printf '%s\n' 'Perform a comprehensive health check of the goldband installation and repo assets.' ;;
-    checkpoint:*) printf '%s\n' '建立、驗證、暫停或續接 workflow checkpoint，支援跨 session 狀態保存。' ;;
-    code-review:*) printf '%s\n' '兩階段 code review：spec compliance（--spec）與 code quality，遇到 CRITICAL/HIGH 問題時阻擋。' ;;
-    discuss:*) printf '%s\n' '辨識灰色地帶，先把結構化決策鎖定，再進入規劃。' ;;
-    goldband-language:*) printf '%s\n' '切換或查詢 goldband workflow wrappers 的提問與說明語言。' ;;
-    map-codebase:*) printf '%s\n' '產出結構化 codebase 分析文件，供規劃與 onboarding 使用。' ;;
-    plan:*) printf '%s\n' '重述需求、評估風險並建立分階段實作計畫；在使用者確認前禁止動 code。' ;;
-    verify:*) printf '%s\n' '執行 build、type、lint、test 與 console.log 檢查，支援 --goal 的三層回推驗證。' ;;
-    verify-config:*) printf '%s\n' '全面檢查 goldband 安裝狀態與 repo 資產健康度。' ;;
-    *) return 1 ;;
-  esac
-}
-
 wrapper_description() {
   local wrapper_name="$1"
   local language="$2"
@@ -119,44 +95,6 @@ wrapper_description() {
   esac
 }
 
-rewrite_command_description() {
-  local command_file="$1"
-  local description="$2"
-  awk -v desc="$description" '
-    BEGIN {
-      inserted = 0
-      frontmatter_markers = 0
-    }
-    NR == 1 && $0 != "---" {
-      print "---"
-      print "description: " desc
-      print "---"
-      print ""
-      print $0
-      inserted = 1
-      next
-    }
-    !inserted && $0 == "---" {
-      frontmatter_markers++
-      print
-      next
-    }
-    !inserted && frontmatter_markers == 1 && $0 ~ /^description: / {
-      print "description: " desc
-      inserted = 1
-      next
-    }
-    !inserted && frontmatter_markers == 1 && $0 == "---" {
-      print "description: " desc
-      print $0
-      inserted = 1
-      next
-    }
-    { print }
-  ' "$command_file" > "${command_file}.tmp"
-  mv "${command_file}.tmp" "$command_file"
-}
-
 rewrite_skill_description() {
   local skill_file="$1"
   local description="$2"
@@ -197,25 +135,6 @@ rewrite_skill_description() {
 
   mv "${skill_file}.tmp" "$skill_file"
   rm -f "$temp_desc"
-}
-
-sync_command_descriptions() {
-  local language="$1"
-  local commands_dir="$HOME/.claude/commands"
-  local command_file command_name description
-
-  [ -d "$commands_dir" ] || return 0
-  if [ -L "$commands_dir" ]; then
-    return 0
-  fi
-
-  for command_file in "$commands_dir"/*.md; do
-    [ -f "$command_file" ] || continue
-    command_name="$(basename "$command_file" .md)"
-    description="$(command_description "$command_name" "$language" 2>/dev/null || true)"
-    [ -n "$description" ] || continue
-    rewrite_command_description "$command_file" "$description"
-  done
 }
 
 sync_wrapper_descriptions() {
@@ -274,7 +193,6 @@ main() {
     language="$(read_language "$workflow_config_bin")"
   fi
 
-  sync_command_descriptions "$language"
   sync_wrapper_descriptions "$language"
   printf '%s\n' "$language"
 }
