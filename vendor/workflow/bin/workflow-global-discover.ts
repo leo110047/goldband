@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 /**
- * gstack-global-discover — Discover AI coding sessions across Claude Code, Codex CLI, and Gemini CLI.
+ * workflow-global-discover — Discover AI coding sessions across Claude Code, Codex CLI, and Gemini CLI.
  * Resolves each session's working directory to a git repo, deduplicates by normalized remote URL,
  * and outputs structured JSON to stdout.
  *
  * Usage:
- *   gstack-global-discover --since 7d [--format json|summary]
- *   gstack-global-discover --help
+ *   workflow-global-discover --since 7d [--format json|summary]
+ *   workflow-global-discover --help
  */
 
 import { existsSync, readdirSync, statSync, readFileSync, openSync, readSync, closeSync } from "fs";
@@ -44,15 +44,15 @@ interface DiscoveryResult {
 // ── CLI parsing ────────────────────────────────────────────────────────────
 
 function printUsage(): void {
-  console.error(`Usage: gstack-global-discover --since <window> [--format json|summary]
+  console.error(`Usage: workflow-global-discover --since <window> [--format json|summary]
 
   --since <window>   Time window: e.g. 7d, 14d, 30d, 24h
   --format <fmt>     Output format: json (default) or summary
   --help             Show this help
 
 Examples:
-  gstack-global-discover --since 7d
-  gstack-global-discover --since 14d --format summary`);
+  workflow-global-discover --since 7d
+  workflow-global-discover --since 14d --format summary`);
 }
 
 function parseArgs(): { since: string; format: "json" | "summary" } {

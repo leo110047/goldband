@@ -71,7 +71,7 @@ IMPORTANT:
 - Do NOT use AskUserQuestion — skip any interactive prompts.
 - Focus on finding the planted vulnerabilities in this small repo.
 - Produce the SECURITY FINDINGS table.
-- Save the report to .gstack/security-reports/.`,
+- Save the report to .workflow/security-reports/.`,
       workingDirectory: csoDir,
       maxTurns: 30,
       allowedTools: ['Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob', 'Agent'],
@@ -98,7 +98,7 @@ IMPORTANT:
     ).toBe(true);
 
     // Should save a report
-    const reportDir = path.join(csoDir, '.gstack', 'security-reports');
+    const reportDir = path.join(csoDir, '.workflow', 'security-reports');
     const reportExists = fs.existsSync(reportDir);
     if (reportExists) {
       const reports = fs.readdirSync(reportDir).filter(f => f.endsWith('.json'));

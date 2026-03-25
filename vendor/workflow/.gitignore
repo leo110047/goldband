@@ -1,12 +1,12 @@
 .env
 node_modules/
 browse/dist/
-bin/gstack-global-discover
-.gstack/
+bin/workflow-global-discover
+.workflow/
 .claude/skills/
 .agents/
 .context/
-.gstack-worktrees/
+.workflow-worktrees/
 /tmp/
 *.log
 bun.lock

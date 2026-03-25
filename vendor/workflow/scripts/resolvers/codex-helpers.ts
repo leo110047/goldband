@@ -62,10 +62,10 @@ policy:
 }
 
 export function codexSkillName(skillDir: string): string {
-  if (skillDir === '.' || skillDir === '') return 'gstack';
-  // Don't double-prefix directories that already start with gstack-
-  if (skillDir.startsWith('gstack-')) return skillDir;
-  return `gstack-${skillDir}`;
+  if (skillDir === '.' || skillDir === '') return 'workflow';
+  // Don't double-prefix directories that already start with workflow-
+  if (skillDir.startsWith('workflow-')) return skillDir;
+  return `workflow-${skillDir}`;
 }
 
 /**

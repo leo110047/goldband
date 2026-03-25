@@ -9,16 +9,16 @@ export interface HostPaths {
 
 export const HOST_PATHS: Record<Host, HostPaths> = {
   claude: {
-    skillRoot: '~/.claude/skills/gstack',
-    localSkillRoot: '.claude/skills/gstack',
-    binDir: '~/.claude/skills/gstack/bin',
-    browseDir: '~/.claude/skills/gstack/browse/dist',
+    skillRoot: '~/.claude/skills/workflow',
+    localSkillRoot: '.claude/skills/workflow',
+    binDir: '~/.claude/skills/workflow/bin',
+    browseDir: '~/.claude/skills/workflow/browse/dist',
   },
   codex: {
-    skillRoot: '$GSTACK_ROOT',
-    localSkillRoot: '.agents/skills/gstack',
-    binDir: '$GSTACK_BIN',
-    browseDir: '$GSTACK_BROWSE',
+    skillRoot: '$WORKFLOW_ROOT',
+    localSkillRoot: '.agents/skills/workflow',
+    binDir: '$WORKFLOW_BIN',
+    browseDir: '$WORKFLOW_BROWSE',
   },
 };
 

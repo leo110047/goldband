@@ -256,9 +256,21 @@ function readProfileFile(profilePath) {
   return fields;
 }
 
+function readWorkflowVersion(runtimeDir) {
+  for (const filename of ['VERSION', '.installed-version']) {
+    const versionPath = path.join(runtimeDir, filename);
+    if (fs.existsSync(versionPath)) {
+      return fs.readFileSync(versionPath, 'utf8').trim() || 'unknown';
+    }
+  }
+
+  return 'unknown';
+}
+
 function checkWorkflowInstall(homeDir) {
   const claudeDir = path.join(homeDir, '.claude', 'skills', 'workflow');
   const codexDir = path.join(homeDir, '.codex', 'skills', 'workflow');
+  const stateDir = path.join(homeDir, '.workflow');
   const result = {
     claudeInstalled: false,
     claudeVersion: null,
@@ -266,19 +278,18 @@ function checkWorkflowInstall(homeDir) {
     codexInstalled: false,
     codexVersion: null,
     codexChecks: [],
+    stateInstalled: false,
+    stateChecks: [],
     warnings: []
   };
 
   if (fs.existsSync(claudeDir)) {
     result.claudeInstalled = true;
-    const versionPath = path.join(claudeDir, 'VERSION');
-    result.claudeVersion = fs.existsSync(versionPath)
-      ? fs.readFileSync(versionPath, 'utf8').trim() || 'unknown'
-      : 'unknown';
+    result.claudeVersion = readWorkflowVersion(claudeDir);
 
     const claudeRequired = [
       'setup',
-      'SKILL.md',
+      path.join('bin', 'workflow-repo-mode'),
       path.join('careful', 'SKILL.md'),
       path.join('freeze', 'SKILL.md'),
       path.join('review', 'SKILL.md'),
@@ -292,10 +303,16 @@ function checkWorkflowInstall(homeDir) {
 
   if (fs.existsSync(codexDir)) {
     result.codexInstalled = true;
-    const versionPath = path.join(codexDir, 'VERSION');
-    result.codexVersion = fs.existsSync(versionPath)
-      ? fs.readFileSync(versionPath, 'utf8').trim() || 'unknown'
-      : 'unknown';
+    result.codexVersion = readWorkflowVersion(codexDir);
+
+    const codexRequired = [
+      path.join('bin', 'workflow-config'),
+      path.join('review', 'checklist.md')
+    ];
+    result.codexChecks.push(...codexRequired.map(relativePath => ({
+      file: relativePath,
+      ok: fs.existsSync(path.join(codexDir, relativePath))
+    })));
 
     const codexSkillsRoot = path.join(homeDir, '.codex', 'skills');
     const generatedSkills = fs.existsSync(codexSkillsRoot)
@@ -306,6 +323,17 @@ function checkWorkflowInstall(homeDir) {
       ok: generatedSkills.length > 0,
       detail: `${generatedSkills.length} generated skills`
     });
+  }
+
+  if (fs.existsSync(stateDir)) {
+    result.stateInstalled = true;
+    const stateRequired = [
+      'projects'
+    ];
+    result.stateChecks = stateRequired.map(relativePath => ({
+      file: relativePath,
+      ok: fs.existsSync(path.join(stateDir, relativePath))
+    }));
   }
 
   const goldbandClaudeProfile = readProfileFile(path.join(homeDir, '.claude', 'skills', '.goldband-profile'));
@@ -437,6 +465,31 @@ function buildSummary(rootDir, args) {
   const codexRuleChecks = [];
   const additionalWarnings = [];
   const workflowInstall = checkWorkflowInstall(homeDir);
+  const workflowInstallErrors = [];
+
+  if (workflowInstall.claudeInstalled) {
+    workflowInstallErrors.push(
+      ...workflowInstall.claudeChecks
+        .filter(item => !item.ok)
+        .map(item => `workflow Claude runtime: missing ${item.file}`)
+    );
+  }
+
+  if (workflowInstall.codexInstalled) {
+    workflowInstallErrors.push(
+      ...workflowInstall.codexChecks
+        .filter(item => !item.ok)
+        .map(item => `workflow Codex runtime: missing ${item.file}`)
+    );
+  }
+
+  if (workflowInstall.stateInstalled) {
+    workflowInstallErrors.push(
+      ...workflowInstall.stateChecks
+        .filter(item => !item.ok)
+        .map(item => `workflow state: missing ${item.file}`)
+    );
+  }
 
   if (isCodexAvailable()) {
     codexRuleChecks.push(
@@ -467,6 +520,7 @@ function buildSummary(rootDir, args) {
     ...frontmatterChecks.flatMap(item => item.errors.map(error => `${item.file}: ${error}`)),
     ...referenceChecks.flatMap(item => item.missing.map(ref => `${item.file}: missing ${ref}`)),
     ...hookCheck.errors,
+    ...workflowInstallErrors,
     ...codexRuleChecks.filter(item => !item.ok).map(item => `${item.label}: ${item.message}`)
   ];
 
@@ -506,7 +560,9 @@ function printHuman(summary) {
     console.log(`Codex:   ${passedCodexChecks}/${summary.codexRuleChecks.length} execpolicy checks passed`);
   }
   if (summary.workflowInstall.claudeInstalled || summary.workflowInstall.codexInstalled) {
-    console.log(`workflow:  Claude=${summary.workflowInstall.claudeInstalled ? 'yes' : 'no'} Codex=${summary.workflowInstall.codexInstalled ? 'yes' : 'no'}`);
+    console.log(
+      `workflow:  Claude=${summary.workflowInstall.claudeInstalled ? 'yes' : 'no'} Codex=${summary.workflowInstall.codexInstalled ? 'yes' : 'no'} State=${summary.workflowInstall.stateInstalled ? 'yes' : 'no'}`
+    );
   }
   console.log('');
   console.log('JSON:');

@@ -51,7 +51,7 @@ if (evalsEnabled && !process.env.EVALS_ALL) {
  *  the Skill tool appears in Claude's available tools list. */
 function installSkills(tmpDir: string) {
   const skillDirs = [
-    '', // root gstack SKILL.md
+    '', // root workflow SKILL.md
     'qa', 'qa-only', 'ship', 'review', 'plan-ceo-review', 'plan-eng-review',
     'plan-design-review', 'design-review', 'design-consultation', 'retro',
     'document-release', 'investigate', 'office-hours', 'browse', 'setup-browser-cookies',
@@ -69,7 +69,7 @@ function installSkills(tmpDir: string) {
     const srcPath = path.join(ROOT, skill, 'SKILL.md');
     if (!fs.existsSync(srcPath)) continue;
 
-    const skillName = skill || 'gstack';
+    const skillName = skill || 'workflow';
 
     for (const targetBase of installTargets) {
       const destDir = path.join(targetBase, skillName);

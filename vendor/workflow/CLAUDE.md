@@ -1,4 +1,4 @@
-# gstack development
+# workflow development
 
 ## Commands
 
@@ -15,7 +15,7 @@ bun run build        # gen docs + compile binaries
 bun run gen:skill-docs  # regenerate SKILL.md files from templates
 bun run skill:check  # health dashboard for all skills
 bun run dev:skill    # watch mode: auto-regen + validate on change
-bun run eval:list    # list all eval runs from ~/.gstack-dev/evals/
+bun run eval:list    # list all eval runs from ~/.workflow-dev/evals/
 bun run eval:compare # compare two eval runs (auto-picks most recent)
 bun run eval:summary # aggregate stats across all eval runs
 ```
@@ -23,7 +23,7 @@ bun run eval:summary # aggregate stats across all eval runs
 `test:evals` requires `ANTHROPIC_API_KEY`. Codex E2E tests (`test/codex-e2e.test.ts`)
 use Codex's own auth from `~/.codex/` config — no `OPENAI_API_KEY` env var needed.
 E2E tests stream progress in real-time (tool-by-tool via `--output-format stream-json
---verbose`). Results are persisted to `~/.gstack-dev/evals/` with auto-comparison
+--verbose`). Results are persisted to `~/.workflow-dev/evals/` with auto-comparison
 against the previous run.
 
 **Diff-based test selection:** `test:evals` and `test:e2e` auto-select tests based
@@ -46,7 +46,7 @@ tests via `claude -p`. Both must pass before creating a PR.
 ## Project structure
 
 ```
-gstack/
+workflow/
 ├── browse/          # Headless browser CLI (Playwright)
 │   ├── src/         # CLI + server + commands
 │   │   ├── commands.ts  # Command registry (single source of truth)
@@ -79,7 +79,7 @@ gstack/
 ├── office-hours/    # /office-hours skill (YC Office Hours — startup diagnostic + builder brainstorm)
 ├── investigate/     # /investigate skill (systematic root-cause debugging)
 ├── retro/           # Retrospective skill (includes /retro global cross-project mode)
-├── bin/             # CLI utilities (gstack-repo-mode, gstack-slug, gstack-config, etc.)
+├── bin/             # CLI utilities (workflow-repo-mode, workflow-slug, workflow-config, etc.)
 ├── document-release/ # /document-release skill (post-ship doc updates)
 ├── cso/             # /cso skill (OWASP Top 10 + STRIDE security audit)
 ├── design-consultation/ # /design-consultation skill (design system from scratch)
@@ -117,11 +117,11 @@ Skills must NEVER hardcode framework-specific commands, file patterns, or direct
 structures. Instead:
 
 1. **Read CLAUDE.md** for project-specific config (test commands, eval commands, etc.)
-2. **If missing, AskUserQuestion** — let the user tell you or let gstack search the repo
+2. **If missing, AskUserQuestion** — let the user tell you or let workflow search the repo
 3. **Persist the answer to CLAUDE.md** so we never have to ask again
 
 This applies to test commands, eval commands, deploy commands, and any other
-project-specific behavior. The project owns its config; gstack reads it.
+project-specific behavior. The project owns its config; workflow reads it.
 
 ## Writing SKILL templates
 
@@ -149,21 +149,21 @@ project uses.
 
 ## Vendored symlink awareness
 
-When developing gstack, `.claude/skills/gstack` may be a symlink back to this
+When developing workflow, `.claude/skills/workflow` may be a symlink back to this
 working directory (gitignored). This means skill changes are **live immediately** —
 great for rapid iteration, risky during big refactors where half-written skills
-could break other Claude Code sessions using gstack concurrently.
+could break other Claude Code sessions using workflow concurrently.
 
-**Check once per session:** Run `ls -la .claude/skills/gstack` to see if it's a
+**Check once per session:** Run `ls -la .claude/skills/workflow` to see if it's a
 symlink or a real copy. If it's a symlink to your working directory, be aware that:
-- Template changes + `bun run gen:skill-docs` immediately affect all gstack invocations
-- Breaking changes to SKILL.md.tmpl files can break concurrent gstack sessions
-- During large refactors, remove the symlink (`rm .claude/skills/gstack`) so the
-  global install at `~/.claude/skills/gstack/` is used instead
+- Template changes + `bun run gen:skill-docs` immediately affect all workflow invocations
+- Breaking changes to SKILL.md.tmpl files can break concurrent workflow sessions
+- During large refactors, remove the symlink (`rm .claude/skills/workflow`) so the
+  global install at `~/.claude/skills/workflow/` is used instead
 
 **For plan reviews:** When reviewing plans that modify skill templates or the
 gen-skill-docs pipeline, consider whether the changes should be tested in isolation
-before going live (especially if the user is actively using gstack in other windows).
+before going live (especially if the user is actively using workflow in other windows).
 
 ## Commit style
 
@@ -213,9 +213,9 @@ CHANGELOG.md is **for users**, not contributors. Write it like product release n
 
 ## AI effort compression
 
-When estimating or discussing effort, always show both human-team and CC+gstack time:
+When estimating or discussing effort, always show both human-team and CC+workflow time:
 
-| Task type | Human team | CC+gstack | Compression |
+| Task type | Human team | CC+workflow | Compression |
 |-----------|-----------|-----------|-------------|
 | Boilerplate / scaffolding | 2 days | 15 min | ~100x |
 | Test writing | 1 day | 15 min | ~50x |
@@ -243,7 +243,7 @@ builder philosophy.
 
 ## Local plans
 
-Contributors can store long-range vision docs and design documents in `~/.gstack-dev/plans/`.
+Contributors can store long-range vision docs and design documents in `~/.workflow-dev/plans/`.
 These are local-only (not checked in). When reviewing TODOS.md, check `plans/` for candidates
 that may be ready to promote to TODOs or implement.
 
@@ -277,10 +277,10 @@ you'll check later.
 
 ## Deploying to the active skill
 
-The active skill lives at `~/.claude/skills/gstack/`. After making changes:
+The active skill lives at `~/.claude/skills/workflow/`. After making changes:
 
 1. Push your branch
-2. Fetch and reset in the skill directory: `cd ~/.claude/skills/gstack && git fetch origin && git reset --hard origin/main`
-3. Rebuild: `cd ~/.claude/skills/gstack && bun run build`
+2. Fetch and reset in the skill directory: `cd ~/.claude/skills/workflow && git fetch origin && git reset --hard origin/main`
+3. Rebuild: `cd ~/.claude/skills/workflow && bun run build`
 
-Or copy the binary directly: `cp browse/dist/browse ~/.claude/skills/gstack/browse/dist/browse`
+Or copy the binary directly: `cp browse/dist/browse ~/.claude/skills/workflow/browse/dist/browse`

@@ -428,10 +428,13 @@ resolve_workflow_repo_dir() {
 
 read_workflow_version() {
     local repo_dir="$1"
-    if [ -f "$repo_dir/VERSION" ]; then
-        tr -d '\n' < "$repo_dir/VERSION"
-        return 0
-    fi
+    local version_file
+    for version_file in "$repo_dir/VERSION" "$repo_dir/.installed-version"; do
+        if [ -f "$version_file" ]; then
+            tr -d '\n' < "$version_file"
+            return 0
+        fi
+    done
     return 1
 }
 
@@ -476,16 +479,24 @@ write_goldband_wrapper_skill() {
 rewrite_goldband_wrapper_runtime_paths() {
     local skill_file="$1"
     local tmp_file
+    local legacy_runtime_name="g""stack"
+    local legacy_claude_root="~/.claude/skills/$legacy_runtime_name"
+    local legacy_claude_relative=".claude/skills/$legacy_runtime_name"
+    # Keep $HOME escaped here because this function rewrites literal SKILL.md text,
+    # not expanded filesystem paths.
+    local legacy_codex_root_literal="\$HOME/.codex/skills/$legacy_runtime_name"
+    local legacy_codex_home="~/.codex/skills/$legacy_runtime_name"
+    local legacy_agents_root=".agents/skills/$legacy_runtime_name"
 
     [ -f "$skill_file" ] || return 0
 
     tmp_file="$(mktemp)"
     sed \
-        -e 's|~/.claude/skills/gstack|~/.claude/skills/workflow|g' \
-        -e 's|\.claude/skills/gstack|.claude/skills/workflow|g' \
-        -e 's|\$HOME/.codex/skills/gstack|$HOME/.codex/skills/workflow|g' \
-        -e 's|~/.codex/skills/gstack|~/.codex/skills/workflow|g' \
-        -e 's|\.agents/skills/gstack|.agents/skills/workflow|g' \
+        -e "s|$legacy_claude_root|~/.claude/skills/workflow|g" \
+        -e "s|$legacy_claude_relative|.claude/skills/workflow|g" \
+        -e "s|$legacy_codex_root_literal|\\\$HOME/.codex/skills/workflow|g" \
+        -e "s|$legacy_codex_home|~/.codex/skills/workflow|g" \
+        -e "s|$legacy_agents_root|.agents/skills/workflow|g" \
         "$skill_file" > "$tmp_file"
 
     mv "$tmp_file" "$skill_file"
@@ -654,6 +665,9 @@ create_goldband_workflow_aliases() {
 cleanup_workflow_user_entries() {
     local claude_skills_dir="$HOME/.claude/skills"
     local codex_skills_dir="$HOME/.codex/skills"
+    local legacy_runtime_name="g""stack"
+    local legacy_upgrade_name="${legacy_runtime_name}-upgrade"
+    local legacy_goldband_upgrade_name="goldband-${legacy_runtime_name}-upgrade"
     local alias_name
     local claude_target
     local codex_target
@@ -666,8 +680,8 @@ cleanup_workflow_user_entries() {
         [ -n "$codex_target" ] && codex_cleanup+=("$codex_target")
     done < <(workflow_wrapper_manifest)
 
-    claude_cleanup+=("goldband-upgrade" "gstack-upgrade" "goldband-gstack-upgrade" "gstack" "gstack.bak")
-    codex_cleanup+=("goldband-upgrade" "goldband-gstack-upgrade" "gstack")
+    claude_cleanup+=("goldband-upgrade" "$legacy_upgrade_name" "$legacy_goldband_upgrade_name" "$legacy_runtime_name" "${legacy_runtime_name}.bak")
+    codex_cleanup+=("goldband-upgrade" "$legacy_goldband_upgrade_name" "$legacy_runtime_name")
 
     local entry
     for entry in "${claude_cleanup[@]}"; do
@@ -724,6 +738,7 @@ install_workflow_host() {
     local host="$1"
     local repo_dir
     local setup_output
+    local legacy_runtime_name="g""stack"
 
     if ! repo_dir="$(resolve_workflow_repo_dir)"; then
         echo -e "${RED}找不到 workflow runtime。${NC}"
@@ -745,11 +760,11 @@ install_workflow_host() {
         }
         ./setup --host "$host" 2>&1
     )"; then
-        printf '%s\n' "$setup_output" | sed 's/gstack/workflow/g'
+        printf '%s\n' "$setup_output" | sed "s/$legacy_runtime_name/workflow/g"
         exit 1
     fi
     if [ -n "$setup_output" ]; then
-        printf '%s\n' "$setup_output" | sed 's/gstack/workflow/g'
+        printf '%s\n' "$setup_output" | sed "s/$legacy_runtime_name/workflow/g"
     fi
     normalize_workflow_runtime_install "$host"
     create_goldband_workflow_aliases
@@ -1170,6 +1185,12 @@ show_status() {
         local generated_count
         generated_count=$(find "$HOME/.codex/skills" -maxdepth 1 -name 'goldband-*' 2>/dev/null | wc -l | tr -d ' ')
         echo -e "  ${GREEN}[OK]${NC} workflow Codex generated skills: ${generated_count:-0}"
+    fi
+
+    if [ -d "$HOME/.workflow/projects" ]; then
+        echo -e "  ${GREEN}[OK]${NC} workflow state dir (~/.workflow/projects)"
+    else
+        echo -e "  ${YELLOW}[未安裝]${NC} workflow state dir (~/.workflow/projects)"
     fi
 }
 

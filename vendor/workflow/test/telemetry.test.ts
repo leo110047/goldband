@@ -7,13 +7,13 @@ import * as os from 'os';
 const ROOT = path.resolve(import.meta.dir, '..');
 const BIN = path.join(ROOT, 'bin');
 
-// Each test gets a fresh temp directory for GSTACK_STATE_DIR
+// Each test gets a fresh temp directory for WORKFLOW_STATE_DIR
 let tmpDir: string;
 
 function run(cmd: string, env: Record<string, string> = {}): string {
   return execSync(cmd, {
     cwd: ROOT,
-    env: { ...process.env, GSTACK_STATE_DIR: tmpDir, GSTACK_DIR: ROOT, ...env },
+    env: { ...process.env, WORKFLOW_STATE_DIR: tmpDir, WORKFLOW_DIR: ROOT, ...env },
     encoding: 'utf-8',
     timeout: 10000,
   }).trim();
@@ -30,16 +30,16 @@ function parseJsonl(): any[] {
 }
 
 beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-tel-'));
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-tel-'));
 });
 
 afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-describe('gstack-telemetry-log', () => {
+describe('workflow-telemetry-log', () => {
   test('appends valid JSONL locally', () => {
-    run(`${BIN}/gstack-telemetry-log --skill qa --duration 142 --outcome success --session-id test-123`);
+    run(`${BIN}/workflow-telemetry-log --skill qa --duration 142 --outcome success --session-id test-123`);
 
     const events = parseJsonl();
     expect(events).toHaveLength(1);
@@ -50,18 +50,18 @@ describe('gstack-telemetry-log', () => {
     expect(events[0].session_id).toBe('test-123');
     expect(events[0].event_type).toBe('skill_run');
     expect(events[0].os).toBeTruthy();
-    expect(events[0].gstack_version).toBeTruthy();
+    expect(events[0].workflow_version).toBeTruthy();
   });
 
   test('does not include installation identifiers', () => {
-    run(`${BIN}/gstack-telemetry-log --skill qa --duration 50 --outcome success --session-id anon-123`);
+    run(`${BIN}/workflow-telemetry-log --skill qa --duration 50 --outcome success --session-id anon-123`);
 
     const events = parseJsonl();
     expect(events[0]).not.toHaveProperty('installation_id');
   });
 
   test('includes error_class when provided', () => {
-    run(`${BIN}/gstack-telemetry-log --skill browse --duration 10 --outcome error --error-class timeout --session-id err-123`);
+    run(`${BIN}/workflow-telemetry-log --skill browse --duration 10 --outcome error --error-class timeout --session-id err-123`);
 
     const events = parseJsonl();
     expect(events[0].error_class).toBe('timeout');
@@ -69,21 +69,21 @@ describe('gstack-telemetry-log', () => {
   });
 
   test('handles missing duration gracefully', () => {
-    run(`${BIN}/gstack-telemetry-log --skill qa --outcome success --session-id nodur-123`);
+    run(`${BIN}/workflow-telemetry-log --skill qa --outcome success --session-id nodur-123`);
 
     const events = parseJsonl();
     expect(events[0].duration_s).toBeNull();
   });
 
   test('supports event_type flag', () => {
-    run(`${BIN}/gstack-telemetry-log --event-type upgrade_prompted --skill "" --outcome success --session-id up-123`);
+    run(`${BIN}/workflow-telemetry-log --event-type upgrade_prompted --skill "" --outcome success --session-id up-123`);
 
     const events = parseJsonl();
     expect(events[0].event_type).toBe('upgrade_prompted');
   });
 
   test('includes local-only fields (_repo_slug, _branch)', () => {
-    run(`${BIN}/gstack-telemetry-log --skill qa --duration 50 --outcome success --session-id local-123`);
+    run(`${BIN}/workflow-telemetry-log --skill qa --duration 50 --outcome success --session-id local-123`);
 
     const events = parseJsonl();
     // These should be present in local JSONL
@@ -96,7 +96,7 @@ describe('gstack-telemetry-log', () => {
     const analyticsDir = path.join(tmpDir, 'analytics');
     if (fs.existsSync(analyticsDir)) fs.rmSync(analyticsDir, { recursive: true });
 
-    run(`${BIN}/gstack-telemetry-log --skill qa --duration 50 --outcome success --session-id mkdir-123`);
+    run(`${BIN}/workflow-telemetry-log --skill qa --duration 50 --outcome success --session-id mkdir-123`);
 
     expect(fs.existsSync(analyticsDir)).toBe(true);
     expect(readJsonl()).toHaveLength(1);
@@ -110,11 +110,11 @@ describe('.pending marker', () => {
     fs.mkdirSync(analyticsDir, { recursive: true });
     fs.writeFileSync(
       path.join(analyticsDir, '.pending-old-123'),
-      '{"skill":"old-skill","ts":"2026-03-18T00:00:00Z","session_id":"old-123","gstack_version":"0.6.4"}'
+      '{"skill":"old-skill","ts":"2026-03-18T00:00:00Z","session_id":"old-123","workflow_version":"0.6.4"}'
     );
 
     // Run telemetry-log with a DIFFERENT session — should finalize the old pending marker
-    run(`${BIN}/gstack-telemetry-log --skill qa --duration 50 --outcome success --session-id new-456`);
+    run(`${BIN}/workflow-telemetry-log --skill qa --duration 50 --outcome success --session-id new-456`);
 
     const events = parseJsonl();
     expect(events).toHaveLength(2);
@@ -133,9 +133,9 @@ describe('.pending marker', () => {
     const analyticsDir = path.join(tmpDir, 'analytics');
     fs.mkdirSync(analyticsDir, { recursive: true });
     const pendingPath = path.join(analyticsDir, '.pending-stale-session');
-    fs.writeFileSync(pendingPath, '{"skill":"stale","ts":"2026-03-18T00:00:00Z","session_id":"stale-session","gstack_version":"v"}');
+    fs.writeFileSync(pendingPath, '{"skill":"stale","ts":"2026-03-18T00:00:00Z","session_id":"stale-session","workflow_version":"v"}');
 
-    run(`${BIN}/gstack-telemetry-log --skill qa --duration 50 --outcome success --session-id new-456`);
+    run(`${BIN}/workflow-telemetry-log --skill qa --duration 50 --outcome success --session-id new-456`);
 
     expect(fs.existsSync(pendingPath)).toBe(false);
   });
@@ -145,9 +145,9 @@ describe('.pending marker', () => {
     fs.mkdirSync(analyticsDir, { recursive: true });
     // Create pending for same session ID we'll use
     const pendingPath = path.join(analyticsDir, '.pending-same-session');
-    fs.writeFileSync(pendingPath, '{"skill":"in-flight","ts":"2026-03-18T00:00:00Z","session_id":"same-session","gstack_version":"v"}');
+    fs.writeFileSync(pendingPath, '{"skill":"in-flight","ts":"2026-03-18T00:00:00Z","session_id":"same-session","workflow_version":"v"}');
 
-    run(`${BIN}/gstack-telemetry-log --skill qa --duration 50 --outcome success --session-id same-session`);
+    run(`${BIN}/workflow-telemetry-log --skill qa --duration 50 --outcome success --session-id same-session`);
 
     // Should only have 1 event (the new one), not finalize own pending
     const events = parseJsonl();
@@ -159,27 +159,27 @@ describe('.pending marker', () => {
     const analyticsDir = path.join(tmpDir, 'analytics');
     fs.mkdirSync(analyticsDir, { recursive: true });
     const pendingPath = path.join(analyticsDir, '.pending-off-123');
-    fs.writeFileSync(pendingPath, '{"skill":"stale","ts":"2026-03-18T00:00:00Z","session_id":"off-123","gstack_version":"v"}');
+    fs.writeFileSync(pendingPath, '{"skill":"stale","ts":"2026-03-18T00:00:00Z","session_id":"off-123","workflow_version":"v"}');
 
-    run(`${BIN}/gstack-telemetry-log --skill qa --duration 50 --outcome success --session-id off-123`);
+    run(`${BIN}/workflow-telemetry-log --skill qa --duration 50 --outcome success --session-id off-123`);
 
     expect(fs.existsSync(pendingPath)).toBe(false);
     expect(readJsonl()).toHaveLength(1);
   });
 });
 
-describe('gstack-analytics', () => {
+describe('workflow-analytics', () => {
   test('shows "no data" for empty JSONL', () => {
-    const output = run(`${BIN}/gstack-analytics`);
+    const output = run(`${BIN}/workflow-analytics`);
     expect(output).toContain('no data');
   });
 
   test('renders usage dashboard with events', () => {
-    run(`${BIN}/gstack-telemetry-log --skill qa --duration 120 --outcome success --session-id a-1`);
-    run(`${BIN}/gstack-telemetry-log --skill qa --duration 60 --outcome success --session-id a-2`);
-    run(`${BIN}/gstack-telemetry-log --skill ship --duration 30 --outcome error --error-class timeout --session-id a-3`);
+    run(`${BIN}/workflow-telemetry-log --skill qa --duration 120 --outcome success --session-id a-1`);
+    run(`${BIN}/workflow-telemetry-log --skill qa --duration 60 --outcome success --session-id a-2`);
+    run(`${BIN}/workflow-telemetry-log --skill ship --duration 30 --outcome error --error-class timeout --session-id a-3`);
 
-    const output = run(`${BIN}/gstack-analytics all`);
+    const output = run(`${BIN}/workflow-analytics all`);
     expect(output).toContain('/qa');
     expect(output).toContain('/ship');
     expect(output).toContain('2 runs');
@@ -189,26 +189,26 @@ describe('gstack-analytics', () => {
   });
 
   test('filters by time window', () => {
-    run(`${BIN}/gstack-telemetry-log --skill qa --duration 60 --outcome success --session-id t-1`);
+    run(`${BIN}/workflow-telemetry-log --skill qa --duration 60 --outcome success --session-id t-1`);
 
-    const output7d = run(`${BIN}/gstack-analytics 7d`);
+    const output7d = run(`${BIN}/workflow-analytics 7d`);
     expect(output7d).toContain('/qa');
     expect(output7d).toContain('last 7 days');
   });
 });
 
-describe('gstack-telemetry-sync', () => {
+describe('workflow-telemetry-sync', () => {
   test('is a no-op', () => {
-    const result = run(`${BIN}/gstack-telemetry-sync`);
+    const result = run(`${BIN}/workflow-telemetry-sync`);
     expect(result).toBe('');
   });
 });
 
-describe('gstack-community-dashboard', () => {
+describe('workflow-community-dashboard', () => {
   test('points users to local analytics', () => {
-    const output = run(`${BIN}/gstack-community-dashboard`);
-    expect(output).toContain('gstack community dashboard');
+    const output = run(`${BIN}/workflow-community-dashboard`);
+    expect(output).toContain('workflow community dashboard');
     expect(output).toContain('Community telemetry has been removed');
-    expect(output).toContain('gstack-analytics');
+    expect(output).toContain('workflow-analytics');
   });
 });

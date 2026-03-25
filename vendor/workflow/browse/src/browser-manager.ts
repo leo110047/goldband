@@ -99,7 +99,7 @@ export class BrowserManager {
     // Chromium crash → exit with clear message
     this.browser.on('disconnected', () => {
       console.error('[browse] FATAL: Chromium process crashed or was killed. Server exiting.');
-      console.error('[browse] Console/network logs flushed to .gstack/browse-*.log');
+      console.error('[browse] Console/network logs flushed to .workflow/browse-*.log');
       process.exit(1);
     });
 
@@ -531,7 +531,7 @@ export class BrowserManager {
       // Register crash handler on new browser
       this.browser.on('disconnected', () => {
         console.error('[browse] FATAL: Chromium process crashed or was killed. Server exiting.');
-        console.error('[browse] Console/network logs flushed to .gstack/browse-*.log');
+        console.error('[browse] Console/network logs flushed to .workflow/browse-*.log');
         process.exit(1);
       });
 

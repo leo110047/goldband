@@ -1,5 +1,5 @@
 ---
-name: gstack
+name: workflow
 preamble-tier: 1
 version: 1.1.0
 description: |
@@ -7,13 +7,13 @@ description: |
   elements, verify state, diff before/after, take annotated screenshots, test responsive
   layouts, forms, uploads, dialogs, and capture bug evidence. Use when asked to open or
   test a site, verify a deployment, dogfood a user flow, or file a bug with screenshots.
-  Also suggest adjacent gstack skills by stage: brainstorm /office-hours; strategy
+  Also suggest adjacent workflow skills by stage: brainstorm /office-hours; strategy
   /plan-ceo-review; architecture /plan-eng-review; design /plan-design-review or
   /design-consultation; auto-review /autoplan; debugging /investigate; QA /qa; code review
   /review; visual audit /design-review; shipping /ship; docs /document-release; retro
   /retro; second opinion /codex; prod safety /careful or /guard; scoped edits /freeze or
   /unfreeze. If the user opts out of suggestions, stop
-  and run gstack-config set proactive false; if they opt back in, run gstack-config set
+  and run workflow-config set proactive false; if they opt back in, run workflow-config set
   proactive true.
 allowed-tools:
   - Bash
@@ -24,11 +24,11 @@ allowed-tools:
 
 {{PREAMBLE}}
 
-If `PROACTIVE` is `false`: do NOT proactively suggest other gstack skills during this session.
+If `PROACTIVE` is `false`: do NOT proactively suggest other workflow skills during this session.
 Only run skills the user explicitly invokes. This preference persists across sessions via
-`gstack-config`.
+`workflow-config`.
 
-# gstack browse: QA Testing & Dogfooding
+# workflow browse: QA Testing & Dogfooding
 
 Persistent headless Chromium. First call auto-starts (~3s), then ~100-200ms per command.
 Auto-shuts down after 30 min idle. State persists between calls (cookies, tabs, sessions).

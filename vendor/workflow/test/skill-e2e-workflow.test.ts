@@ -124,8 +124,8 @@ describeIfSelected('Ship workflow E2E', ['ship-local-workflow'], () => {
   let shipRemoteDir: string;
 
   beforeAll(() => {
-    shipRemoteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-ship-remote-'));
-    shipWorkDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-ship-work-'));
+    shipRemoteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-ship-remote-'));
+    shipWorkDir = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-ship-work-'));
 
     // Create bare remote
     spawnSync('git', ['init', '--bare'], { cwd: shipRemoteDir, stdio: 'pipe' });

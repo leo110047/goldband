@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-# gstack-telemetry-sync — deprecated no-op
-#
-# Remote telemetry sync was removed. Local analytics remain available via
-# ~/.gstack/analytics/skill-usage.jsonl and gstack-analytics.
-exit 0

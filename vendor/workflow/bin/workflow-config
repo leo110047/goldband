@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# workflow-config — read/write ~/.workflow/config.yaml
+#
+# Usage:
+#   workflow-config get <key>          — read a config value
+#   workflow-config set <key> <value>  — write a config value
+#   workflow-config list               — show all config
+#
+# Env overrides (for testing):
+#   WORKFLOW_STATE_DIR  — override ~/.workflow state directory
+set -euo pipefail
+
+STATE_DIR="${WORKFLOW_STATE_DIR:-$HOME/.workflow}"
+CONFIG_FILE="$STATE_DIR/config.yaml"
+
+case "${1:-}" in
+  get)
+    KEY="${2:?Usage: workflow-config get <key>}"
+    grep -E "^${KEY}:" "$CONFIG_FILE" 2>/dev/null | tail -1 | awk '{print $2}' | tr -d '[:space:]' || true
+    ;;
+  set)
+    KEY="${2:?Usage: workflow-config set <key> <value>}"
+    VALUE="${3:?Usage: workflow-config set <key> <value>}"
+    mkdir -p "$STATE_DIR"
+    if grep -qE "^${KEY}:" "$CONFIG_FILE" 2>/dev/null; then
+      sed -i '' "s/^${KEY}:.*/${KEY}: ${VALUE}/" "$CONFIG_FILE"
+    else
+      echo "${KEY}: ${VALUE}" >> "$CONFIG_FILE"
+    fi
+    ;;
+  list)
+    cat "$CONFIG_FILE" 2>/dev/null || true
+    ;;
+  *)
+    echo "Usage: workflow-config {get|set|list} [key] [value]"
+    exit 1
+    ;;
+esac

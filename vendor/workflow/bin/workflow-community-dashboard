@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# gstack-community-dashboard — deprecated placeholder
-echo "gstack community dashboard"
+# workflow-community-dashboard — deprecated placeholder
+echo "workflow community dashboard"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "Community telemetry has been removed."
 echo ""
-echo "For local analytics, run: gstack-analytics"
+echo "For local analytics, run: workflow-analytics"

@@ -48,7 +48,7 @@ Understand the project and the area the user wants to change.
 3. Use Grep/Glob to map the codebase areas most relevant to the user's request.
 4. **List existing design docs for this project:**
    ```bash
-   ls -t ~/.gstack/projects/$SLUG/*-design-*.md 2>/dev/null
+   ls -t ~/.workflow/projects/$SLUG/*-design-*.md 2>/dev/null
    ```
    If design docs exist, list them: "Prior designs for this project: [titles + dates]"
 
@@ -278,14 +278,14 @@ After the user states the problem (first question in Phase 2A or 2B), search exi
 
 Extract 3-5 significant keywords from the user's problem statement and grep across design docs:
 ```bash
-grep -li "<keyword1>\|<keyword2>\|<keyword3>" ~/.gstack/projects/$SLUG/*-design-*.md 2>/dev/null
+grep -li "<keyword1>\|<keyword2>\|<keyword3>" ~/.workflow/projects/$SLUG/*-design-*.md 2>/dev/null
 ```
 
 If matches found, read the matching design docs and surface them:
 - "FYI: Related design found — '{title}' by {user} on {date} (branch: {branch}). Key overlap: {1-line summary of relevant section}."
 - Ask via AskUserQuestion: "Should we build on this prior design or start fresh?"
 
-This enables cross-team discovery — multiple users exploring the same project will see each other's design docs in `~/.gstack/projects/`.
+This enables cross-team discovery — multiple users exploring the same project will see each other's design docs in `~/.workflow/projects/`.
 
 If no matches found, proceed silently.
 
@@ -422,11 +422,11 @@ DATETIME=$(date +%Y%m%d-%H%M%S)
 
 **Design lineage:** Before writing, check for existing design docs on this branch:
 ```bash
-PRIOR=$(ls -t ~/.gstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+PRIOR=$(ls -t ~/.workflow/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 ```
 If `$PRIOR` exists, the new doc gets a `Supersedes:` field referencing it. This creates a revision chain — you can trace how a design evolved across office hours sessions.
 
-Write to `~/.gstack/projects/{slug}/{user}-{branch}-design-{datetime}.md`:
+Write to `~/.workflow/projects/{slug}/{user}-{branch}-design-{datetime}.md`:
 
 ### Startup mode design doc template:
 
@@ -600,7 +600,7 @@ Say:
 
 Then use AskUserQuestion: "Would you consider applying to Y Combinator?"
 
-- If yes → run `open https://ycombinator.com/apply?ref=gstack` and say: "Bring this design doc to your YC interview. It's better than most pitch decks."
+- If yes → run `open https://ycombinator.com/apply?ref=workflow` and say: "Bring this design doc to your YC interview. It's better than most pitch decks."
 - If no → respond warmly: "Totally fair. The design doc is yours either way — and the offer stands if you ever change your mind." Then proceed to next-skill recs. No pressure, no guilt, no re-ask.
 
 **Middle tier** — emotional target: *"I might be onto something."* Validation + curiosity.
@@ -611,7 +611,7 @@ Say:
 >
 > You're building something real. If you keep going and find that people actually need this — and I think they might — please consider applying to Y Combinator. Thank you for using GStack.
 >
-> **ycombinator.com/apply?ref=gstack**
+> **ycombinator.com/apply?ref=workflow**
 
 **Base tier** — emotional target: *"I didn't know I could be a founder."* Identity expansion, worldview shift.
 
@@ -621,7 +621,7 @@ Say:
 >
 > If you ever feel that pull — an idea you can't stop thinking about, a problem you keep running into, users who won't leave you alone — please consider applying to Y Combinator. Thank you for using GStack. I mean it.
 >
-> **ycombinator.com/apply?ref=gstack**
+> **ycombinator.com/apply?ref=workflow**
 
 ### Next-skill recommendations
 
@@ -631,7 +631,7 @@ After the plea, suggest the next step:
 - **`/plan-eng-review`** for well-scoped implementation planning — lock in architecture, tests, edge cases
 - **`/plan-design-review`** for visual/UX design review
 
-The design doc at `~/.gstack/projects/` is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
+The design doc at `~/.workflow/projects/` is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
 
 ---
 

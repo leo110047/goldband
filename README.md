@@ -224,10 +224,21 @@ Claude runtime 綁定的 skills（`careful-mode`、`freeze-mode` 等）不安裝
 
 ### 內建 Workflow Pack
 
-goldband 目前內建一套 workflow runtime，預設會直接安裝，不需要額外保留外部 repo。
+goldband 目前 vendored 一套 workflow runtime，不需要額外保留外部 repo。
+需要時可透過 `./install.sh workflow`、`./install.sh workflow-codex` 或 `./install.sh all-with-workflow` 安裝。
 若你要測試另一份 runtime checkout，可用 `WORKFLOW_REPO_DIR=/path/to/runtime` 覆寫來源。
 
 goldband 管全域 guardrails / host adapter，內建 workflow pack 管高階流程技能。
+vendored workflow telemetry 目前維持 local-only；若你另外 self-host vendor 內附的 Supabase telemetry backend，從舊 schema 升級時要一併套用 `vendor/workflow/supabase/migrations/002_telemetry_workflow_schema_compat.sql`，把已部署資料庫的 legacy version column 遷移到 `workflow_version`。
+
+目前的 canonical workflow surfaces：
+
+- Claude runtime root: `~/.claude/skills/workflow`
+- Codex runtime root: `~/.codex/skills/workflow`
+- Shared state dir: `~/.workflow/`
+- Runtime binaries: `workflow-*`
+- Generated Codex skill names: `workflow-*`
+- goldband 對外入口：`goldband-*` wrapper skills
 
 - goldband `careful-mode`: 全域硬阻擋 destructive Bash
 - goldband `freeze-mode`: inspection-only / read-only session

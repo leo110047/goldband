@@ -142,7 +142,7 @@ export function logCost(label: string, result: { costEstimate: { turnsUsed: numb
  */
 export function dumpOutcomeDiagnostic(dir: string, label: string, report: string, judgeResult: any) {
   try {
-    const transcriptDir = path.join(dir, '.gstack', 'test-transcripts');
+    const transcriptDir = path.join(dir, '.workflow', 'test-transcripts');
     fs.mkdirSync(transcriptDir, { recursive: true });
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     fs.writeFileSync(
@@ -205,10 +205,10 @@ export async function finalizeEvalCollector(evalCollector: EvalCollector | null)
 // Pre-seed preamble state files so E2E tests don't waste turns on lake intro.
 // This is a one-time interactive prompt that burns extra turns per test if not pre-seeded.
 if (evalsEnabled) {
-  const gstackDir = path.join(os.homedir(), '.gstack');
-  fs.mkdirSync(gstackDir, { recursive: true });
+  const workflowStateDir = path.join(os.homedir(), '.workflow');
+  fs.mkdirSync(workflowStateDir, { recursive: true });
   for (const f of ['.completeness-intro-seen']) {
-    const p = path.join(gstackDir, f);
+    const p = path.join(workflowStateDir, f);
     if (!fs.existsSync(p)) fs.writeFileSync(p, '');
   }
 }

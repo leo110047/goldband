@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# workflow-telemetry-sync — deprecated no-op
+#
+# Remote telemetry sync was removed. Local analytics remain available via
+# ~/.workflow/analytics/skill-usage.jsonl and workflow-analytics.
+exit 0

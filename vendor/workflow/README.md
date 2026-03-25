@@ -1,4 +1,4 @@
-# gstack
+# workflow
 
 > "I don't think I've typed like a line of code probably since December, basically, which is an extremely large change." — [Andrej Karpathy](https://fortune.com/2026/03/21/andrej-karpathy-openai-cofounder-ai-agents-coding-state-of-psychosis-openclaw/), No Priors podcast, March 2026
 
@@ -6,7 +6,7 @@ When I heard Karpathy say this, I wanted to find out how. How does one person sh
 
 I'm [Garry Tan](https://x.com/garrytan), President & CEO of [Y Combinator](https://www.ycombinator.com/). I've worked with thousands of startups — Coinbase, Instacart, Rippling — when they were one or two people in a garage. Before YC, I was one of the first eng/PM/designers at Palantir, cofounded Posterous (sold to Twitter), and built Bookface, YC's internal social network.
 
-**gstack is my answer.** I've been building products for twenty years, and right now I'm shipping more code than I ever have. In the last 60 days: **600,000+ lines of production code** (35% tests), **10,000-20,000 lines per day**, part-time, while running YC full-time. Here's my last `/retro` across 3 projects: **140,751 lines added, 362 commits, ~115k net LOC** in one week.
+**workflow is my answer.** I've been building products for twenty years, and right now I'm shipping more code than I ever have. In the last 60 days: **600,000+ lines of production code** (35% tests), **10,000-20,000 lines per day**, part-time, while running YC full-time. Here's my last `/retro` across 3 projects: **140,751 lines added, 362 commits, ~115k net LOC** in one week.
 
 **2026 — 1,237 contributions and counting:**
 
@@ -18,7 +18,7 @@ I'm [Garry Tan](https://x.com/garrytan), President & CEO of [Y Combinator](https
 
 Same person. Different era. The difference is the tooling.
 
-**gstack is how I do it.** It turns Claude Code into a virtual engineering team — a CEO who rethinks the product, an eng manager who locks architecture, a designer who catches AI slop, a reviewer who finds production bugs, a QA lead who opens a real browser, a security officer who runs OWASP + STRIDE audits, and a release engineer who ships the PR. Twenty specialists and eight power tools, all slash commands, all Markdown, all free, MIT license.
+**workflow is how I do it.** It turns Claude Code into a virtual engineering team — a CEO who rethinks the product, an eng manager who locks architecture, a designer who catches AI slop, a reviewer who finds production bugs, a QA lead who opens a real browser, a security officer who runs OWASP + STRIDE audits, and a release engineer who ships the PR. Twenty specialists and eight power tools, all slash commands, all Markdown, all free, MIT license.
 
 This is my open source software factory. I use it every day. I'm sharing it because these tools should be available to everyone.
 
@@ -31,7 +31,7 @@ Fork it. Improve it. Make it yours. And if you want to hate on free open source 
 
 ## Quick start
 
-1. Install gstack (30 seconds — see below)
+1. Install workflow (30 seconds — see below)
 2. Run `/office-hours` — describe what you're building
 3. Run `/plan-ceo-review` on any feature idea
 4. Run `/review` on any branch with changes
@@ -46,46 +46,46 @@ Fork it. Improve it. Make it yours. And if you want to hate on free open source 
 
 Open Claude Code and paste this. Claude does the rest.
 
-> Install gstack: run **`git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup`** then add a "gstack" section to CLAUDE.md that says to use the /browse skill from gstack for all web browsing, never use mcp\_\_claude-in-chrome\_\_\* tools, and lists the available skills: /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review, /design-consultation, /review, /ship, /land-and-deploy, /canary, /benchmark, /browse, /qa, /qa-only, /design-review, /setup-browser-cookies, /setup-deploy, /retro, /investigate, /document-release, /codex, /cso, /autoplan, /careful, /freeze, /guard, /unfreeze. Then ask the user if they also want to add gstack to the current project so teammates get it.
+> Install workflow: run **`git clone https://github.com/garrytan/workflow.git ~/.claude/skills/workflow && cd ~/.claude/skills/workflow && ./setup`** then add a "workflow" section to CLAUDE.md that says to use the /browse skill from workflow for all web browsing, never use mcp\_\_claude-in-chrome\_\_\* tools, and lists the available skills: /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review, /design-consultation, /review, /ship, /land-and-deploy, /canary, /benchmark, /browse, /qa, /qa-only, /design-review, /setup-browser-cookies, /setup-deploy, /retro, /investigate, /document-release, /codex, /cso, /autoplan, /careful, /freeze, /guard, /unfreeze. Then ask the user if they also want to add workflow to the current project so teammates get it.
 
 ### Step 2: Add to your repo so teammates get it (optional)
 
-> Add gstack to this project: run **`cp -Rf ~/.claude/skills/gstack .claude/skills/gstack && rm -rf .claude/skills/gstack/.git && cd .claude/skills/gstack && ./setup`** then add a "gstack" section to this project's CLAUDE.md that says to use the /browse skill from gstack for all web browsing, never use mcp\_\_claude-in-chrome\_\_\* tools, lists the available skills: /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review, /design-consultation, /review, /ship, /land-and-deploy, /canary, /benchmark, /browse, /qa, /qa-only, /design-review, /setup-browser-cookies, /setup-deploy, /retro, /investigate, /document-release, /codex, /cso, /careful, /freeze, /guard, /unfreeze, and tells Claude that if gstack skills aren't working, run `cd .claude/skills/gstack && ./setup` to build the binary and register skills.
+> Add workflow to this project: run **`cp -Rf ~/.claude/skills/workflow .claude/skills/workflow && rm -rf .claude/skills/workflow/.git && cd .claude/skills/workflow && ./setup`** then add a "workflow" section to this project's CLAUDE.md that says to use the /browse skill from workflow for all web browsing, never use mcp\_\_claude-in-chrome\_\_\* tools, lists the available skills: /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review, /design-consultation, /review, /ship, /land-and-deploy, /canary, /benchmark, /browse, /qa, /qa-only, /design-review, /setup-browser-cookies, /setup-deploy, /retro, /investigate, /document-release, /codex, /cso, /careful, /freeze, /guard, /unfreeze, and tells Claude that if workflow skills aren't working, run `cd .claude/skills/workflow && ./setup` to build the binary and register skills.
 
 Real files get committed to your repo (not a submodule), so `git clone` just works. Everything lives inside `.claude/`. Nothing touches your PATH or runs in the background.
 
 ### Codex, Gemini CLI, or Cursor
 
-gstack works on any agent that supports the [SKILL.md standard](https://github.com/anthropics/claude-code). Skills live in `.agents/skills/` and are discovered automatically.
+workflow works on any agent that supports the [SKILL.md standard](https://github.com/anthropics/claude-code). Skills live in `.agents/skills/` and are discovered automatically.
 
 Install to one repo:
 
 ```bash
-git clone https://github.com/garrytan/gstack.git .agents/skills/gstack
-cd .agents/skills/gstack && ./setup --host codex
+git clone https://github.com/garrytan/workflow.git .agents/skills/workflow
+cd .agents/skills/workflow && ./setup --host codex
 ```
 
-When setup runs from `.agents/skills/gstack`, it installs the generated Codex skills next to it in the same repo and does not write to `~/.codex/skills`.
+When setup runs from `.agents/skills/workflow`, it installs the generated Codex skills next to it in the same repo and does not write to `~/.codex/skills`.
 
 Install once for your user account:
 
 ```bash
-git clone https://github.com/garrytan/gstack.git ~/gstack
-cd ~/gstack && ./setup --host codex
+git clone https://github.com/garrytan/workflow.git ~/workflow
+cd ~/workflow && ./setup --host codex
 ```
 
-`setup --host codex` creates the runtime root at `~/.codex/skills/gstack` and
+`setup --host codex` creates the runtime root at `~/.codex/skills/workflow` and
 links the generated Codex skills at the top level. This avoids duplicate skill
 discovery from the source repo checkout.
 
 Or let setup auto-detect which agents you have installed:
 
 ```bash
-git clone https://github.com/garrytan/gstack.git ~/gstack
-cd ~/gstack && ./setup --host auto
+git clone https://github.com/garrytan/workflow.git ~/workflow
+cd ~/workflow && ./setup --host auto
 ```
 
-For Codex-compatible hosts, setup now supports both repo-local installs from `.agents/skills/gstack` and user-global installs from `~/.codex/skills/gstack`. All 28 skills work across all supported agents. Hook-based safety skills (careful, freeze, guard) use inline safety advisory prose on non-Claude hosts.
+For Codex-compatible hosts, setup now supports both repo-local installs from `.agents/skills/workflow` and user-global installs from `~/.codex/skills/workflow`. All 28 skills work across all supported agents. Hook-based safety skills (careful, freeze, guard) use inline safety advisory prose on non-Claude hosts.
 
 ## See it work
 
@@ -132,7 +132,7 @@ You said "daily briefing app." The agent said "you're building a chief of staff 
 
 ## The sprint
 
-gstack is a process, not a collection of tools. The skills run in the order a sprint runs:
+workflow is a process, not a collection of tools. The skills run in the order a sprint runs:
 
 **Think → Plan → Build → Review → Test → Ship → Reflect**
 
@@ -175,7 +175,7 @@ Each skill feeds into the next. `/office-hours` writes a design doc that `/plan-
 
 ## Parallel sprints
 
-gstack works well with one sprint. It gets interesting with ten running at once.
+workflow works well with one sprint. It gets interesting with ten running at once.
 
 [Conductor](https://conductor.build) runs multiple Claude Code sessions in parallel — each in its own isolated workspace. One session on `/office-hours`, another on `/review`, a third implementing a feature, a fourth running `/qa`. All at the same time. The sprint structure is what makes parallelism work — without a process, ten agents is ten sources of chaos. With a process, each agent knows exactly what to do and when to stop.
 
@@ -185,7 +185,7 @@ Free, MIT licensed, open source. No premium tier, no waitlist.
 
 I open sourced how I build software. You can fork it and make it your own.
 
-> **We're hiring.** Want to ship 10K+ LOC/day and help harden gstack?
+> **We're hiring.** Want to ship 10K+ LOC/day and help harden workflow?
 > Come work at YC — [ycombinator.com/software](https://ycombinator.com/software)
 > Extremely competitive salary and equity. San Francisco, Dogpatch District.
 
@@ -202,29 +202,32 @@ I open sourced how I build software. You can fork it and make it your own.
 
 ## Local Analytics
 
-gstack keeps local usage analytics in `~/.gstack/analytics/skill-usage.jsonl`.
+workflow keeps local usage analytics in `~/.workflow/analytics/skill-usage.jsonl`.
 
 - Data stays on your machine.
 - No community/anonymous/device-ID onboarding is required.
-- Run `gstack-analytics` to see your personal usage dashboard.
+- Run `workflow-analytics` to see your personal usage dashboard.
+- `workflow-telemetry-sync` is currently local-only/no-op in this tree. The bundled Supabase schema is only relevant if you self-host the optional telemetry backend.
 
 ## Troubleshooting
 
-**Skill not showing up?** `cd ~/.claude/skills/gstack && ./setup`
+**Skill not showing up?** `cd ~/.claude/skills/workflow && ./setup`
 
-**`/browse` fails?** `cd ~/.claude/skills/gstack && bun install && bun run build`
+**`/browse` fails?** `cd ~/.claude/skills/workflow && bun install && bun run build`
 
-**Stale install?** Re-run `./setup` from your gstack checkout.
+**Stale install?** Re-run `./setup` from your workflow checkout.
 
-**Codex says "Skipped loading skill(s) due to invalid SKILL.md"?** Your Codex skill descriptions are stale. Fix: `cd ~/.codex/skills/gstack && git pull && ./setup --host codex` — or for repo-local installs: `cd "$(readlink -f .agents/skills/gstack)" && git pull && ./setup --host codex`
+**Codex says "Skipped loading skill(s) due to invalid SKILL.md"?** Your Codex skill descriptions are stale. Fix: rerun `./setup --host codex` from your workflow checkout (for example `~/workflow`, or `$HOME/.workflow/repos/workflow` if setup migrated an old direct Codex install) — or for repo-local installs: `cd "$(readlink -f .agents/skills/workflow)" && git pull && ./setup --host codex`
 
-**Windows users:** gstack works on Windows 11 via Git Bash or WSL. Node.js is required in addition to Bun — Bun has a known bug with Playwright's pipe transport on Windows ([bun#4253](https://github.com/oven-sh/bun/issues/4253)). The browse server automatically falls back to Node.js. Make sure both `bun` and `node` are on your PATH.
+**Self-hosted telemetry DB still has the pre-rename version column?** Apply every migration in `supabase/migrations/`, including `002_telemetry_workflow_schema_compat.sql`. That compatibility migration renames already-deployed legacy version columns to `workflow_version` and rebuilds the dependent index/view definitions.
 
-**Claude says it can't see the skills?** Make sure your project's `CLAUDE.md` has a gstack section. Add this:
+**Windows users:** workflow works on Windows 11 via Git Bash or WSL. Node.js is required in addition to Bun — Bun has a known bug with Playwright's pipe transport on Windows ([bun#4253](https://github.com/oven-sh/bun/issues/4253)). The browse server automatically falls back to Node.js. Make sure both `bun` and `node` are on your PATH.
+
+**Claude says it can't see the skills?** Make sure your project's `CLAUDE.md` has a workflow section. Add this:
 
 ```
-## gstack
-Use /browse from gstack for all web browsing. Never use mcp__claude-in-chrome__* tools.
+## workflow
+Use /browse from workflow for all web browsing. Never use mcp__claude-in-chrome__* tools.
 Available skills: /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review,
 /design-consultation, /review, /ship, /land-and-deploy, /canary, /benchmark, /browse,
 /qa, /qa-only, /design-review, /setup-browser-cookies, /setup-deploy, /retro,

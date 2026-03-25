@@ -7,9 +7,9 @@
 
 set -e
 
-GSTACK_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-SRC_DIR="$GSTACK_DIR/browse/src"
-DIST_DIR="$GSTACK_DIR/browse/dist"
+WORKFLOW_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+SRC_DIR="$WORKFLOW_DIR/browse/src"
+DIST_DIR="$WORKFLOW_DIR/browse/dist"
 
 echo "Building Node-compatible server bundle..."
 

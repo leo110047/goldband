@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# gstack-analytics — personal usage dashboard from local JSONL
+# workflow-analytics — personal usage dashboard from local JSONL
 #
 # Usage:
-#   gstack-analytics          # default: last 7 days
-#   gstack-analytics 7d       # last 7 days
-#   gstack-analytics 30d      # last 30 days
-#   gstack-analytics all      # all time
+#   workflow-analytics          # default: last 7 days
+#   workflow-analytics 7d       # last 7 days
+#   workflow-analytics 30d      # last 30 days
+#   workflow-analytics all      # all time
 #
 # Env overrides (for testing):
-#   GSTACK_STATE_DIR  — override ~/.gstack state directory
+#   WORKFLOW_STATE_DIR  — override ~/.workflow state directory
 set -uo pipefail
 
-STATE_DIR="${GSTACK_STATE_DIR:-$HOME/.gstack}"
+STATE_DIR="${WORKFLOW_STATE_DIR:-$HOME/.workflow}"
 JSONL_FILE="$STATE_DIR/analytics/skill-usage.jsonl"
 
 # ─── Parse time window ───────────────────────────────────────
@@ -25,15 +25,15 @@ esac
 
 # ─── Check for data ──────────────────────────────────────────
 if [ ! -f "$JSONL_FILE" ]; then
-  echo "gstack usage — no data yet"
+  echo "workflow usage — no data yet"
   echo ""
-  echo "Usage data will appear here after you use gstack skills."
+  echo "Usage data will appear here after you use workflow skills."
   exit 0
 fi
 
 TOTAL_LINES="$(wc -l < "$JSONL_FILE" | tr -d ' ')"
 if [ "$TOTAL_LINES" = "0" ]; then
-  echo "gstack usage — no data yet"
+  echo "workflow usage — no data yet"
   exit 0
 fi
 
@@ -70,7 +70,7 @@ else
 fi
 
 if [ -z "$FILTERED" ]; then
-  echo "gstack usage ($LABEL) — no skill runs found"
+  echo "workflow usage ($LABEL) — no skill runs found"
   exit 0
 fi
 
@@ -137,7 +137,7 @@ else
 fi
 
 # ─── Render output ───────────────────────────────────────────
-echo "gstack usage ($LABEL)"
+echo "workflow usage ($LABEL)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Find max count for bar scaling

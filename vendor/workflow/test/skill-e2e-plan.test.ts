@@ -339,7 +339,7 @@ export function main() { return Dashboard(); }
     setupBrowseShims(planDir);
 
     // Create project directory for artifacts
-    projectDir = path.join(os.homedir(), '.gstack', 'projects', 'test-project');
+    projectDir = path.join(os.homedir(), '.workflow', 'projects', 'test-project');
     fs.mkdirSync(projectDir, { recursive: true });
 
     // Clean up stale test-plan files from previous runs

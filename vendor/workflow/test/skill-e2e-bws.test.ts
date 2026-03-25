@@ -112,7 +112,7 @@ Report whether it worked.`,
   }, 90_000);
 
   testConcurrentIfSelected('skillmd-no-local-binary', async () => {
-    // Create a tmpdir with no browse binary — no local .claude/skills/gstack/browse/dist/browse
+    // Create a tmpdir with no browse binary — no local .claude/skills/workflow/browse/dist/browse
     const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-e2e-empty-'));
 
     const skillMd = fs.readFileSync(path.join(ROOT, 'SKILL.md'), 'utf-8');
@@ -134,8 +134,8 @@ Report the exact output. Do NOT try to fix or install anything — just report w
     });
 
     // Setup block should either find the global binary (READY) or show NEEDS_SETUP.
-    // On dev machines with gstack installed globally, the fallback path
-    // ~/.claude/skills/gstack/browse/dist/browse exists, so we get READY.
+    // On dev machines with workflow installed globally, the fallback path
+    // ~/.claude/skills/workflow/browse/dist/browse exists, so we get READY.
     // The important thing is it doesn't crash or give a confusing error.
     const allText = result.output || '';
     recordE2E(evalCollector, 'SKILL.md setup block (no local binary)', 'Skill E2E tests', result);
@@ -183,7 +183,7 @@ Report the exact output — either "READY: <path>" or "NEEDS_SETUP".`,
     fs.mkdirSync(logsDir, { recursive: true });
 
     const result = await runSkillTest({
-      prompt: `You are in contributor mode (gstack_contributor=true). You just ran this browse command and it failed:
+      prompt: `You are in contributor mode (workflow_contributor=true). You just ran this browse command and it failed:
 
 $ /nonexistent/browse goto https://example.com
 /nonexistent/browse: No such file or directory
@@ -247,7 +247,7 @@ Per the contributor mode instructions, file a field report to ${logsDir}/browse-
     const outputPath = path.join(sessionDir, 'question-output.md');
 
     const result = await runSkillTest({
-      prompt: `You are running a gstack skill. The session preamble detected _SESSIONS=4 (the user has 4 gstack windows open).
+      prompt: `You are running a workflow skill. The session preamble detected _SESSIONS=4 (the user has 4 workflow windows open).
 
 ${aqBlock}
 

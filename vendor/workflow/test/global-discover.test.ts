@@ -6,15 +6,15 @@ import { spawnSync } from "child_process";
 
 // Import normalizeRemoteUrl for unit testing
 // We test the script end-to-end via CLI and normalizeRemoteUrl via import
-const scriptPath = join(import.meta.dir, "..", "bin", "gstack-global-discover.ts");
+const scriptPath = join(import.meta.dir, "..", "bin", "workflow-global-discover.ts");
 
-describe("gstack-global-discover", () => {
+describe("workflow-global-discover", () => {
   describe("normalizeRemoteUrl", () => {
     // Dynamically import to test the exported function
     let normalizeRemoteUrl: (url: string) => string;
 
     beforeEach(async () => {
-      const mod = await import("../bin/gstack-global-discover.ts");
+      const mod = await import("../bin/workflow-global-discover.ts");
       normalizeRemoteUrl = mod.normalizeRemoteUrl;
     });
 
@@ -43,9 +43,9 @@ describe("gstack-global-discover", () => {
     });
 
     test("SSH and HTTPS for same repo normalize to same URL", () => {
-      const ssh = normalizeRemoteUrl("git@github.com:garrytan/gstack.git");
-      const https = normalizeRemoteUrl("https://github.com/garrytan/gstack.git");
-      const httpsNoDotGit = normalizeRemoteUrl("https://github.com/garrytan/gstack");
+      const ssh = normalizeRemoteUrl("git@github.com:garrytan/workflow.git");
+      const https = normalizeRemoteUrl("https://github.com/garrytan/workflow.git");
+      const httpsNoDotGit = normalizeRemoteUrl("https://github.com/garrytan/workflow");
       expect(ssh).toBe(https);
       expect(https).toBe(httpsNoDotGit);
     });

@@ -1,4 +1,4 @@
-# gstack CI eval runner — pre-baked toolchain + deps
+# workflow CI eval runner — pre-baked toolchain + deps
 # Rebuild weekly via ci-image.yml, on Dockerfile changes, or on lockfile changes
 FROM ubuntu:24.04
 
@@ -57,7 +57,8 @@ RUN mv /workspace/node_modules /opt/node_modules_cache \
 # the workflow must set options.user or use gosu/su-exec at runtime).
 RUN useradd -m -s /bin/bash runner \
     && chmod -R a+rX /opt/node_modules_cache \
-    && mkdir -p /home/runner/.gstack && chown -R runner:runner /home/runner/.gstack \
+    && mkdir -p /home/runner/.workflow /home/runner/.workflow-dev \
+    && chown -R runner:runner /home/runner/.workflow /home/runner/.workflow-dev \
     && chmod 1777 /tmp \
     && mkdir -p /home/runner/.bun && chown -R runner:runner /home/runner/.bun \
     && chmod -R 1777 /tmp

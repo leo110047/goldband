@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# workflow-review-log — atomically log a review result
+# Usage: workflow-review-log '{"skill":"...","timestamp":"...","status":"..."}'
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+eval "$("$SCRIPT_DIR/workflow-slug" 2>/dev/null)"
+WORKFLOW_HOME="${WORKFLOW_HOME:-$HOME/.workflow}"
+mkdir -p "$WORKFLOW_HOME/projects/$SLUG"
+echo "$1" >> "$WORKFLOW_HOME/projects/$SLUG/$BRANCH-reviews.jsonl"

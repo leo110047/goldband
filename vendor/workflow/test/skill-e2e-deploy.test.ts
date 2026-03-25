@@ -57,7 +57,7 @@ Instead, simulate the workflow:
 2. Infer the production URL (https://test-app.fly.dev)
 3. Note the merge method would be squash
 4. Write the deploy configuration to CLAUDE.md
-5. Write a deploy report skeleton to .gstack/deploy-reports/report.md showing the
+5. Write a deploy report skeleton to .workflow/deploy-reports/report.md showing the
    expected report structure (PR number: simulated, timing: simulated, verdict: simulated)
 
 Do NOT use AskUserQuestion. Do NOT run gh or fly commands.`,
@@ -80,7 +80,7 @@ Do NOT use AskUserQuestion. Do NOT run gh or fly commands.`,
       expect(hasFly).toBe(true);
     }
 
-    const reportDir = path.join(landDir, '.gstack', 'deploy-reports');
+    const reportDir = path.join(landDir, '.workflow', 'deploy-reports');
     expect(fs.existsSync(reportDir)).toBe(true);
   }, 180_000);
 });
@@ -117,11 +117,11 @@ describeIfSelected('Canary skill E2E', ['canary-workflow'], () => {
 You are simulating a canary check. There is NO browse daemon available and NO production URL.
 
 Instead, demonstrate you understand the workflow:
-1. Create the .gstack/canary-reports/ directory structure
-2. Write a simulated baseline.json to .gstack/canary-reports/baseline.json with the
+1. Create the .workflow/canary-reports/ directory structure
+2. Write a simulated baseline.json to .workflow/canary-reports/baseline.json with the
    schema described in Phase 2 of the skill (url, timestamp, branch, pages with
    screenshot path, console_errors count, and load_time_ms)
-3. Write a simulated canary report to .gstack/canary-reports/canary-report.md following
+3. Write a simulated canary report to .workflow/canary-reports/canary-report.md following
    the Phase 6 Health Report format (CANARY REPORT header, duration, pages, status,
    per-page results table, verdict)
 
@@ -139,8 +139,8 @@ Just create the directory structure and report files showing the correct schema.
     recordE2E(evalCollector, '/canary workflow', 'Canary skill E2E', result);
     expect(result.exitReason).toBe('success');
 
-    expect(fs.existsSync(path.join(canaryDir, '.gstack', 'canary-reports'))).toBe(true);
-    const reportDir = path.join(canaryDir, '.gstack', 'canary-reports');
+    expect(fs.existsSync(path.join(canaryDir, '.workflow', 'canary-reports'))).toBe(true);
+    const reportDir = path.join(canaryDir, '.workflow', 'canary-reports');
     const files = fs.readdirSync(reportDir, { recursive: true }) as string[];
     expect(files.length).toBeGreaterThan(0);
   }, 180_000);
@@ -178,12 +178,12 @@ describeIfSelected('Benchmark skill E2E', ['benchmark-workflow'], () => {
 You are simulating a benchmark run. There is NO browse daemon available and NO production URL.
 
 Instead, demonstrate you understand the workflow:
-1. Create the .gstack/benchmark-reports/ directory structure including baselines/
-2. Write a simulated baseline.json to .gstack/benchmark-reports/baselines/baseline.json
+1. Create the .workflow/benchmark-reports/ directory structure including baselines/
+2. Write a simulated baseline.json to .workflow/benchmark-reports/baselines/baseline.json
    with the schema from Phase 4 (url, timestamp, branch, pages with ttfb_ms, fcp_ms,
    lcp_ms, dom_interactive_ms, dom_complete_ms, full_load_ms, total_requests,
    total_transfer_bytes, js_bundle_bytes, css_bundle_bytes, largest_resources)
-3. Write a simulated benchmark report to .gstack/benchmark-reports/benchmark-report.md
+3. Write a simulated benchmark report to .workflow/benchmark-reports/benchmark-report.md
    following the Phase 5 comparison format (PERFORMANCE REPORT header, page comparison
    table with Baseline/Current/Delta/Status columns, regression thresholds applied)
 4. Include the Phase 7 Performance Budget section in the report
@@ -202,8 +202,8 @@ Just create the files showing the correct schema and report format.`,
     recordE2E(evalCollector, '/benchmark workflow', 'Benchmark skill E2E', result);
     expect(result.exitReason).toBe('success');
 
-    expect(fs.existsSync(path.join(benchDir, '.gstack', 'benchmark-reports'))).toBe(true);
-    const baselineDir = path.join(benchDir, '.gstack', 'benchmark-reports', 'baselines');
+    expect(fs.existsSync(path.join(benchDir, '.workflow', 'benchmark-reports'))).toBe(true);
+    const baselineDir = path.join(benchDir, '.workflow', 'benchmark-reports', 'baselines');
     if (fs.existsSync(baselineDir)) {
       const files = fs.readdirSync(baselineDir);
       expect(files.length).toBeGreaterThan(0);

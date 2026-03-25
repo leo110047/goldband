@@ -1,6 +1,6 @@
-// gstack telemetry-ingest edge function
+// workflow telemetry-ingest edge function
 // Validates and inserts a batch of telemetry events.
-// Called by bin/gstack-telemetry-sync.
+// Called by bin/workflow-telemetry-sync.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -10,7 +10,7 @@ interface TelemetryEvent {
   event_type: string;
   skill: string;
   session_id?: string;
-  gstack_version: string;
+  workflow_version: string;
   os: string;
   arch?: string;
   duration_s?: number;
@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
 
     for (const event of events) {
       // Required fields
-      if (!event.ts || !event.gstack_version || !event.os || !event.outcome) {
+      if (!event.ts || !event.workflow_version || !event.os || !event.outcome) {
         continue; // skip malformed
       }
 
@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
       rows.push({
         schema_version: event.v,
         event_type: event.event_type,
-        gstack_version: String(event.gstack_version).slice(0, 20),
+        workflow_version: String(event.workflow_version).slice(0, 20),
         os: String(event.os).slice(0, 20),
         arch: event.arch ? String(event.arch).slice(0, 20) : null,
         event_timestamp: event.ts,
@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
       // Track installations for upsert
       if (event.installation_id) {
         installationUpserts.set(event.installation_id, {
-          version: event.gstack_version,
+          version: event.workflow_version,
           os: event.os,
         });
       }
@@ -118,7 +118,7 @@ Deno.serve(async (req) => {
           {
             installation_id: id,
             last_seen: new Date().toISOString(),
-            gstack_version: data.version,
+            workflow_version: data.version,
             os: data.os,
           },
           { onConflict: "installation_id" }

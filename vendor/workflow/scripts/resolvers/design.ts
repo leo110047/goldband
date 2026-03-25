@@ -31,10 +31,10 @@ Present Codex output under a \`CODEX (design):\` header, merged with the checkli
 
   return `## Design Review (conditional, diff-scoped)
 
-Check if the diff touches frontend files using \`gstack-diff-scope\`:
+Check if the diff touches frontend files using \`workflow-diff-scope\`:
 
 \`\`\`bash
-source <(${ctx.paths.binDir}/gstack-diff-scope <base> 2>/dev/null)
+source <(${ctx.paths.binDir}/workflow-diff-scope <base> 2>/dev/null)
 \`\`\`
 
 **If \`SCOPE_FRONTEND=false\`:** Skip design review silently. No output.
@@ -57,7 +57,7 @@ source <(${ctx.paths.binDir}/gstack-diff-scope <base> 2>/dev/null)
 6. **Log the result** for the Review Readiness Dashboard:
 
 \`\`\`bash
-${ctx.paths.binDir}/gstack-review-log '{"skill":"design-review-lite","timestamp":"TIMESTAMP","status":"STATUS","findings":N,"auto_fixed":M,"commit":"COMMIT"}'
+${ctx.paths.binDir}/workflow-review-log '{"skill":"design-review-lite","timestamp":"TIMESTAMP","status":"STATUS","findings":N,"auto_fixed":M,"commit":"COMMIT"}'
 \`\`\`
 
 Substitute: TIMESTAMP = ISO 8601 datetime, STATUS = "clean" if 0 findings or "issues_found", N = total findings, M = auto-fixed count, COMMIT = output of \`git rev-parse --short HEAD\`.${codexBlock}`;
@@ -302,13 +302,13 @@ Compare screenshots and observations across pages for:
 
 ### Output Locations
 
-**Local:** \`.gstack/design-reports/design-audit-{domain}-{YYYY-MM-DD}.md\`
+**Local:** \`.workflow/design-reports/design-audit-{domain}-{YYYY-MM-DD}.md\`
 
 **Project-scoped:**
 \`\`\`bash
-eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG
+eval "$(~/.claude/skills/workflow/bin/workflow-slug 2>/dev/null)" && mkdir -p ~/.workflow/projects/$SLUG
 \`\`\`
-Write to: \`~/.gstack/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md\`
+Write to: \`~/.workflow/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md\`
 
 **Baseline:** Write \`design-baseline.json\` for regression mode:
 \`\`\`json
@@ -422,14 +422,14 @@ Generate a single-page HTML file with these constraints:
 
 Write to a temp file:
 \`\`\`bash
-SKETCH_FILE="/tmp/gstack-sketch-$(date +%s).html"
+SKETCH_FILE="/tmp/workflow-sketch-$(date +%s).html"
 \`\`\`
 
 **Step 3: Render and capture**
 
 \`\`\`bash
 $B goto "file://$SKETCH_FILE"
-$B screenshot /tmp/gstack-sketch.png
+$B screenshot /tmp/workflow-sketch.png
 \`\`\`
 
 If \`$B\` is not available (browse binary not set up), skip the render step. Tell the
@@ -445,7 +445,7 @@ If they approve or say "good enough," proceed.
 **Step 5: Include in design doc**
 
 Reference the wireframe screenshot in the design doc's "Recommended Approach" section.
-The screenshot file at \`/tmp/gstack-sketch.png\` can be referenced by downstream skills
+The screenshot file at \`/tmp/workflow-sketch.png\` can be referenced by downstream skills
 (\`/plan-design-review\`, \`/design-review\`) to see what was originally envisioned.
 
 **Step 6: Outside design voices** (optional)
@@ -660,12 +660,12 @@ ${synthesisSection}
 
 **Log the result:**
 \`\`\`bash
-${ctx.paths.binDir}/gstack-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+${ctx.paths.binDir}/workflow-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 \`\`\`
 Replace STATUS with "clean" or "issues_found", SOURCE with "codex+subagent", "codex-only", "subagent-only", or "unavailable".`;
 }
 
-// ─── Design Hard Rules (OpenAI framework + gstack slop blacklist) ───
+// ─── Design Hard Rules (OpenAI framework + workflow slop blacklist) ───
 export function generateDesignHardRules(_ctx: TemplateContext): string {
   const slopItems = AI_SLOP_BLACKLIST.map((item, i) => `${i + 1}. ${item}`).join('\n');
   const rejectionItems = OPENAI_HARD_REJECTIONS.map((item, i) => `${i + 1}. ${item}`).join('\n');
@@ -717,5 +717,5 @@ ${litmusItems}
 **AI Slop blacklist** (the 10 patterns that scream "AI-generated"):
 ${slopItems}
 
-Source: [OpenAI "Designing Delightful Frontends with GPT-5.4"](https://developers.openai.com/blog/designing-delightful-frontends-with-gpt-5-4) (Mar 2026) + gstack design methodology.`;
+Source: [OpenAI "Designing Delightful Frontends with GPT-5.4"](https://developers.openai.com/blog/designing-delightful-frontends-with-gpt-5-4) (Mar 2026) + workflow design methodology.`;
 }
