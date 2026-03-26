@@ -98,7 +98,13 @@ After installation, the Claude runtime lives at `~/.claude/skills/workflow`, the
 
 ## Troubleshooting
 
-If hooks are not running, start with `./install.sh hooks` and make sure `jq` is installed. If the install looks incomplete, check `./install.sh status`. If `/verify-config` reports errors, rerunning `./install.sh all-tools` or `./install.sh all-with-workflow` is usually enough. If language changes do not show up, restart Claude Code or Codex once. If startup self-update does not run, verify that this repo was cloned with `git clone`, that it is on `main`, that the working tree is clean, and that it tracks `origin/main`.
+| Problem | Fix |
+|---------|-----|
+| Hooks are not running | Run `./install.sh hooks` and make sure `jq` is installed |
+| The install looks incomplete | Check `./install.sh status` first |
+| `/verify-config` reports errors | Rerun `./install.sh all-tools` or `./install.sh all-with-workflow` |
+| Language changes do not show up | Restart Claude Code or Codex once |
+| Startup self-update does not run | Verify that this repo was cloned with `git clone`, that it is on `main`, that the working tree is clean, and that it tracks `origin/main` |
 
 ## License
 

@@ -99,7 +99,13 @@ goldband wrapper 支援 `zh-TW` 和 `en`，預設是 `zh-TW`。
 
 ## 疑難排解
 
-如果 Hook 沒有執行，先跑 `./install.sh hooks`，並確認 `jq` 已安裝。如果安裝看起來不完整，先用 `./install.sh status` 檢查。若 `/verify-config` 報錯，通常重跑 `./install.sh all-tools` 或 `./install.sh all-with-workflow` 就夠了。語言切換後如果說明沒變，重開 Claude Code 或 Codex 一次即可。若啟動時沒有自動更新，先確認這是用 `git clone` 抓下來的 repo，而且目前在 `main`、工作樹乾淨，並且 tracking `origin/main`。
+| 問題 | 解法 |
+|------|------|
+| Hook 沒有執行 | 跑 `./install.sh hooks`，並確認 `jq` 已安裝 |
+| 安裝看起來不完整 | 先用 `./install.sh status` 檢查 |
+| `/verify-config` 報錯 | 重跑 `./install.sh all-tools` 或 `./install.sh all-with-workflow` |
+| 語言切換後說明沒變 | 重開 Claude Code 或 Codex 一次 |
+| 啟動時沒有自動更新 | 確認這是用 `git clone` 抓下來的 repo，而且目前在 `main`、工作樹乾淨，並且 tracking `origin/main` |
 
 ## 授權
 
