@@ -3,7 +3,14 @@
 const { readStdinJson } = require('../lib/utils');
 const { appendUsageEvent } = require('../lib/hook-router/usage-telemetry');
 const { formatSuggestions, matchPrompt } = require('../lib/skill-activation/activation-rules');
-const { shouldEmitSuggestions } = require('../lib/skill-activation/session-state');
+const {
+  shouldEmitClaimVerificationBaseline,
+  shouldEmitSuggestions
+} = require('../lib/skill-activation/session-state');
+const {
+  CLAIM_VERIFICATION_BASELINE_VERSION,
+  formatClaimVerificationBaseline
+} = require('../lib/skill-activation/claim-verification-baseline');
 
 function buildMatchUsageEvents(matches, sessionId, prompt) {
   return matches.map(match => ({
@@ -46,16 +53,23 @@ async function main() {
   }
 
   const suggestedSkills = matches.slice(0, 3).map(match => match.skill);
-  const shouldEmit = suggestedSkills.length > 0 && shouldEmitSuggestions(sessionId, suggestedSkills);
+  const shouldEmitBaseline = shouldEmitClaimVerificationBaseline(sessionId, CLAIM_VERIFICATION_BASELINE_VERSION);
+  const shouldEmitSuggestionsForPrompt = suggestedSkills.length > 0 && shouldEmitSuggestions(sessionId, suggestedSkills);
 
-  if (!shouldEmit) {
+  if (!shouldEmitBaseline && !shouldEmitSuggestionsForPrompt) {
     process.stdout.write('{}');
     return;
   }
 
-  appendUsageEvent(buildSuggestionUsageEvent(matches.slice(0, 3), sessionId));
+  if (shouldEmitSuggestionsForPrompt) {
+    appendUsageEvent(buildSuggestionUsageEvent(matches.slice(0, 3), sessionId));
+  }
 
-  const additionalContext = formatSuggestions(matches, 3);
+  const additionalContext = [
+    shouldEmitBaseline ? formatClaimVerificationBaseline() : null,
+    shouldEmitSuggestionsForPrompt ? formatSuggestions(matches, 3) : null
+  ].filter(Boolean).join('\n\n');
+
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',

@@ -172,7 +172,7 @@ Contexts:
   [OK]      4 contexts found
 
 Rules:
-  [OK]      3 rules found
+  [OK]      4 rules found
 
 Repo Validation:
   [OK]      hooks/hooks.json — valid

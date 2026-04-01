@@ -12,6 +12,7 @@ goldband is a shared set of engineering guardrails for Claude Code and Codex. It
 
 goldband mainly provides:
 - commands, hooks, rules, and contexts to keep day-to-day planning, verification, review, and debugging flows consistent
+- an always-on claim verification baseline: repo facts must be verified, current external facts need sources, and completion claims need fresh evidence
 - shared skills such as evidence-based coding, systematic debugging, security review, and testing strategy
 - a vendored `workflow` runtime that goldband exposes through `goldband-*` entry points for higher-level flows like review, QA, investigation, and ship
 

@@ -113,7 +113,7 @@ install_contexts() {
 }
 
 install_rules() {
-    link_component "$REPO_DIR/rules" "$CLAUDE_DIR/rules" "Rules (3 個)"
+    link_component "$REPO_DIR/rules" "$CLAUDE_DIR/rules" "Rules (4 個)"
 }
 
 merge_hooks_config() {

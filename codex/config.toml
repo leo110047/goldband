@@ -46,3 +46,15 @@ approval_policy = "on-request"
 
 [notice.model_migrations]
 "gpt-5.3-codex" = "gpt-5.4"
+
+[projects."/Users/leo/Unity/secondartybox"]
+trust_level = "trusted"
+
+[projects."/Users/leo/goldband"]
+trust_level = "trusted"
+
+[projects."/Users/leo"]
+trust_level = "trusted"
+
+[projects."/Users/leo/MOGU unity"]
+trust_level = "trusted"
