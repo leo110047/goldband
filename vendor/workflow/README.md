@@ -12,10 +12,10 @@
 ## Quick start
 
 1. Install workflow (30 seconds — see below)
-2. Run `/office-hours` — describe what you're building
-3. Run `/plan-ceo-review` on any feature idea
-4. Run `/review` on any branch with changes
-5. Run `/qa` on your staging URL
+2. Run `/goldband-office-hours` — describe what you're building
+3. Run `/goldband-plan-ceo-review` on any feature idea
+4. Run `/goldband-review` on any branch with changes
+5. Run `/goldband-qa` on your staging URL
 6. Stop there. You'll know if this is for you.
 
 ## Install — 30 seconds
@@ -26,11 +26,11 @@
 
 Open Claude Code and paste this. Claude does the rest.
 
-> Install workflow: run **`git clone https://github.com/garrytan/workflow.git ~/.claude/skills/workflow && cd ~/.claude/skills/workflow && ./setup`** then add a "workflow" section to CLAUDE.md that says to use the /browse skill from workflow for all web browsing, never use mcp\_\_claude-in-chrome\_\_\* tools, and lists the available skills: /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review, /design-consultation, /review, /ship, /land-and-deploy, /canary, /benchmark, /browse, /qa, /qa-only, /design-review, /setup-browser-cookies, /setup-deploy, /retro, /investigate, /document-release, /codex, /cso, /autoplan, /careful, /freeze, /guard, /unfreeze. Then ask the user if they also want to add workflow to the current project so teammates get it.
+> Install workflow: run **`git clone https://github.com/garrytan/workflow.git ~/.claude/skills/workflow && cd ~/.claude/skills/workflow && ./setup`** then add a "workflow" section to CLAUDE.md that says to use the /goldband-browse skill from workflow for all web browsing, never use mcp\_\_claude-in-chrome\_\_\* tools, and lists the available skills: /goldband-office-hours, /goldband-plan-ceo-review, /goldband-plan-eng-review, /goldband-plan-design-review, /goldband-design-consultation, /goldband-review, /goldband-ship, /goldband-land-and-deploy, /goldband-canary, /goldband-benchmark, /goldband-browse, /goldband-qa, /goldband-qa-only, /goldband-design-review, /goldband-setup-browser-cookies, /goldband-setup-deploy, /goldband-retro, /goldband-investigate, /goldband-document-release, /goldband-codex, /goldband-cso, /goldband-autoplan, /goldband-careful, /goldband-freeze, /goldband-guard, /goldband-unfreeze. Then ask the user if they also want to add workflow to the current project so teammates get it.
 
 ### Step 2: Add to your repo so teammates get it (optional)
 
-> Add workflow to this project: run **`cp -Rf ~/.claude/skills/workflow .claude/skills/workflow && rm -rf .claude/skills/workflow/.git && cd .claude/skills/workflow && ./setup`** then add a "workflow" section to this project's CLAUDE.md that says to use the /browse skill from workflow for all web browsing, never use mcp\_\_claude-in-chrome\_\_\* tools, lists the available skills: /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review, /design-consultation, /review, /ship, /land-and-deploy, /canary, /benchmark, /browse, /qa, /qa-only, /design-review, /setup-browser-cookies, /setup-deploy, /retro, /investigate, /document-release, /codex, /cso, /careful, /freeze, /guard, /unfreeze, and tells Claude that if workflow skills aren't working, run `cd .claude/skills/workflow && ./setup` to build the binary and register skills.
+> Add workflow to this project: run **`cp -Rf ~/.claude/skills/workflow .claude/skills/workflow && rm -rf .claude/skills/workflow/.git && cd .claude/skills/workflow && ./setup`** then add a "workflow" section to this project's CLAUDE.md that says to use the /goldband-browse skill from workflow for all web browsing, never use mcp\_\_claude-in-chrome\_\_\* tools, lists the available skills: /goldband-office-hours, /goldband-plan-ceo-review, /goldband-plan-eng-review, /goldband-plan-design-review, /goldband-design-consultation, /goldband-review, /goldband-ship, /goldband-land-and-deploy, /goldband-canary, /goldband-benchmark, /goldband-browse, /goldband-qa, /goldband-qa-only, /goldband-design-review, /goldband-setup-browser-cookies, /goldband-setup-deploy, /goldband-retro, /goldband-investigate, /goldband-document-release, /goldband-codex, /goldband-cso, /goldband-careful, /goldband-freeze, /goldband-guard, /goldband-unfreeze, and tells Claude that if workflow skills aren't working, run `cd .claude/skills/workflow && ./setup` to build the binary and register skills.
 
 Real files get committed to your repo (not a submodule), so `git clone` just works. Everything lives inside `.claude/`. Nothing touches your PATH or runs in the background.
 
@@ -71,7 +71,7 @@ For Codex-compatible hosts, setup now supports both repo-local installs from `.a
 
 ```
 You:    I want to build a daily briefing app for my calendar.
-You:    /office-hours
+You:    /goldband-office-hours
 Claude: [asks about the pain — specific examples, not hypotheticals]
 
 You:    Multiple Google calendars, events with stale info, wrong locations.
@@ -88,23 +88,23 @@ Claude: I'm going to push back on the framing. You said "daily briefing
         the daily briefing that actually works.
         [writes design doc → feeds into downstream skills automatically]
 
-You:    /plan-ceo-review
+You:    /goldband-plan-ceo-review
         [reads the design doc, challenges scope, runs 10-section review]
 
-You:    /plan-eng-review
+You:    /goldband-plan-eng-review
         [ASCII diagrams for data flow, state machines, error paths]
         [test matrix, failure modes, security concerns]
 
 You:    Approve plan. Exit plan mode.
         [writes 2,400 lines across 11 files. ~8 minutes.]
 
-You:    /review
+You:    /goldband-review
         [AUTO-FIXED] 2 issues. [ASK] Race condition → you approve fix.
 
-You:    /qa https://staging.myapp.com
+You:    /goldband-qa https://staging.myapp.com
         [opens real browser, clicks through flows, finds and fixes a bug]
 
-You:    /ship
+You:    /goldband-ship
         Tests: 42 → 51 (+9 new). PR: github.com/you/app/pull/42
 ```
 
@@ -116,48 +116,48 @@ workflow is a process, not a collection of tools. The skills run in the order a 
 
 **Think → Plan → Build → Review → Test → Ship → Reflect**
 
-Each skill feeds into the next. `/office-hours` writes a design doc that `/plan-ceo-review` reads. `/plan-eng-review` writes a test plan that `/qa` picks up. `/review` catches bugs that `/ship` verifies are fixed. Nothing falls through the cracks because every step knows what came before it.
+Each skill feeds into the next. `/goldband-office-hours` writes a design doc that `/goldband-plan-ceo-review` reads. `/goldband-plan-eng-review` writes a test plan that `/goldband-qa` picks up. `/goldband-review` catches bugs that `/goldband-ship` verifies are fixed. Nothing falls through the cracks because every step knows what came before it.
 
 | Skill | Your specialist | What they do |
 |-------|----------------|--------------|
-| `/office-hours` | **YC Office Hours** | Start here. Six forcing questions that reframe your product before you write code. Pushes back on your framing, challenges premises, generates implementation alternatives. Design doc feeds into every downstream skill. |
-| `/plan-ceo-review` | **CEO / Founder** | Rethink the problem. Find the 10-star product hiding inside the request. Four modes: Expansion, Selective Expansion, Hold Scope, Reduction. |
-| `/plan-eng-review` | **Eng Manager** | Lock in architecture, data flow, diagrams, edge cases, and tests. Forces hidden assumptions into the open. |
-| `/plan-design-review` | **Senior Designer** | Rates each design dimension 0-10, explains what a 10 looks like, then edits the plan to get there. AI Slop detection. Interactive — one AskUserQuestion per design choice. |
-| `/design-consultation` | **Design Partner** | Build a complete design system from scratch. Researches the landscape, proposes creative risks, generates realistic product mockups. |
-| `/review` | **Staff Engineer** | Find the bugs that pass CI but blow up in production. Auto-fixes the obvious ones. Flags completeness gaps. |
-| `/investigate` | **Debugger** | Systematic root-cause debugging. Iron Law: no fixes without investigation. Traces data flow, tests hypotheses, stops after 3 failed fixes. |
-| `/design-review` | **Designer Who Codes** | Same audit as /plan-design-review, then fixes what it finds. Atomic commits, before/after screenshots. |
-| `/qa` | **QA Lead** | Test your app, find bugs, fix them with atomic commits, re-verify. Auto-generates regression tests for every fix. |
-| `/qa-only` | **QA Reporter** | Same methodology as /qa but report only. Pure bug report without code changes. |
-| `/cso` | **Chief Security Officer** | OWASP Top 10 + STRIDE threat model. Zero-noise: 17 false positive exclusions, 8/10+ confidence gate, independent finding verification. Each finding includes a concrete exploit scenario. |
-| `/ship` | **Release Engineer** | Sync main, run tests, audit coverage, push, open PR. Bootstraps test frameworks if you don't have one. |
-| `/land-and-deploy` | **Release Engineer** | Merge the PR, wait for CI and deploy, verify production health. One command from "approved" to "verified in production." |
-| `/canary` | **SRE** | Post-deploy monitoring loop. Watches for console errors, performance regressions, and page failures. |
-| `/benchmark` | **Performance Engineer** | Baseline page load times, Core Web Vitals, and resource sizes. Compare before/after on every PR. |
-| `/document-release` | **Technical Writer** | Update all project docs to match what you just shipped. Catches stale READMEs automatically. |
-| `/retro` | **Eng Manager** | Team-aware weekly retro. Per-person breakdowns, shipping streaks, test health trends, growth opportunities. `/retro global` runs across all your projects and AI tools (Claude Code, Codex, Gemini). |
-| `/browse` | **QA Engineer** | Real Chromium browser, real clicks, real screenshots. ~100ms per command. |
-| `/setup-browser-cookies` | **Session Manager** | Import cookies from your real browser (Chrome, Arc, Brave, Edge) into the headless session. Test authenticated pages. |
-| `/autoplan` | **Review Pipeline** | One command, fully reviewed plan. Runs CEO → design → eng review automatically with encoded decision principles. Surfaces only taste decisions for your approval. |
+| `/goldband-office-hours` | **YC Office Hours** | Start here. Six forcing questions that reframe your product before you write code. Pushes back on your framing, challenges premises, generates implementation alternatives. Design doc feeds into every downstream skill. |
+| `/goldband-plan-ceo-review` | **CEO / Founder** | Rethink the problem. Find the 10-star product hiding inside the request. Four modes: Expansion, Selective Expansion, Hold Scope, Reduction. |
+| `/goldband-plan-eng-review` | **Eng Manager** | Lock in architecture, data flow, diagrams, edge cases, and tests. Forces hidden assumptions into the open. |
+| `/goldband-plan-design-review` | **Senior Designer** | Rates each design dimension 0-10, explains what a 10 looks like, then edits the plan to get there. AI Slop detection. Interactive — one AskUserQuestion per design choice. |
+| `/goldband-design-consultation` | **Design Partner** | Build a complete design system from scratch. Researches the landscape, proposes creative risks, generates realistic product mockups. |
+| `/goldband-review` | **Staff Engineer** | Find the bugs that pass CI but blow up in production. Auto-fixes the obvious ones. Flags completeness gaps. |
+| `/goldband-investigate` | **Debugger** | Systematic root-cause debugging. Iron Law: no fixes without investigation. Traces data flow, tests hypotheses, stops after 3 failed fixes. |
+| `/goldband-design-review` | **Designer Who Codes** | Same audit as /goldband-plan-design-review, then fixes what it finds. Atomic commits, before/after screenshots. |
+| `/goldband-qa` | **QA Lead** | Test your app, find bugs, fix them with atomic commits, re-verify. Auto-generates regression tests for every fix. |
+| `/goldband-qa-only` | **QA Reporter** | Same methodology as /goldband-qa but report only. Pure bug report without code changes. |
+| `/goldband-cso` | **Chief Security Officer** | OWASP Top 10 + STRIDE threat model. Zero-noise: 17 false positive exclusions, 8/10+ confidence gate, independent finding verification. Each finding includes a concrete exploit scenario. |
+| `/goldband-ship` | **Release Engineer** | Sync main, run tests, audit coverage, push, open PR. Bootstraps test frameworks if you don't have one. |
+| `/goldband-land-and-deploy` | **Release Engineer** | Merge the PR, wait for CI and deploy, verify production health. One command from "approved" to "verified in production." |
+| `/goldband-canary` | **SRE** | Post-deploy monitoring loop. Watches for console errors, performance regressions, and page failures. |
+| `/goldband-benchmark` | **Performance Engineer** | Baseline page load times, Core Web Vitals, and resource sizes. Compare before/after on every PR. |
+| `/goldband-document-release` | **Technical Writer** | Update all project docs to match what you just shipped. Catches stale READMEs automatically. |
+| `/goldband-retro` | **Eng Manager** | Team-aware weekly retro. Per-person breakdowns, shipping streaks, test health trends, growth opportunities. `/goldband-retro global` runs across all your projects and AI tools (Claude Code, Codex, Gemini). |
+| `/goldband-browse` | **QA Engineer** | Real Chromium browser, real clicks, real screenshots. ~100ms per command. |
+| `/goldband-setup-browser-cookies` | **Session Manager** | Import cookies from your real browser (Chrome, Arc, Brave, Edge) into the headless session. Test authenticated pages. |
+| `/goldband-autoplan` | **Review Pipeline** | One command, fully reviewed plan. Runs CEO → design → eng review automatically with encoded decision principles. Surfaces only taste decisions for your approval. |
 
 ### Power tools
 
 | Skill | What it does |
 |-------|-------------|
-| `/codex` | **Second Opinion** — independent code review from OpenAI Codex CLI. Three modes: review (pass/fail gate), adversarial challenge, and open consultation. Cross-model analysis when both `/review` and `/codex` have run. |
-| `/careful` | **Safety Guardrails** — warns before destructive commands (rm -rf, DROP TABLE, force-push). Say "be careful" to activate. Override any warning. |
-| `/freeze` | **Edit Lock** — restrict file edits to one directory. Prevents accidental changes outside scope while debugging. |
-| `/guard` | **Full Safety** — `/careful` + `/freeze` in one command. Maximum safety for prod work. |
-| `/unfreeze` | **Unlock** — remove the `/freeze` boundary. |
-| `/setup-deploy` | **Deploy Configurator** — one-time setup for `/land-and-deploy`. Detects your platform, production URL, and deploy commands. |
+| `/goldband-codex` | **Second Opinion** — independent code review from OpenAI Codex CLI. Three modes: review (pass/fail gate), adversarial challenge, and open consultation. Cross-model analysis when both `/goldband-review` and `/goldband-codex` have run. |
+| `/goldband-careful` | **Safety Guardrails** — warns before destructive commands (rm -rf, DROP TABLE, force-push). Say "be careful" to activate. Override any warning. |
+| `/goldband-freeze` | **Edit Lock** — restrict file edits to one directory. Prevents accidental changes outside scope while debugging. |
+| `/goldband-guard` | **Full Safety** — `/goldband-careful` + `/goldband-freeze` in one command. Maximum safety for prod work. |
+| `/goldband-unfreeze` | **Unlock** — remove the `/goldband-freeze` boundary. |
+| `/goldband-setup-deploy` | **Deploy Configurator** — one-time setup for `/goldband-land-and-deploy`. Detects your platform, production URL, and deploy commands. |
 **[Deep dives with examples and philosophy for every skill →](docs/skills.md)**
 
 ## Parallel sprints
 
 workflow works well with one sprint. It gets interesting with ten running at once.
 
-[Conductor](https://conductor.build) runs multiple Claude Code sessions in parallel — each in its own isolated workspace. One session on `/office-hours`, another on `/review`, a third implementing a feature, a fourth running `/qa`. All at the same time. The sprint structure is what makes parallelism work — without a process, ten agents is ten sources of chaos. With a process, each agent knows exactly what to do and when to stop.
+[Conductor](https://conductor.build) runs multiple Claude Code sessions in parallel — each in its own isolated workspace. One session on `/goldband-office-hours`, another on `/goldband-review`, a third implementing a feature, a fourth running `/goldband-qa`. All at the same time. The sprint structure is what makes parallelism work — without a process, ten agents is ten sources of chaos. With a process, each agent knows exactly what to do and when to stop.
 
 ---
 
@@ -176,7 +176,7 @@ I open sourced how I build software. You can fork it and make it your own.
 | [Skill Deep Dives](docs/skills.md) | Philosophy, examples, and workflow for every skill (includes Greptile integration) |
 | [Builder Ethos](ETHOS.md) | Builder philosophy: Boil the Lake, Search Before Building, three layers of knowledge |
 | [Architecture](ARCHITECTURE.md) | Design decisions and system internals |
-| [Browser Reference](BROWSER.md) | Full command reference for `/browse` |
+| [Browser Reference](BROWSER.md) | Full command reference for `/goldband-browse` |
 | [Contributing](CONTRIBUTING.md) | Dev setup, testing, contributor mode, and dev mode |
 | [Changelog](CHANGELOG.md) | What's new in every version |
 
@@ -193,7 +193,7 @@ workflow keeps local usage analytics in `~/.workflow/analytics/skill-usage.jsonl
 
 **Skill not showing up?** `cd ~/.claude/skills/workflow && ./setup`
 
-**`/browse` fails?** `cd ~/.claude/skills/workflow && bun install && bun run build`
+**`/goldband-browse` fails?** `cd ~/.claude/skills/workflow && bun install && bun run build`
 
 **Stale install?** Re-run `./setup` from your workflow checkout.
 
@@ -207,12 +207,12 @@ workflow keeps local usage analytics in `~/.workflow/analytics/skill-usage.jsonl
 
 ```
 ## workflow
-Use /browse from workflow for all web browsing. Never use mcp__claude-in-chrome__* tools.
-Available skills: /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review,
-/design-consultation, /review, /ship, /land-and-deploy, /canary, /benchmark, /browse,
-/qa, /qa-only, /design-review, /setup-browser-cookies, /setup-deploy, /retro,
-/investigate, /document-release, /codex, /cso, /autoplan, /careful, /freeze, /guard,
-/unfreeze.
+Use /goldband-browse from workflow for all web browsing. Never use mcp__claude-in-chrome__* tools.
+Available skills: /goldband-office-hours, /goldband-plan-ceo-review, /goldband-plan-eng-review, /goldband-plan-design-review,
+/goldband-design-consultation, /goldband-review, /goldband-ship, /goldband-land-and-deploy, /goldband-canary, /goldband-benchmark, /goldband-browse,
+/goldband-qa, /goldband-qa-only, /goldband-design-review, /goldband-setup-browser-cookies, /goldband-setup-deploy, /goldband-retro,
+/goldband-investigate, /goldband-document-release, /goldband-codex, /goldband-cso, /goldband-autoplan, /goldband-careful, /goldband-freeze, /goldband-guard,
+/goldband-unfreeze.
 ```
 
 ## License
