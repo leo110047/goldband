@@ -22,7 +22,8 @@ check_contains "AGENTS.md" "## Shared Decision Guidance" "repo shared decision g
 check_contains "AGENTS.md" "failure containment" "repo guidance emphasizes decision quality over minimal delta"
 check_contains "AGENTS.md" "main failure modes" "repo guidance requires failure modes"
 check_contains "AGENTS.md" "prefer the healthiest maintainable path" "repo guidance defaults non-debug direction work to healthiest path"
-check_contains "AGENTS.md" "The \"smallest fix\" mindset is reserved for debugging" "repo guidance narrows smallest-fix thinking to debugging"
+check_contains "AGENTS.md" "default to the healthiest complete fix" "repo guidance defaults debugging toward the healthiest complete fix"
+check_contains "AGENTS.md" "time pressure is the priority" "repo guidance allows narrower debugging fixes only under explicit time pressure"
 
 if [ -f "$ROOT_DIR/ARCHITECTURE.md" ]; then
   echo "[OK] architecture boundary document exists"
@@ -37,9 +38,9 @@ check_contains "ARCHITECTURE.md" "vendor/workflow owns" "architecture doc explai
 
 check_contains "codex/AGENTS.md" "## Decision Recommendation Standard" "codex decision recommendation section"
 check_contains "codex/AGENTS.md" "do not optimize for minimal code delta" "codex guidance rejects minimal-delta bias for recommendations"
-check_contains "codex/AGENTS.md" "This \"smallest fix\" rule applies to debugging only" "codex guidance scopes smallest-fix rule to debugging"
+check_contains "codex/AGENTS.md" "default to the most complete and maintainable fix" "codex guidance defaults debugging toward the healthiest complete fix"
 check_contains "codex/AGENTS.md" "default to the healthiest maintainable path" "codex guidance defaults non-debug direction work to healthiest path"
-check_contains "codex/AGENTS.md" "Use the smallest-fix rule only after a specific defect has been reproduced and scoped." "codex guidance narrows smallest-fix trigger to reproduced defects"
+check_contains "codex/AGENTS.md" "time pressure is the priority" "codex guidance allows narrower debugging fixes only under explicit time pressure"
 
 check_contains "commands/discuss.md" "Failure Modes:" "discuss command requires failure modes"
 check_contains "commands/discuss.md" "Switch Criteria:" "discuss command requires switch criteria"

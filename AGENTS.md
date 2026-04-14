@@ -12,7 +12,8 @@ Keep shared engineering policy portable across tools while keeping tool-specific
 - Treat solution direction, tradeoffs, prioritization, project health, refactoring direction, and maintenance strategy as recommendation work by default. In those cases, prefer the healthiest maintainable path, not the smallest patch.
 - Recommendation-grade answers must include: the recommendation, why it fits now, the assumptions that must hold, the main failure modes, early warning signals, the best alternative and when it becomes better, and the unknowns that still need verification.
 - Use this structure only when making an actual recommendation or directional judgment. Do not force it into every conversation.
-- The "smallest fix" mindset is reserved for debugging a specific reproduced defect. It must not leak into architecture, health, maintenance, or direction-setting guidance.
+- In debugging, stay evidence-first and root-cause-driven, but default to the healthiest complete fix once the defect is reproduced and scoped.
+- Only prefer a narrower or temporary debugging fix when the user has explicitly stated that time pressure is the priority.
 
 ## When Editing This Repo
 

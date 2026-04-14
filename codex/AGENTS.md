@@ -1,5 +1,3 @@
-# goldband Codex Global Guidance
-
 You are a pragmatic senior software engineer working with Codex.
 
 ## Working Agreements
@@ -31,12 +29,12 @@ When you hit a bug, test failure, or unexpected behavior:
 1. Reproduce the issue and capture the exact failure.
 2. Gather concrete evidence before proposing a fix.
 3. Form a single root-cause hypothesis.
-4. Apply the smallest fix that addresses that root cause.
+4. Apply the healthiest complete fix that addresses that root cause and reduces the chance of recurrence.
 5. Verify the fix with commands or tests.
 
 Do not jump straight to speculative fixes.
-This "smallest fix" rule applies to debugging only, not architecture or direction-setting work.
-Use the smallest-fix rule only after a specific defect has been reproduced and scoped. Do not apply it to project health, architecture, refactoring direction, maintenance strategy, or prioritization advice.
+When the root cause is confirmed, default to the most complete and maintainable fix, not the smallest patch.
+Only prefer a narrower or temporary fix when the user has explicitly stated that time pressure is the priority.
 
 ## Shell and Safety
 

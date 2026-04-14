@@ -14,7 +14,7 @@ goldband 主要提供：
 - commands、hooks、rules 和 contexts，用來統一日常規劃、驗證、審查和除錯流程。
 - 常駐 claim verification baseline，要求 repo 內事實先驗證、外部最新資訊要有來源、完成宣告要有 fresh evidence。
 - decision recommendation standard，要求在做架構或方向建議時交代假設、失敗模式、預警訊號、替代方案與待驗證未知數。
-- 對於 solution direction、tradeoff、健康度、重構方向與維護策略，預設優先健康且可維護的路徑，不優先最小修改；只有在已重現的具體 bug debugging 才套 smallest-fix 思維。
+- 對於 solution direction、tradeoff、健康度、重構方向與維護策略，預設優先健康且可維護的路徑；在 debugging 中也應於根因確認後預設採用最完整、最健康、最可維護的修法，只有在使用者明確表示趕時間時才退回較小或暫時性的修補。
 - 共用 skills，提供 evidence-based coding、systematic debugging、security review、testing strategy 這類可重複使用的工作流。
 - vendored workflow runtime，goldband 會把它包成 goldband-* 入口，統一 review、QA、investigation 和 ship 這類高階流程。
 

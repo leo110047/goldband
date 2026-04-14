@@ -14,7 +14,7 @@ goldband mainly provides:
 - commands, hooks, rules, and contexts to keep day-to-day planning, verification, review, and debugging flows consistent
 - an always-on claim verification baseline: repo facts must be verified, current external facts need sources, and completion claims need fresh evidence
 - a decision recommendation standard for architecture and direction-setting work: assumptions, failure modes, warning signals, alternatives, and unknowns must be surfaced with the recommendation
-- a non-debug default toward the healthiest maintainable path for solution direction, tradeoffs, project health, refactoring direction, and maintenance strategy; the smallest-fix mindset is reserved for reproduced bugs only
+- a default toward the healthiest maintainable path for solution direction, tradeoffs, project health, refactoring direction, and maintenance strategy; in debugging, once the root cause is confirmed, prefer the healthiest complete fix unless the user explicitly says time pressure takes priority
 - shared skills such as evidence-based coding, systematic debugging, security review, and testing strategy
 - a vendored `workflow` runtime that goldband exposes through `goldband-*` entry points for higher-level flows like review, QA, investigation, and ship
 
