@@ -14,7 +14,7 @@ Debug Process:
 3. Check recent changes (git diff, recent commits)
 4. Trace data flow to find the source of bad values
 5. Form a single hypothesis with evidence
-6. Test minimally — smallest possible change
+6. Test the hypothesis with the clearest safe experiment
 7. Verify fix and ensure no regressions
 
 Tool Preferences:

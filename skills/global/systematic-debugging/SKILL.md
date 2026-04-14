@@ -177,8 +177,8 @@ You MUST complete each phase before proceeding to the next.
    - Write it down
    - Be specific, not vague
 
-2. **Test Minimally**
-   - Make the SMALLEST possible change to test hypothesis
+2. **Test Clearly**
+   - Design the clearest safe experiment to test the hypothesis
    - One variable at a time
    - Don't fix multiple things at once
 

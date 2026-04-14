@@ -287,9 +287,9 @@ Before writing ANY fix, verify your hypothesis.
 
 Once root cause is confirmed:
 
-1. **Fix the root cause, not the symptom.** The smallest change that eliminates the actual problem.
+1. **Fix the root cause, not the symptom.** Apply the healthiest complete fix that eliminates the actual problem and reduces the chance of recurrence.
 
-2. **Minimal diff:** Fewest files touched, fewest lines changed. Resist the urge to refactor adjacent code.
+2. **Keep the blast radius intentional.** Touch only the files and lines genuinely required by that complete fix. Refactor adjacent code only when it is part of the root cause or needed to prevent recurrence.
 
 3. **Write a regression test** that:
    - **Fails** without the fix (proves the test is meaningful)
