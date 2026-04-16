@@ -46,6 +46,7 @@ goldband 的 `skills/global/` 是可攜式 skill 集合，提供 Claude Code 與
 | `testing-strategy` | coverage、TDD、integration / E2E test strategy |
 | `performance-optimization` | profiling、bottleneck、latency / throughput |
 | `security-checklist` | auth、input validation、secret handling、OWASP 風險 |
+| `frontend-design` | 高品質前端畫面設計與避免 generic AI aesthetics |
 
 ### 交付與維運
 
