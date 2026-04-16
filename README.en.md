@@ -10,14 +10,11 @@ English | [中文](README.md)
 
 goldband is a shared set of engineering guardrails for Claude Code and Codex. Its goal is to make AI coding workflows more stable, verifiable, and maintainable.
 
-goldband mainly provides:
-- commands, hooks, rules, and contexts to keep day-to-day planning, verification, review, and debugging flows consistent
-- an always-on claim verification baseline: repo facts must be verified, current external facts need sources, and completion claims need fresh evidence
-- a decision recommendation standard for architecture and direction-setting work: assumptions, failure modes, warning signals, alternatives, and unknowns must be surfaced with the recommendation
-- a default toward the healthiest maintainable path for solution direction, tradeoffs, project health, refactoring direction, and maintenance strategy; in debugging, once the root cause is confirmed, prefer the healthiest complete fix unless the user explicitly says time pressure takes priority
-- a repo-level design source of truth in [`DESIGN.md`](DESIGN.md) for UI and visual work, so generated interfaces do not drift into generic AI aesthetics
-- shared skills such as evidence-based coding, systematic debugging, security review, and testing strategy
-- a vendored `workflow` runtime that goldband exposes through `goldband-*` entry points for higher-level flows like review, QA, investigation, and ship
+This repo does three main things:
+
+- owns the shared policy surface: commands, hooks, rules, contexts, and portable skills
+- owns install and update behavior: it connects local Claude Code / Codex config back to this repo, then runs safe self-update and skill sync before startup
+- bundles the `workflow` runtime and exposes it through `goldband-*` entry points
 
 ## goldband vs workflow
 
@@ -51,7 +48,7 @@ cd goldband
 
 Do not copy `install.sh` by itself, and do not use a download method that strips `.git`. goldband uses a repo-linked install model, and startup self-update also depends on git metadata.
 
-The most common install combinations are:
+macOS / POSIX shell:
 
 ```bash
 ./install.sh pack-quality      # Recommended for Claude Code
@@ -59,12 +56,12 @@ The most common install combinations are:
 ./install.sh all-with-workflow # Claude Code + Codex + bundled workflow
 ```
 
-Windows PowerShell equivalents:
+Windows PowerShell:
 
 ```powershell
-pwsh -File .\install.ps1 all-tools
-pwsh -File .\install.ps1 all-with-workflow
-pwsh -File .\install.ps1 status
+pwsh -File .\install.ps1 all-tools         # Claude Code + Codex
+pwsh -File .\install.ps1 all-with-workflow # Claude Code + Codex + bundled workflow
+pwsh -File .\install.ps1 status            # Check install status
 ```
 
 ### Advanced install options

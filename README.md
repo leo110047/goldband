@@ -10,14 +10,11 @@
 
 goldband 是一套給 Claude Code 和 Codex 共用的 engineering guardrails，目標是把 AI coding agent 的工作方式收斂成比較穩定、可驗證、可維護的流程。
 
-goldband 主要提供：
-- commands、hooks、rules 和 contexts，用來統一日常規劃、驗證、審查和除錯流程。
-- 常駐 claim verification baseline，要求 repo 內事實先驗證、外部最新資訊要有來源、完成宣告要有 fresh evidence。
-- decision recommendation standard，要求在做架構或方向建議時交代假設、失敗模式、預警訊號、替代方案與待驗證未知數。
-- 對於 solution direction、tradeoff、健康度、重構方向與維護策略，預設優先健康且可維護的路徑；在 debugging 中也應於根因確認後預設採用最完整、最健康、最可維護的修法，只有在使用者明確表示趕時間時才退回較小或暫時性的修補。
-- UI / 視覺工作會以 [`DESIGN.md`](DESIGN.md) 作為 repo-level design source of truth，避免 generic AI aesthetics 漂移。
-- 共用 skills，提供 evidence-based coding、systematic debugging、security review、testing strategy 這類可重複使用的工作流。
-- vendored workflow runtime，goldband 會把它包成 goldband-* 入口，統一 review、QA、investigation 和 ship 這類高階流程。
+這個 repo 主要做三件事：
+
+- 管 shared policy：commands、hooks、rules、contexts、portable skills
+- 管安裝與更新：把 Claude Code / Codex 的本地設定接到這個 repo，並在啟動前做安全的 self-update / skill sync
+- bundle `workflow` runtime：安裝後對外提供 `goldband-*` 入口
 
 ## goldband 與 workflow 的邊界
 
@@ -52,7 +49,7 @@ cd goldband
 
 不要只複製 `install.sh`，也不要用沒有 `.git` 的下載方式。goldband 是 `repo-linked install`，啟動前自動更新也依賴 git metadata。
 
-最常用的安裝組合：
+macOS / POSIX shell：
 
 ```bash
 ./install.sh pack-quality      # Claude Code 日常推薦
@@ -60,12 +57,12 @@ cd goldband
 ./install.sh all-with-workflow # Claude Code + Codex + 內建 workflow
 ```
 
-Windows PowerShell 對應用法：
+Windows PowerShell：
 
 ```powershell
-pwsh -File .\install.ps1 all-tools
-pwsh -File .\install.ps1 all-with-workflow
-pwsh -File .\install.ps1 status
+pwsh -File .\install.ps1 all-tools         # Claude Code + Codex
+pwsh -File .\install.ps1 all-with-workflow # Claude Code + Codex + 內建 workflow
+pwsh -File .\install.ps1 status            # 檢查安裝狀態
 ```
 
 ### 進階安裝選項
