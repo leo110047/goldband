@@ -70,3 +70,6 @@ trust_level = "trusted"
 
 [projects."/Users/leo/news-briefing-agent"]
 trust_level = "trusted"
+
+[projects."/Users/leo/solopreneur"]
+trust_level = "trusted"
