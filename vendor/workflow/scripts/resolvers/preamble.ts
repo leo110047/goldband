@@ -1,4 +1,8 @@
 import type { TemplateContext } from './types';
+import { generateModelOverlay } from './model-overlay';
+import { generateQuestionTuning } from './question-tuning';
+import { generateWritingStyle } from './preamble/generate-writing-style';
+import { generateWritingStyleMigration } from './preamble/generate-writing-style-migration';
 
 function generatePreambleBash(ctx: TemplateContext): string {
   const runtimeRoot = ctx.host === 'codex'
@@ -20,9 +24,15 @@ _SESSIONS=$(find ~/.workflow/sessions -mmin -120 -type f 2>/dev/null | wc -l | t
 find ~/.workflow/sessions -mmin +120 -type f -delete 2>/dev/null || true
 _CONTRIB=$(${ctx.paths.binDir}/workflow-config get workflow_contributor 2>/dev/null || true)
 _PROACTIVE=$(${ctx.paths.binDir}/workflow-config get proactive 2>/dev/null || echo "true")
+_EXPLAIN_LEVEL=$(${ctx.paths.binDir}/workflow-config get explain_level 2>/dev/null || echo "default")
+_QUESTION_TUNING=$(${ctx.paths.binDir}/workflow-config get question_tuning 2>/dev/null || echo "false")
+_WRITING_PENDING=$([ -f ~/.workflow/.writing-style-prompt-pending ] && echo "yes" || echo "no")
 _BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 echo "BRANCH: $_BRANCH"
 echo "PROACTIVE: $_PROACTIVE"
+echo "EXPLAIN_LEVEL: $_EXPLAIN_LEVEL"
+echo "QUESTION_TUNING: $_QUESTION_TUNING"
+echo "WRITING_STYLE_PENDING: $_WRITING_PENDING"
 source <(${ctx.paths.binDir}/workflow-repo-mode 2>/dev/null) || true
 REPO_MODE=\${REPO_MODE:-unknown}
 echo "REPO_MODE: $REPO_MODE"
@@ -33,7 +43,7 @@ echo '{"skill":"${ctx.skillName}","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","repo"
 \`\`\``;
 }
 
-function generateUpgradeCheck(ctx: TemplateContext): string {
+function generateUpgradeCheck(_ctx: TemplateContext): string {
   return `If \`PROACTIVE\` is \`"false"\`, do not proactively suggest workflow skills — only invoke
 them when the user explicitly asks. The user opted out of proactive suggestions.`;
 }
@@ -286,18 +296,10 @@ file you are allowed to edit in plan mode. The plan file review report is part o
 plan's living status.`;
 }
 
-// Preamble Composition (tier → sections)
-// ─────────────────────────────────────────────
 // T1: core + upgrade + lake + contributor + completion
-// T2: T1 + ask + completeness
+// T2: T1 + ask + completeness + writing style + question tuning
 // T3: T2 + repo-mode + search
 // T4: (same as T3 — TEST_FAILURE_TRIAGE is a separate {{}} placeholder, not preamble)
-//
-// Skills by tier:
-//   T1: browse, setup-cookies, benchmark
-//   T2: investigate, cso, retro, doc-release, setup-deploy, canary
-//   T3: autoplan, codex, design-consult, office-hours, ceo/design/eng-review
-//   T4: ship, review, qa, qa-only, design-review, land-deploy
 export function generatePreamble(ctx: TemplateContext): string {
   const tier = ctx.preambleTier ?? 4;
   if (tier < 1 || tier > 4) {
@@ -306,11 +308,13 @@ export function generatePreamble(ctx: TemplateContext): string {
   const sections = [
     generatePreambleBash(ctx),
     generateUpgradeCheck(ctx),
+    generateWritingStyleMigration(ctx),
     generateLakeIntro(),
-    ...(tier >= 2 ? [generateAskUserFormat(ctx), generateCompletenessSection()] : []),
+    generateModelOverlay(ctx),
+    ...(tier >= 2 ? [generateAskUserFormat(ctx), generateWritingStyle(ctx), generateCompletenessSection(), generateQuestionTuning(ctx)] : []),
     ...(tier >= 3 ? [generateRepoModeSection(), generateSearchBeforeBuildingSection(ctx)] : []),
     generateContributorMode(),
     generateCompletionStatus(),
   ];
-  return sections.join('\n\n');
+  return sections.filter(Boolean).join('\n\n');
 }

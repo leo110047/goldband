@@ -26,9 +26,15 @@ _SESSIONS=$(find ~/.workflow/sessions -mmin -120 -type f 2>/dev/null | wc -l | t
 find ~/.workflow/sessions -mmin +120 -type f -delete 2>/dev/null || true
 _CONTRIB=$(~/.claude/skills/workflow/bin/workflow-config get workflow_contributor 2>/dev/null || true)
 _PROACTIVE=$(~/.claude/skills/workflow/bin/workflow-config get proactive 2>/dev/null || echo "true")
+_EXPLAIN_LEVEL=$(~/.claude/skills/workflow/bin/workflow-config get explain_level 2>/dev/null || echo "default")
+_QUESTION_TUNING=$(~/.claude/skills/workflow/bin/workflow-config get question_tuning 2>/dev/null || echo "false")
+_WRITING_PENDING=$([ -f ~/.workflow/.writing-style-prompt-pending ] && echo "yes" || echo "no")
 _BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 echo "BRANCH: $_BRANCH"
 echo "PROACTIVE: $_PROACTIVE"
+echo "EXPLAIN_LEVEL: $_EXPLAIN_LEVEL"
+echo "QUESTION_TUNING: $_QUESTION_TUNING"
+echo "WRITING_STYLE_PENDING: $_WRITING_PENDING"
 source <(~/.claude/skills/workflow/bin/workflow-repo-mode 2>/dev/null) || true
 REPO_MODE=${REPO_MODE:-unknown}
 echo "REPO_MODE: $REPO_MODE"
@@ -40,6 +46,29 @@ echo '{"skill":"setup-browser-cookies","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","
 
 If `PROACTIVE` is `"false"`, do not proactively suggest workflow skills — only invoke
 them when the user explicitly asks. The user opted out of proactive suggestions.
+
+If `WRITING_STYLE_PENDING` is `yes`: You're on the first skill run after upgrading
+to workflow v1. Ask the user once about the new default writing style. Use AskUserQuestion:
+
+> v1 prompts = simpler. Technical terms get a one-sentence gloss on first use,
+> questions are framed in outcome terms, sentences are shorter.
+>
+> Keep the new default, or prefer the older tighter prose?
+
+Options:
+- A) Keep the new default (recommended — good writing helps everyone)
+- B) Restore V0 prose — set `explain_level: terse`
+
+If A: leave `explain_level` unset (defaults to `default`).
+If B: run `~/.claude/skills/workflow/bin/workflow-config set explain_level terse`.
+
+Always run (regardless of choice):
+```bash
+rm -f ~/.workflow/.writing-style-prompt-pending
+touch ~/.workflow/.writing-style-prompted
+```
+
+This only happens once. If `WRITING_STYLE_PENDING` is `no`, skip this entirely.
 
 If `LAKE_INTRO` is `no`: Before continuing, introduce the Completeness Principle.
 Tell the user: "workflow follows the **Boil the Lake** principle — always do the complete
@@ -153,7 +182,7 @@ Import logged-in sessions from your real Chromium browser into the headless brow
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 B=""
 [ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/workflow/browse/dist/browse" ] && B="$_ROOT/.claude/skills/workflow/browse/dist/browse"
-[ -z "$B" ] && B=~/.claude/skills/workflow/browse/dist/browse
+[ -z "$B" ] && B="$HOME/.claude/skills/workflow/browse/dist/browse"
 if [ -x "$B" ]; then
   echo "READY: $B"
 else
@@ -164,7 +193,24 @@ fi
 If `NEEDS_SETUP`:
 1. Tell the user: "workflow browse needs a one-time build (~10 seconds). OK to proceed?" Then STOP and wait.
 2. Run: `cd <SKILL_DIR> && ./setup`
-3. If `bun` is not installed: `curl -fsSL https://bun.sh/install | bash`
+3. If `bun` is not installed:
+   ```bash
+   if ! command -v bun >/dev/null 2>&1; then
+     BUN_VERSION="1.3.10"
+     BUN_INSTALL_SHA="bab8acfb046aac8c72407bdcce903957665d655d7acaa3e11c7c4616beae68dd"
+     tmpfile=$(mktemp)
+     curl -fsSL "https://bun.sh/install" -o "$tmpfile"
+     actual_sha=$(shasum -a 256 "$tmpfile" | awk '{print $1}')
+     if [ "$actual_sha" != "$BUN_INSTALL_SHA" ]; then
+       echo "ERROR: bun install script checksum mismatch" >&2
+       echo "  expected: $BUN_INSTALL_SHA" >&2
+       echo "  got:      $actual_sha" >&2
+       rm "$tmpfile"; exit 1
+     fi
+     BUN_VERSION="$BUN_VERSION" bash "$tmpfile"
+     rm "$tmpfile"
+   fi
+   ```
 
 ### 2. Open the cookie picker
 

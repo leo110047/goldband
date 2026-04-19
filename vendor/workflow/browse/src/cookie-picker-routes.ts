@@ -13,9 +13,35 @@
  *   GET  /cookie-picker/imported     → currently imported domains + counts
  */
 
+import * as crypto from 'crypto';
 import type { BrowserManager } from './browser-manager';
 import { findInstalledBrowsers, listProfiles, listDomains, importCookies, CookieImportError, type PlaywrightCookie } from './cookie-import-browser';
 import { getCookiePickerHTML } from './cookie-picker-ui';
+
+// ─── Auth State ────────────────────────────────────────────────
+// The upstream picker flow opens a one-time code URL in the user's browser.
+// Keep the local implementation minimal: generate a short-lived code so the
+// existing write command can issue /cookie-picker?code=... links without
+// changing the rest of the route behavior yet.
+const pendingCodes = new Map<string, number>();
+const CODE_TTL_MS = 30_000;
+
+/** Generate a short-lived one-time code for opening the cookie picker UI. */
+export function generatePickerCode(): string {
+  const code = crypto.randomUUID();
+  pendingCodes.set(code, Date.now() + CODE_TTL_MS);
+  return code;
+}
+
+/** Return true while the picker still has an unexpired launch code. */
+export function hasActivePicker(): boolean {
+  const now = Date.now();
+  for (const [code, expiry] of pendingCodes) {
+    if (expiry > now) return true;
+    pendingCodes.delete(code);
+  }
+  return false;
+}
 
 // ─── State ──────────────────────────────────────────────────────
 // Tracks which domains were imported via the picker.

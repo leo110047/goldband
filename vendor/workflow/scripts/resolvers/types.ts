@@ -29,4 +29,5 @@ export interface TemplateContext {
   host: Host;
   paths: HostPaths;
   preambleTier?: number;  // 1-4, controls which preamble sections are included
+  model?: string;
 }

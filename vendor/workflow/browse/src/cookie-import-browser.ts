@@ -283,6 +283,27 @@ export async function importCookies(
   }
 }
 
+/**
+ * App-Bound Encryption (v20) support has not been ported into the workflow
+ * fork yet. Keep the new caller contract compiling and report "not detected"
+ * so existing v10/v11 imports continue to work without the upstream CDP path.
+ */
+export function hasV20Cookies(_browserName: string, _profile = 'Default'): boolean {
+  return false;
+}
+
+/**
+ * Minimal compatibility shim for newer callers. Until the dedicated CDP
+ * extraction path is ported, fall back to the regular import flow.
+ */
+export async function importCookiesViaCdp(
+  browserName: string,
+  domains: string[],
+  profile = 'Default',
+): Promise<ImportResult> {
+  return importCookies(browserName, domains, profile);
+}
+
 // ─── Internal: Browser Resolution ───────────────────────────────
 
 function resolveBrowser(nameOrAlias: string): BrowserInfo {

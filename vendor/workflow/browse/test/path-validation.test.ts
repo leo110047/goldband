@@ -46,18 +46,18 @@ describe('validateReadPath', () => {
   });
 
   it('blocks absolute paths outside safe directories', () => {
-    expect(() => validateReadPath('/etc/passwd')).toThrow(/Absolute path must be within/);
+    expect(() => validateReadPath('/etc/passwd')).toThrow(/Path must be within/);
   });
 
   it('blocks /tmpevil prefix collision', () => {
-    expect(() => validateReadPath('/tmpevil/file.js')).toThrow(/Absolute path must be within/);
+    expect(() => validateReadPath('/tmpevil/file.js')).toThrow(/Path must be within/);
   });
 
   it('blocks path traversal sequences', () => {
-    expect(() => validateReadPath('../../../etc/passwd')).toThrow(/Path traversal/);
+    expect(() => validateReadPath('../../../etc/passwd')).toThrow(/Path must be within/);
   });
 
   it('blocks nested path traversal', () => {
-    expect(() => validateReadPath('src/../../etc/passwd')).toThrow(/Path traversal/);
+    expect(() => validateReadPath('src/../../etc/passwd')).toThrow(/Path must be within/);
   });
 });

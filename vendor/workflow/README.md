@@ -2,7 +2,7 @@
 
 > "I don't think I've typed like a line of code probably since December, basically, which is an extremely large change." — [Andrej Karpathy](https://fortune.com/2026/03/21/andrej-karpathy-openai-cofounder-ai-agents-coding-state-of-psychosis-openclaw/), No Priors podcast, March 2026
 
-**workflow** turns Claude Code into a virtual engineering team — a CEO who rethinks the product, an eng manager who locks architecture, a designer who catches AI slop, a reviewer who finds production bugs, a QA lead who opens a real browser, a security officer who runs OWASP + STRIDE audits, and a release engineer who ships the PR. Twenty specialists and eight power tools, all slash commands, all Markdown, all free, MIT license.
+**workflow** turns Claude Code into a virtual engineering team — a CEO who rethinks the product, an eng manager who locks architecture, a designer who catches AI slop, a reviewer who finds production bugs, a QA lead who opens a real browser, a security officer who runs OWASP + STRIDE audits, and a release engineer who ships the PR. Dozens of specialists and power tools, all slash commands, all Markdown, all free, MIT license.
 
 **Who this is for:**
 - **Founders and CEOs** — especially technical ones who still want to ship
@@ -26,11 +26,11 @@
 
 Open Claude Code and paste this. Claude does the rest.
 
-> Install workflow: run **`git clone https://github.com/garrytan/workflow.git ~/.claude/skills/workflow && cd ~/.claude/skills/workflow && ./setup`** then add a "workflow" section to CLAUDE.md that says to use the /goldband-browse skill from workflow for all web browsing, never use mcp\_\_claude-in-chrome\_\_\* tools, and lists the available skills: /goldband-office-hours, /goldband-plan-ceo-review, /goldband-plan-eng-review, /goldband-plan-design-review, /goldband-design-consultation, /goldband-review, /goldband-ship, /goldband-land-and-deploy, /goldband-canary, /goldband-benchmark, /goldband-browse, /goldband-qa, /goldband-qa-only, /goldband-design-review, /goldband-setup-browser-cookies, /goldband-setup-deploy, /goldband-retro, /goldband-investigate, /goldband-document-release, /goldband-codex, /goldband-cso, /goldband-autoplan, /goldband-careful, /goldband-freeze, /goldband-guard, /goldband-unfreeze. Then ask the user if they also want to add workflow to the current project so teammates get it.
+> Install workflow: run **`git clone https://github.com/garrytan/workflow.git ~/.claude/skills/workflow && cd ~/.claude/skills/workflow && ./setup`** then add a "workflow" section to CLAUDE.md that says to use the /goldband-browse skill from workflow for all web browsing, never use mcp\_\_claude-in-chrome\_\_\* tools, and lists the available skills: /goldband-office-hours, /goldband-plan-ceo-review, /goldband-plan-eng-review, /goldband-plan-design-review, /goldband-design-consultation, /goldband-review, /goldband-ship, /goldband-land-and-deploy, /goldband-canary, /goldband-benchmark, /goldband-benchmark-models, /goldband-browse, /goldband-qa, /goldband-qa-only, /goldband-design-review, /goldband-setup-browser-cookies, /goldband-setup-deploy, /goldband-retro, /goldband-investigate, /goldband-document-release, /goldband-codex, /goldband-cso, /goldband-autoplan, /goldband-plan-tune, /goldband-careful, /goldband-freeze, /goldband-guard, /goldband-unfreeze. Then ask the user if they also want to add workflow to the current project so teammates get it.
 
 ### Step 2: Add to your repo so teammates get it (optional)
 
-> Add workflow to this project: run **`cp -Rf ~/.claude/skills/workflow .claude/skills/workflow && rm -rf .claude/skills/workflow/.git && cd .claude/skills/workflow && ./setup`** then add a "workflow" section to this project's CLAUDE.md that says to use the /goldband-browse skill from workflow for all web browsing, never use mcp\_\_claude-in-chrome\_\_\* tools, lists the available skills: /goldband-office-hours, /goldband-plan-ceo-review, /goldband-plan-eng-review, /goldband-plan-design-review, /goldband-design-consultation, /goldband-review, /goldband-ship, /goldband-land-and-deploy, /goldband-canary, /goldband-benchmark, /goldband-browse, /goldband-qa, /goldband-qa-only, /goldband-design-review, /goldband-setup-browser-cookies, /goldband-setup-deploy, /goldband-retro, /goldband-investigate, /goldband-document-release, /goldband-codex, /goldband-cso, /goldband-careful, /goldband-freeze, /goldband-guard, /goldband-unfreeze, and tells Claude that if workflow skills aren't working, run `cd .claude/skills/workflow && ./setup` to build the binary and register skills.
+> Add workflow to this project: run **`cp -Rf ~/.claude/skills/workflow .claude/skills/workflow && rm -rf .claude/skills/workflow/.git && cd .claude/skills/workflow && ./setup`** then add a "workflow" section to this project's CLAUDE.md that says to use the /goldband-browse skill from workflow for all web browsing, never use mcp\_\_claude-in-chrome\_\_\* tools, lists the available skills: /goldband-office-hours, /goldband-plan-ceo-review, /goldband-plan-eng-review, /goldband-plan-design-review, /goldband-design-consultation, /goldband-review, /goldband-ship, /goldband-land-and-deploy, /goldband-canary, /goldband-benchmark, /goldband-benchmark-models, /goldband-browse, /goldband-qa, /goldband-qa-only, /goldband-design-review, /goldband-setup-browser-cookies, /goldband-setup-deploy, /goldband-retro, /goldband-investigate, /goldband-document-release, /goldband-codex, /goldband-cso, /goldband-autoplan, /goldband-plan-tune, /goldband-careful, /goldband-freeze, /goldband-guard, /goldband-unfreeze, and tells Claude that if workflow skills aren't working, run `cd .claude/skills/workflow && ./setup` to build the binary and register skills.
 
 Real files get committed to your repo (not a submodule), so `git clone` just works. Everything lives inside `.claude/`. Nothing touches your PATH or runs in the background.
 
@@ -135,11 +135,13 @@ Each skill feeds into the next. `/goldband-office-hours` writes a design doc tha
 | `/goldband-land-and-deploy` | **Release Engineer** | Merge the PR, wait for CI and deploy, verify production health. One command from "approved" to "verified in production." |
 | `/goldband-canary` | **SRE** | Post-deploy monitoring loop. Watches for console errors, performance regressions, and page failures. |
 | `/goldband-benchmark` | **Performance Engineer** | Baseline page load times, Core Web Vitals, and resource sizes. Compare before/after on every PR. |
+| `/goldband-benchmark-models` | **Model Benchmarker** | Run the same prompt or skill across Claude, GPT, and Gemini. Compare latency, token usage, cost, and optional judged quality. |
 | `/goldband-document-release` | **Technical Writer** | Update all project docs to match what you just shipped. Catches stale READMEs automatically. |
 | `/goldband-retro` | **Eng Manager** | Team-aware weekly retro. Per-person breakdowns, shipping streaks, test health trends, growth opportunities. `/goldband-retro global` runs across all your projects and AI tools (Claude Code, Codex, Gemini). |
 | `/goldband-browse` | **QA Engineer** | Real Chromium browser, real clicks, real screenshots. ~100ms per command. |
 | `/goldband-setup-browser-cookies` | **Session Manager** | Import cookies from your real browser (Chrome, Arc, Brave, Edge) into the headless session. Test authenticated pages. |
 | `/goldband-autoplan` | **Review Pipeline** | One command, fully reviewed plan. Runs CEO → design → eng review automatically with encoded decision principles. Surfaces only taste decisions for your approval. |
+| `/goldband-plan-tune` | **Workflow Tuner** | Inspect question logs, set never-ask / always-ask preferences, and review your declared vs inferred working style profile. |
 
 ### Power tools
 
@@ -195,6 +197,8 @@ workflow keeps local usage analytics in `~/.workflow/analytics/skill-usage.jsonl
 
 **`/goldband-browse` fails?** `cd ~/.claude/skills/workflow && bun install && bun run build`
 
+**Headed browser / side panel won't reconnect?** Re-run `$B connect` from the workflow browse skill context.
+
 **Stale install?** Re-run `./setup` from your workflow checkout.
 
 **Codex says "Skipped loading skill(s) due to invalid SKILL.md"?** Your Codex skill descriptions are stale. Fix: rerun `./setup --host codex` from your workflow checkout (for example `~/workflow`, or `$HOME/.workflow/repos/workflow` if setup migrated an old direct Codex install) — or for repo-local installs: `cd "$(readlink -f .agents/skills/workflow)" && git pull && ./setup --host codex`
@@ -209,9 +213,9 @@ workflow keeps local usage analytics in `~/.workflow/analytics/skill-usage.jsonl
 ## workflow
 Use /goldband-browse from workflow for all web browsing. Never use mcp__claude-in-chrome__* tools.
 Available skills: /goldband-office-hours, /goldband-plan-ceo-review, /goldband-plan-eng-review, /goldband-plan-design-review,
-/goldband-design-consultation, /goldband-review, /goldband-ship, /goldband-land-and-deploy, /goldband-canary, /goldband-benchmark, /goldband-browse,
+/goldband-design-consultation, /goldband-review, /goldband-ship, /goldband-land-and-deploy, /goldband-canary, /goldband-benchmark, /goldband-benchmark-models, /goldband-browse,
 /goldband-qa, /goldband-qa-only, /goldband-design-review, /goldband-setup-browser-cookies, /goldband-setup-deploy, /goldband-retro,
-/goldband-investigate, /goldband-document-release, /goldband-codex, /goldband-cso, /goldband-autoplan, /goldband-careful, /goldband-freeze, /goldband-guard,
+/goldband-investigate, /goldband-document-release, /goldband-codex, /goldband-cso, /goldband-autoplan, /goldband-plan-tune, /goldband-careful, /goldband-freeze, /goldband-guard,
 /goldband-unfreeze.
 ```
 
