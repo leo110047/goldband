@@ -221,6 +221,15 @@ metadata 查詢由固定 adapter 擁有，不執行 candidate 的 argv 或接受
 `verified-pass`；失敗的 step metadata 不足以宣稱原命令的 `verified-failure`。
 因此尚未推送並跑完 CI 時，semantic host 仍會被 evidence completeness 擋住。
 
+若已提交版本的 CI 尚在執行，請在完成後沿用相同 base／scope 與最新
+`--closure-artifact` 重驗。當原紀錄尚未呼叫 semantic host、所有未解 finding
+皆為 `runtime-incomplete`，且 candidate 與 behavior contract 未改變時，既有
+`evidence-repair` 允許刷新相同版本的證據，不要求為此修改程式。Runtime 仍會
+重新查證原 finding 對應的 providers；證據未完成時維持 blocker 與零 host calls，
+必須使用該次產生的最新 artifact 繼續重驗。Receipt、lineage、candidate binding
+及 freshness 檢查均保留。真正的 `verified-failure` 或已執行 semantic review
+仍走原本需要修復 candidate 的流程。
+
 既有三組 provider 可由舊 `macos-review-contract-host` 單向遷移到此固定 lane，
 但不得改掉 operation、降低證據等級或移除 cell。舊 receipt／lineage／finding
 保留，仍須透過原有 evidence-repair／closure 驗證 fresh evidence；契約遷移本身

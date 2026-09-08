@@ -1073,7 +1073,8 @@ export function buildClosureInput(
       artifact.binding.scopeDigest !== repairedBinding.scopeDigest) {
     throw new Error('closure provenance does not match repository, base, or scope');
   }
-  if (artifact.binding.candidateDigest === repairedBinding.candidateDigest) {
+  const evidenceRefresh = permitsSameCandidateEvidenceRefresh(artifact, repairedBinding);
+  if (artifact.binding.candidateDigest === repairedBinding.candidateDigest && !evidenceRefresh) {
     throw new Error('closure requires a repaired candidate with a different digest');
   }
   const patchDelta = diffPatchTexts(artifact.diff, repairedDiff);
@@ -1099,7 +1100,7 @@ export function buildClosureInput(
       ...(finding.behaviorCellIds ?? []),
       ...evidenceCellsForFinding(finding, artifact.evidence),
     ])
-      .filter((cellId) => cellAffectedByPaths(cellId, repairedManifest, changedFiles)));
+      .filter((cellId) => evidenceRefresh || cellAffectedByPaths(cellId, repairedManifest, changedFiles)));
   const contractChangedCellIds = repairedManifest.behaviorMatrix
     .map((cell) => cell.id)
     .filter((cellId) =>
@@ -1120,6 +1121,17 @@ export function buildClosureInput(
     affectedFindingIds: artifact.findings.map((finding) => finding.id!),
     affectedCellIds,
   };
+}
+
+function permitsSameCandidateEvidenceRefresh(
+  artifact: InitialReviewArtifact,
+  binding: CandidateBinding,
+): boolean {
+  return artifact.binding.candidateDigest === binding.candidateDigest &&
+    artifact.binding.behaviorContractDigest === binding.behaviorContractDigest &&
+    artifact.hostCallCount === 0 &&
+    artifact.findings.length > 0 &&
+    artifact.findings.every((finding) => finding.classification === 'runtime-incomplete');
 }
 
 function assertEvidenceRepairAffectsCells(
