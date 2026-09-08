@@ -170,7 +170,7 @@ skill discovery.
 ## Requirements
 
 - Git
-- Bun v1.0+
+- Bun v1.3.11+
 - Node.js where required by the host or platform
 - Playwright Chromium for browser-backed workflows
 

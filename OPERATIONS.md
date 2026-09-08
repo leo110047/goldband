@@ -1,5 +1,72 @@
 # goldband Operations
 
+## Additional Install Options
+
+Run these commands from the complete Goldband checkout. The common installation
+paths are in the [README](README.md#安裝).
+
+| Need | Entry point |
+| --- | --- |
+| Claude core guardrails through the installer | `./install.sh pack-quality` |
+| Goldband Loop for Claude Code | `./install.sh workflow` |
+| Goldband Loop for Codex | `./install.sh workflow-codex` |
+| All installer options | `./install.sh help` |
+| Codex portable plugin subset | [Repository marketplace](.agents/plugins/marketplace.json) |
+| Claude Desktop app subset | [Local extension](app-adapters/claude-desktop/) |
+| Claude web/mobile app subset | [Remote connector template](app-adapters/claude-remote/goldband-connector.template.json) |
+
+Plugins, app adapters, and full installer setups provide different features;
+see [distribution boundaries](ARCHITECTURE.md#system-shape). Avoid installing
+both the Claude core plugin and installer-managed Claude core assets.
+
+The workflow installer installs and verifies Playwright Chromium. For an offline
+or CI setup that does not need browser workflows, use
+`GOLDBAND_SKIP_PLAYWRIGHT=1` with your chosen install command. This explicitly
+skips browser setup; it does not provide a working browser workflow.
+
+After updating, rerun your original installation command and `./install.sh status`.
+Status checks the installed source inputs, artifact integrity, and dispatch
+behavior. Stale or corrupt workflow installations require reinstalling; pulling
+new source alone is insufficient.
+
+## Managed Worktrees
+
+Use a managed worktree when an agent needs an isolated working copy. Run
+`create` from a clean source worktree on a normal branch:
+
+```bash
+goldband worktree create task-name
+```
+
+This opens a managed shell in a detached worktree. Inside that shell, start one
+agent without a nested OS sandbox:
+
+```bash
+claude --settings '{"sandbox":{"enabled":false}}'
+# Or:
+codex --sandbox danger-full-access
+```
+
+These flags are for the Goldband-managed shell only: Goldband's outer sandbox
+protects Git metadata and the source worktree. Normal permission prompts and
+Goldband hooks remain active. macOS uses Seatbelt; Linux uses bubblewrap.
+Unavailable boundaries fail closed, and Windows has no claimed hard enforcement.
+
+After the agent finishes, exit the managed shell, then integrate from the source
+worktree:
+
+```bash
+goldband worktree finish task-name -m "feat: integrate task"
+```
+
+`finish` validates and integrates the candidate, creates the commit, and removes
+the managed worktree only after successful completion. Validation or integration
+failure preserves the worktree for investigation. See the
+[managed worktree architecture](ARCHITECTURE.md#managed-worktree-runtime) for the
+full isolation and commit contract. The host user remains able to manage Git
+outside this boundary; these controls do not isolate a malicious same-user host
+process.
+
 ## Codex Portable Baseline Check
 
 Run this before publishing changes to tracked Codex config or rules:

@@ -1,306 +1,103 @@
 # goldband
 
-> Local engineering guardrails, installer assets, and workflow runtime support
-> for Claude Code and Codex.
+Local engineering tools for Claude Code and Codex, with shared development rules, tool configuration, and workflows.
 
 English | [中文](README.md)
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+## What It Does
 
-## What This Is
+- Installs shared development rules, hooks, and skills to reduce repeated project setup.
+- Manages local Claude Code and Codex configuration, with installation checks and uninstall commands.
+- Optionally adds Goldband Loop for code review, investigation, planning, QA, and other workflows.
 
-goldband is a local engineering pack for Claude Code and Codex. It keeps shared
-policy, hooks, rules, commands, portable skills, Codex config, and the optional
-Goldband Loop workflow runtime in one checkout.
+## Before Installing
 
-This repo has two layers:
+- Have Git, Node.js, and the Claude Code or Codex CLI you intend to use available.
+- Installer-based Claude configuration also needs `jq`; Codex configuration checks require **Python 3.11 or later**.
+- Use a complete Git checkout; do not download only `install.sh`.
+- Goldband Loop also requires **Bun 1.3.11 or later**. Browser workflows require Playwright Chromium, which the installer installs and verifies.
+- Use Bash on macOS/Linux and Git Bash or WSL on Windows. There is no native PowerShell installer. Individual workflow limits are described below.
 
-- root `goldband`: installer, Claude/Codex adapters, shared policy, hooks,
-  rules, commands, portable skills, plugin/app distribution.
-- `goldband-loop/`: first-party workflow runtime for public review,
-  investigation, QA, browser, planning, and related capability actions;
-  unfinished high-risk work stays in a hidden experimental inventory.
+The installer changes tool configuration, hooks, and skills in your home directory. Choose either the Claude plugin or the installer's Claude core setup to avoid loading duplicate assets.
 
-For detailed ownership and runtime contracts, see
-[ARCHITECTURE.md](ARCHITECTURE.md).
+## Install
 
-### `review/code` platform boundary
-
-When adding an evidence contract to another project, run
-`goldband review contract help` to locate the installed guide, public example,
-and JSON Schema. `review contract init` creates a non-overwriting, fail-closed
-scaffold at the canonical repository root. After declaring project-owned
-behaviors and providers, use `review contract validate --manifest <path>` to
-invoke the production runtime validator without executing evidence, changing
-the contract store, or claiming review/deployment completion. See the
-[manifest authoring guide](docs/review-evidence-manifest.md) for the complete
-field and safety contract.
-
-| Platform | Goldband Loop installation | Executable sealed evidence | `review/code` result |
-| --- | --- | --- | --- |
-| macOS | Supported | Runs under Seatbelt | May start semantic review after evidence is complete |
-| Linux | Other workflow capabilities are supported | **Unsupported** | Emits typed `runtime-incomplete`, starts no semantic review, and grants no completion or closure authority |
-| Windows | Some capabilities install through Git Bash/WSL | **Unsupported** | Fails closed with the same incomplete result |
-
-Linux Bubblewrap currently owns only the managed-worktree boundary. It is not a
-sealed `review/code` evidence runner and does not imply review parity. Run a
-contract that requires executable evidence on a supported macOS Seatbelt host.
-
-`review/code` first resolves a non-downgradable evidence contract. A repository
-Review uses the canonical Git repository root as the shared coordinate for
-diffs, snapshots, scopes, and contracts. Starting in a tracked subdirectory
-records only an execution offset and cannot change the baseline. The reviewed
-base's repo-root `goldband.review-evidence.json` is authoritative; only when the
-base has no manifest may an explicitly imported runtime-owned per-repository
-contract become the baseline (`goldband review contract import --manifest
-<path>`). Working-tree, index, and caller-supplied manifests are complete
-monotonic candidate extensions, never replacement authorities. `inspect`
-reports the repo root, invocation offset, base/candidate tracking state,
-sources, and digests. Manifest schema v2 is required. The only v1 transition is
-a committed v1 base paired with a v2 candidate, and it is accepted only when
-changing the base version marker alone passes the complete v2 validation. Every
-other v1 input fails closed with explicit migration guidance; safety fields are
-never inferred.
-
-After resolution, the runtime
-runs every typed check in an independent read-only, default-deny read/write/network snapshot,
-validates pre/post tree digests, reciprocal provider/cell ownership, and exact RED exits, and validates
-evidence completeness and candidate provenance before one semantic review. If
-an operation uses a script launcher, its manifest must invoke the interpreter explicitly. A Mach-O runtime
-with non-system dependencies executes from a private sealed projection: Goldband rewrites only attested
-load commands, ad-hoc signs and re-attests the transformed bytes, and leaves the original host package tree
-unreadable. The macOS profile exactly re-denies inherited syslog, Mach service, and shared-memory channels
-in addition to broad network and system-socket access.
-An explicit `pythonRuntime` contract supports Python 3.14 with `uv`,
-`pyproject.toml`, and `uv.lock`. Goldband creates a per-operation frozen/offline
-environment and completes interpreter, stdlib, path, and dependency-integrity
-preflight before the project gate. Python and uv are selected only from bounded
-system/Homebrew roots and inspected inside Seatbelt. For registry packages, installed
-`WHEEL` tags must uniquely select the used lockfile wheel filename and hash; unrelated cache entries do not affect identity. Preparation failure is typed
-`runtime-incomplete` and prevents semantic dispatch; only a gate mismatch after
-preflight becomes `verified-failure`.
-If
-that review finds an issue and the candidate is repaired,
-`--closure-artifact <initial-artifact>` performs one closure pass over only the
-repair delta, original finding IDs, and rerun evidence. New or changed affected
-cells in the repaired manifest are rerun, and `closed` requires fresh passing
-evidence. Closure also requires a receipt issued by the installed runtime authority for the complete
-initial payload, review scope, and Work Map claim attempt; prior-attempt replay is rejected. This
-boundary distrusts reviewed code, model output, and artifact input, while trusting the Goldband
-installer/runtime under the same OS account. Isolating a malicious same-user host process requires
-an OS-backed key or privileged helper.
-Closure receipts use at-most-once semantics: after repair binding and Work Map causality
-validation, an atomic claim consumes the receipt. A crash or later failure requires a new
-initial review instead of replaying that receipt. Prompt-redacted untracked files remain
-digest-bound and executable through a separate snapshot-only channel.
-
-Cross-run review authority is owned by a signed installed-runtime acceptance
-lineage. A new manifest may add coverage but cannot remove, reverse, or weaken
-inherited required cells, and an open finding forces scoped closure. Projects
-may commit typed minimum evidence requirements or attributable waivers in
-`goldband.review-policy.json` on the base commit; model prose and candidate-only
-files have no waiver authority. `No new findings` is reported separately from
-contract completeness, prior blockers, closure, and completion authority. A
-zero-finding initial review cannot trigger closure. Fixture, local, live, device, and production
-evidence levels remain distinct, and a green gate is never reported as overall
-deployment readiness.
-
-## Install Paths
-
-| Need | Recommended path |
-| --- | --- |
-| Claude Code core guardrails | Claude plugin: `goldband@goldband` |
-| Codex full setup | `./install.sh codex-full` |
-| Claude Code + Codex | `./install.sh all-tools` |
-| Claude Code + Codex + Goldband Loop | `./install.sh all-with-workflow` |
-| Codex portable plugin subset | repo marketplace: `.agents/plugins/marketplace.json` |
-| Claude Desktop app subset | `app-adapters/claude-desktop/dist/goldband-local-extension.mcpb` |
-| Claude web/mobile app subset | `app-adapters/claude-remote/goldband-connector.template.json` |
-
-The Claude plugin is the main Claude Code core-guardrails path. It does not
-include Goldband Loop, Playwright/browser/iOS tooling, or Codex full setup. Use
-the installer when you need the workflow runtime.
-
-## Quickstart
-
-Claude Code plugin:
+Clone the project:
 
 ```bash
 git clone https://github.com/leo110047/goldband.git
 cd goldband
+```
+
+Choose one installation path:
+
+| Need | Installation |
+| --- | --- |
+| Claude Code core guardrails | Claude plugin commands below |
+| Full Codex configuration | `./install.sh codex-full` |
+| Full Claude Code and Codex configuration | `./install.sh all-tools` |
+| Both tools plus Goldband Loop workflows | `./install.sh all-with-workflow` |
+
+To install the Claude plugin:
+
+```bash
 claude plugin marketplace add ./
 claude plugin install goldband@goldband --scope user
+```
+
+The Claude plugin does not include Goldband Loop. For workflows on a single tool, the Codex portable plugin, or Claude Desktop/web/mobile integrations, see [additional install options](OPERATIONS.md#additional-install-options).
+
+Check installation status, then restart Claude Code/Codex:
+
+```bash
 ./install.sh status
 ```
 
-Codex or dual-tool setup:
+Your selected components should report `[OK]`. If status reports stale, corrupt, or duplicate assets, follow its remediation instructions first.
 
-```bash
-git clone https://github.com/leo110047/goldband.git
-cd goldband
-./install.sh all-tools
-./install.sh status
+## Try a Workflow
+
+After installing Goldband Loop, start by checking your local installation. Enter the following in the corresponding tool's conversation:
+
+```text
+Claude Code: /goldband system health
+Codex:       $goldband system health
 ```
 
-Goldband Loop workflow runtime:
+See the [workflow catalog](docs/generated/capabilities.md) for other actions.
 
-```bash
-./install.sh all-with-workflow
-```
+Code review requires a verification contract for the target project; begin with the [review quick start](docs/review-evidence-manifest.md#quick-start). Formal review requiring locally sandboxed test execution currently supports macOS only; Linux/Windows report incomplete when this evidence is unavailable. Successful installation or tests do not imply that review or deployment is complete.
 
-Native PowerShell installation is not maintained. On Windows, use Git Bash or
-WSL from a full git checkout and run the same POSIX commands.
+## Update and Uninstall
 
-## Common Commands
-
-```bash
-./install.sh status            # Check install state
-./install.sh pack-quality      # Claude Code core quality pack, no workflow runtime
-./install.sh codex-full        # Codex full setup
-./install.sh all-tools         # Claude Code + Codex
-./install.sh all-with-workflow # Claude Code + Codex + Goldband Loop
-./install.sh uninstall         # Remove installer-managed assets
-```
-
-Uninstall the plugin:
-
-```bash
-claude plugin uninstall goldband@goldband
-```
-
-Update:
+Update the source in your original checkout:
 
 ```bash
 git pull --ff-only
-./install.sh status
 ```
 
-After updating, rerun the install profile you use, such as `pack-quality`,
-`all-tools`, or `all-with-workflow`.
+Then update using your original installation method:
 
-## Important Boundaries
+- **Installer**: rerun the command you originally selected from the table above, such as `./install.sh codex-full` for Codex.
+- **Claude plugin**: run `claude plugin update goldband@goldband`.
 
-- Use a full git checkout; do not copy `install.sh` by itself.
-- Claude plugin, Codex plugin, Claude app adapters, and installer full setup are
-  different distribution surfaces. Do not describe one as replacing another.
-- `./install.sh status` reads back install state. If the plugin and
-  installer-managed Claude assets both exist, it reports duplicate assets.
-- Hooks, rules, the cross-review gate, and sandbox are guardrails and evidence
-  gates, not a security boundary against a same-permission host user. Managed
-  worktrees are a narrower exception: an OS sandbox blocks Git-metadata writes
-  by the agent process, while the host user remains able to manage and finish
-  the work outside that sandbox.
-- `all-with-workflow` installs and verifies the Goldband Loop browser runtime.
-  Offline or CI runs can explicitly set `GOLDBAND_SKIP_PLAYWRIGHT=1` to skip
-  browser workflows.
+Run `./install.sh status` afterward and restart your tool.
 
-## Workflow Entry Points
-
-After installing Goldband Loop:
-
-- Claude Code: `/goldband <capability> <action>`
-- Codex: `$goldband <capability> <action>`
-
-The supported capability/action list is generated in
-[docs/generated/capabilities.md](docs/generated/capabilities.md).
-
-Parallel agent worktrees use two user-triggered commands:
+To uninstall, choose the command matching your installation method:
 
 ```bash
-goldband worktree create task-name
-# Start one agent in the managed shell; Goldband remains the outer hard boundary.
-claude --settings '{"sandbox":{"enabled":false}}'
-codex --sandbox danger-full-access
-# Exit when done.
-goldband worktree finish task-name -m "feat: integrate task"
+./install.sh uninstall                       # Remove installer-managed components
+claude plugin uninstall goldband@goldband    # Remove the Claude plugin
 ```
 
-`create` requires a clean source worktree on a normal branch and creates a
-detached worktree without a task branch. Working files stay writable inside the
-managed shell, while the OS sandbox keeps Git indexes, objects, and refs
-read-only together with broker runtime and Git config/hook inputs. Run `finish`
-only after leaving the managed shell. The broker uses a pinned Git executable,
-isolated config environment, and the source-owned hook contract recorded by
-`create`; a collision between source ignored content and the candidate tree
-stops integration. Goldband removes the worktree only after validation,
-integration, and durable-commit readback all succeed. macOS uses Seatbelt,
-Linux uses bubblewrap, and unavailable boundaries fail closed. Windows does not
-currently claim hard enforcement. Disable the agent's inner OS sandbox as shown
-above to avoid unsupported nesting; normal permission prompts and Goldband hooks
-remain active, while the outer managed boundary continues to deny Git writes.
+## Documentation and Help
 
-## Development
-
-The repo-root default aggregate test entrypoint is:
-
-```bash
-npm run bootstrap:test # after the first clone, lockfile changes, or installer migrations
-npm test
-# or
-bun run test
-```
-
-`bootstrap:test` installs the dependencies declared by the root, `mcp/server`,
-and `goldband-loop`, then removes entries from ignored host skill roots only
-when a tracked retired inventory or managed marker proves ownership. Unknown
-same-prefix skills are preserved. `npm test` itself does not access the network or
-silently mutate the checkout. It checks dependencies, the minimum Bun version,
-and legacy artifacts before running an explicit set of package-owned suites and
-printing a final per-suite summary. List the suites with:
-
-```bash
-npm run test:repo:list
-```
-
-Do not treat bare `bun test` at the repo root as repository verification. It
-bypasses package-owned test contracts, recursively scans files, and has no
-per-package summary.
-
-Common targeted gates:
-
-```bash
-npm run test:plugin-distribution
-npm run test:app-support
-npm run test:hook-router
-npm run test:cross-review
-npm run lint:style
-```
-
-After changing sources that feed the Claude plugin:
-
-```bash
-node scripts/sync-plugin-assets.mjs
-npm run test:plugin-distribution
-```
-
-After changing Codex plugin or Claude app adapter sources:
-
-```bash
-npm run sync:app-support
-npm run test:app-support
-```
-
-For contributor workflow details, see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Documentation Map
-
-- [ARCHITECTURE.md](ARCHITECTURE.md): root goldband, Claude/Codex surfaces,
-  Goldband Loop ownership, and runtime contracts.
-- [OPERATIONS.md](OPERATIONS.md): install operations, Codex overlays, style
-  gate, MCP, telemetry.
-- [CONTRIBUTING.md](CONTRIBUTING.md): development flow and plugin distribution
-  checks.
-- [docs/generated/capabilities.md](docs/generated/capabilities.md): Goldband
-  Loop capability/action catalog.
-- [goldband-loop/README.md](goldband-loop/README.md): workflow runtime entry
-  point.
-- [mcp/README.md](mcp/README.md): MCP templates and first-party
-  `goldband-mcp`.
-- [sandbox/THREAT-MODEL.md](sandbox/THREAT-MODEL.md): what the container
-  sandbox does and does not protect.
-- [docs/knowledge-system.md](docs/knowledge-system.md): local knowledge layer.
-- [docs/DECISIONS.md](docs/DECISIONS.md): decision records.
+- [Operations and troubleshooting](OPERATIONS.md): additional install options, managed worktrees, MCP, and maintenance.
+- [Goldband Loop](goldband-loop/README.md): workflow configuration and usage.
+- [Contributing](CONTRIBUTING.md): development setup, tests, and distribution updates.
+- [Architecture](ARCHITECTURE.md): component ownership, isolation, and verification mechanisms.
+- [Report an issue](https://github.com/leo110047/goldband/issues): include your platform, installation method, and relevant error output, with keys and other sensitive data removed.
 
 ## License
 
-MIT License.
+[MIT License](LICENSE).
