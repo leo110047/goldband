@@ -156,6 +156,12 @@ digests；`remove` 只移除 central entry。manifest contract 使用 `schemaVer
 必須在只改版本號後就能通過完整 v2 驗證；其他 v1 輸入會 fail closed 並回報
 migration 指引，不會猜測安全欄位的預設值。
 
+Goldband 自身三組需要建立 Seatbelt 邊界的自測，改由既有 `push dev` macOS CI
+執行，審查讀回相同 commit／tree 的指定 step 結果。未提交或尚無 CI 證據時仍
+回報未完成；不在外層隔離內重跑這三組自測，也不把 CI 當成本機 sealed evidence。
+Claude 與 Codex 共用此 runtime adapter，須經各自既有 installer 更新後才生效。
+詳見 [CI 證據契約](docs/review-evidence-manifest.md#goldband-自身的-macos-ci-自測)。
+
 解析完成後，runtime 在隔離、
 預設以每個 operation 各自獨立、唯讀且 read/write/network default-deny 的 snapshot 執行 typed checks，
 並驗證執行前後 tree digest、provider/cell 雙向 ownership 與 exact RED exit，確認 evidence completeness 與

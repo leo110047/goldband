@@ -679,11 +679,11 @@
     "workflows/review-evidence.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
         45,
-        38,
         37,
         32,
         30,
         29,
+        28,
         27,
         27,
         23,
@@ -701,9 +701,9 @@
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
         94,
-        89,
         87,
         78,
+        72,
         67,
         61,
         56,

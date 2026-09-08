@@ -662,10 +662,25 @@ describe("Codex trusted workflow launcher install", () => {
 				const repairRepo = join(fixture, "pre-semantic-repair-repo");
 				mkdirSync(repairRepo, { recursive: true });
 				expect(spawnSync("git", ["init", "-q"], { cwd: repairRepo }).status).toBe(0);
+				const repairInitialManifest = installedUnsupportedManifest();
+				const unrelatedProvider = {
+					...installedHighRiskReviewEvidenceManifest().providers[0],
+					id: "unrelated-gate",
+					cellIds: ["unrelated-static"],
+					applicability: { kind: "paths", pathPrefixes: ["unrelated"] },
+				};
+				repairInitialManifest.providers.push(unrelatedProvider);
+				repairInitialManifest.behaviorMatrix.push(
+					{ ...repairInitialManifest.behaviorMatrix[0], id: "unrelated-manual",
+						behavior: "The unrelated manual boundary is checked.", disposition: "manual" },
+					{ ...installedHighRiskReviewEvidenceManifest().behaviorMatrix[0], id: "unrelated-static",
+						behavior: "The unrelated static boundary is checked.", providerIds: ["unrelated-gate"] },
+				);
+
 				writeFileSync(join(repairRepo, "review-me.txt"), "baseline\n");
 				writeFileSync(
 					join(repairRepo, "goldband.review-evidence.json"),
-					`${JSON.stringify(installedUnsupportedManifest())}\n`,
+					`${JSON.stringify(repairInitialManifest)}\n`,
 				);
 				expect(spawnSync("git", ["add", "."], { cwd: repairRepo }).status).toBe(0);
 				expect(spawnSync("git", [
@@ -694,7 +709,13 @@ describe("Codex trusted workflow launcher install", () => {
 				expect(lineCount(hostCallLog)).toBe(deterministicHostCallsBefore);
 
 				const repairedManifest = join(fixture, "pre-semantic-repaired-contract.json");
-				writeFileSync(repairedManifest, `${JSON.stringify(installedHighRiskReviewEvidenceManifest())}\n`);
+				const repairContract = installedHighRiskReviewEvidenceManifest();
+				repairContract.behaviorMatrix.push(
+					{ ...repairInitialManifest.behaviorMatrix[1], providerIds: ["unrelated-gate"] },
+					repairInitialManifest.behaviorMatrix[2],
+				);
+				repairContract.providers.push({ ...unrelatedProvider, cellIds: ["unrelated-static", "unrelated-manual"] });
+				writeFileSync(repairedManifest, `${JSON.stringify(repairContract)}\n`);
 				writeFileSync(
 					join(repairRepo, "candidate.patch"),
 					installedCandidatePatch("deterministic evidence repaired"),
@@ -721,9 +742,12 @@ describe("Codex trusted workflow launcher install", () => {
 							transition: "evidence-repair",
 							runId: deterministicArtifact.runId,
 							receiptId: deterministicArtifact.runtimeReceipt.id,
-							findingIds: ["D-001"],
+							findingIds: ["D-001", "D-002"],
+							affectedCellIds: ["installed-review", "unrelated-manual", "unrelated-static"],
 						},
 					});
+					expect(repairedArtifact.evidence.records.map((record) => record.id)).toEqual(["installed-gate:pass"]);
+					expect(repairedArtifact.findings).toMatchObject([{ id: "S-001", classification: "semantic-concern" }]);
 					expect(lineCount(hostCallLog)).toBe(deterministicHostCallsBefore + 1);
 					writeFileSync(
 						join(repairRepo, "candidate.patch"),

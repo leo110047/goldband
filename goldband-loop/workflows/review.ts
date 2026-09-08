@@ -1770,6 +1770,8 @@ function projectEvidenceRecord(record: ReviewEvidenceBundle['records'][number]) 
     evidenceLevel: record.evidenceLevel,
     commandDigest: record.commandDigest,
     exitStatus: record.exitStatus,
+    environment: record.environment,
+    ciProvenance: record.ciProvenance,
     outputDigest: record.outputDigest,
     candidateDigest: record.candidateDigest,
     seed: record.seed,
@@ -1785,6 +1787,8 @@ function projectClosureEvidenceRecord(record: ReviewEvidenceBundle['records'][nu
     status: record.status,
     commandDigest: record.commandDigest,
     exitStatus: record.exitStatus,
+    environment: record.environment,
+    ciProvenance: record.ciProvenance,
     outputDigest: record.outputDigest,
     fresh: record.fresh,
   };

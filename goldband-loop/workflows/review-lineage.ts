@@ -19,6 +19,7 @@ import type {
   ReviewEvidenceManifest,
 } from './review-evidence';
 import { initialReviewArtifactDigest } from './review-evidence';
+import { isReviewCiMigration } from './review-ci-evidence';
 import type { ReviewContractResolution } from './review-contract-resolution';
 import type { ReviewClosureResult, ReviewFinding } from './types';
 
@@ -598,7 +599,7 @@ function providerContractWeakened(
     before.kind !== after.kind ||
     before.lifecycle !== after.lifecycle ||
     !applicabilityPreservedOrStrengthened(before.applicability, after.applicability) ||
-    stableJson(before.executionContext) !== stableJson(after.executionContext) ||
+    (stableJson(before.executionContext) !== stableJson(after.executionContext) && !isReviewCiMigration(before, after)) ||
     before.cellIds.some((cellId) => !after.cellIds.includes(cellId)) ||
     before.operations.some((operation) => {
       const successor = after.operations.find((item) => item.id === operation.id);

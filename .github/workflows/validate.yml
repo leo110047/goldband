@@ -259,6 +259,18 @@ jobs:
         run: npm install -g @openai/codex
       - name: Install Goldband Loop dependencies
         run: cd goldband-loop && bun install --frozen-lockfile
+      - name: Review evidence - review-evidence-tests
+        run: bun test --cwd goldband-loop test/review-evidence.test.ts test/review-evidence-platform.test.ts
+        env:
+          GOLDBAND_REQUIRE_REVIEW_HOST_BOUNDARY: "1"
+      - name: Review evidence - work-map-review-tests
+        run: bun test --cwd goldband-loop test/work-map-review.test.ts
+        env:
+          GOLDBAND_REQUIRE_REVIEW_HOST_BOUNDARY: "1"
+      - name: Review evidence - installed-runtime-tests
+        run: bun test --cwd goldband-loop test/codex-review-launcher-install.test.ts test/review-receipt-authority-install.test.ts
+        env:
+          GOLDBAND_REQUIRE_REVIEW_HOST_BOUNDARY: "1"
       - name: Build installer-owned Goldband Loop artifacts
         run: cd goldband-loop && bun run build
       - name: Test managed worktree Seatbelt enforcement on macOS

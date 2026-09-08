@@ -190,6 +190,42 @@ Global provider 每次都適用，必須說明原因。不要為了省下 path d
 
 如果正式 producer／consumer handoff 不存在，runtime 會回報 `runtime-incomplete`，不會把 nested sandbox failure 當成 candidate failure。
 
+### Goldband 自身的 macOS CI 自測
+
+Goldband 的 `review-evidence-tests`、`work-map-review-tests` 與
+`installed-runtime-tests` 使用固定 CI lane：
+
+```json
+{ "sandboxOwner": "provider", "runner": "github-actions", "lane": "goldband-macos-review-host" }
+```
+
+這不是通用 CI 設定介面。Shared runtime 的 `review-ci-evidence.ts` 擁有三組
+provider／原始 argv 與受信任 workflow digest；Claude、Codex 的 installer
+都將此 adapter 納入既有 runtime bundle，沒有新增 launcher、token 或上傳入口。
+
+Consumer 只以唯讀 GitHub API 查詢公開的 `leo110047/goldband`：既有
+`validate.yml`、`push dev`、同一 commit、最新 run 及精確 attempt 的三個獨立
+step。它同時比對完整 materialized candidate 的 Git tree、本機 commit tree
+與 GitHub 原生 commit tree，並在讀回 job 後重新核對 run attempt。
+Workflow 必須符合已安裝 runtime 內的固定 digest；修改執行配方時必須一起
+審查並更新該 digest，不能從 candidate 自行接受新的配方。
+
+證據表示指定 commit 在受信任 macOS CI 的**可寫 checkout** 上執行指定測試
+step 成功。它不宣稱唯讀 snapshot、命令 exit code、OS network deny 或完整
+CI pipeline 成功。CI 可使用網路；operation 的 `network: deny` 不授權 consumer
+替 candidate 執行外部操作，且不代表 CI 的網路隔離政策。Consumer 的平台
+metadata 查詢由固定 adapter 擁有，不執行 candidate 的 argv 或接受手寫結果。
+
+未提交的 candidate、缺少結果、API 失敗、step 失敗／跳過／timeout、配方不符
+或重跑競態都會留下 `runtime-incomplete`。只有符合條件的成功結果可以標記
+`verified-pass`；失敗的 step metadata 不足以宣稱原命令的 `verified-failure`。
+因此尚未推送並跑完 CI 時，semantic host 仍會被 evidence completeness 擋住。
+
+既有三組 provider 可由舊 `macos-review-contract-host` 單向遷移到此固定 lane，
+但不得改掉 operation、降低證據等級或移除 cell。舊 receipt／lineage／finding
+保留，仍須透過原有 evidence-repair／closure 驗證 fresh evidence；契約遷移本身
+不會關閉 finding。其他 providers 仍使用原本的 sealed 或 host-seatbelt runner。
+
 ## Operations
 
 Operation 的主要欄位：
