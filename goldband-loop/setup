@@ -196,7 +196,11 @@ install_runtime_bin_directory() {
     [ -e "$source_file" ] || continue
     name="$(basename "$source_file")"
     case "$name" in
-      goldband|goldband.ts|goldband-work-verify|goldband-work-verify.ts)
+      goldband.ts)
+        # Preserve the installed entry identity with its complete eager imports.
+        bun build "$source_file" --target bun --outfile "$target_bin/$name" >/dev/null
+        ;;
+      goldband|goldband-work-verify|goldband-work-verify.ts)
         _materialize_file_copy "$source_file" "$target_bin/$name"
         ;;
       *)

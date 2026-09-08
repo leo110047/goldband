@@ -1576,11 +1576,18 @@ function validateEvidenceOperation(value: unknown): EvidenceOperation {
   };
 }
 
+// Direct interpreter names only; shell wrappers and project scripts are not parsed.
+const PYTHON_COMMAND = /^python(?:[0-9]+(?:\.[0-9]+)*)?(?:[dtw])?(?:\.exe)?$/i;
+export const PYTHON_RUNTIME_GUIDANCE = 'Python gates require argv[0]="python3.14", network="deny", and pythonRuntime={"interpreter":"python3.14","resolver":"uv","projectFile":"pyproject.toml","lockFile":"uv.lock"}. Requires trusted macOS Python 3.14 and uv, candidate project/lock files in the same directory, and complete offline dependencies; missing prerequisites block execution. Other Python versions are unsupported; do not guess paths or download dependencies.';
+
 function optionalPythonEvidenceRuntime(
   value: unknown,
   argv: string[],
   network: EvidenceOperation['network'],
 ): PythonEvidenceRuntime | undefined {
+  if (value === undefined && PYTHON_COMMAND.test(argv[0]!)) {
+    throw new Error(`Missing evidence operation.pythonRuntime. ${PYTHON_RUNTIME_GUIDANCE}`);
+  }
   return value === undefined ? undefined : validatePythonEvidenceRuntime(value, argv, network);
 }
 
@@ -1588,6 +1595,9 @@ function validatePythonSystemToolOwnership(
   pythonRuntime: PythonEvidenceRuntime | undefined,
   requiredSystemTools: string[],
 ): void {
+  if (requiredSystemTools.some((tool) => PYTHON_COMMAND.test(tool))) {
+    throw new Error(`Python requiredSystemTools cannot use generic child runtime projection; declare a separate Python operation. ${PYTHON_RUNTIME_GUIDANCE}`);
+  }
   if (pythonRuntime && requiredSystemTools.some((tool) => tool === 'python3.14' || tool === 'uv')) {
     throw new Error('Python evidence runtime owns its interpreter and resolver; do not redeclare them as system tools');
   }

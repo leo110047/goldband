@@ -242,7 +242,7 @@ Operation 的主要欄位：
 | `authorizationId` | `network: authorized` 時必填；deny 時禁止。 |
 | `evidenceLevel` | `fixture`、`local`、`sandboxed-service`、`live-provider`、`device-platform` 或 `production-readback`。 |
 | `requiredSystemTools` | 可選的 PATH tool names；不會因此放寬任意 filesystem access。 |
-| `pythonRuntime` | 可選的 first-class Python runtime contract；目前只接受 Python 3.14、`uv`、`pyproject.toml` 與 `uv.lock`。 |
+| `pythonRuntime` | Python gate 必填，非 Python operation 才可省略的 runtime contract；目前只接受 Python 3.14、`uv`、`pyproject.toml` 與 `uv.lock`。 |
 | `seed`、`iterations` | `property-fuzz` operations 必填，用於 replay。 |
 
 Script launcher 必須把 interpreter 寫進 argv，例如：
@@ -255,7 +255,11 @@ Script launcher 必須把 interpreter 寫進 argv，例如：
 
 ### Python 3.14 + uv runtime
 
-Python gate 必須明確 opt in，不能只靠 `argv[0]`、檔名或 framework 猜測：
+直接 Python 指令（`python`、`python3`、`python3.14` 等數字版本，以及 `d`／`t`／`w`、`.exe` 變體，不分大小寫）缺少 `pythonRuntime` 時，validator 會在執行前拒絕。只有精確的 `python3.14` 指令與下列契約受支援；其他版本或變體必須改成受支援的宣告，不能只補欄位。
+
+`requiredSystemTools` 的 Python interpreter 也會被拒絕：該入口只提供通用子工具投影，不能準備 Python environment。請把 Python gate 宣告為獨立 operation。工具不解析 shell 字串或猜測 project scripts；不要藉由 wrapper 取代必要的 Python runtime 宣告。
+
+Python gate 必須明確宣告，不能猜測專案路徑或 lockfile：
 
 ```json
 {

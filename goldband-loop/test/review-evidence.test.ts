@@ -1680,6 +1680,31 @@ describe('review evidence contracts', () => {
     });
   });
 
+  test('Python preparation failure blocks semantic dispatch and completion in the full workflow', async () => {
+    if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
+    const repo = gitFixture();
+    const value = manifest();
+    value.providers[0]!.operations[0] = {
+      ...operation('missing-python-project', ['python3.14', '-c', 'raise SystemExit(23)'], 'candidate', 'zero'),
+      pythonRuntime: { interpreter: 'python3.14', resolver: 'uv', projectFile: 'pyproject.toml', lockFile: 'uv.lock' },
+    };
+    writeFileSync(join(repo, 'evidence.json'), JSON.stringify(value));
+    writeFileSync(join(repo, 'candidate.diff'), 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old();\n+newValue();\n');
+    const state = mkdtempSync(join(tmpdir(), 'python-workflow-'));
+    roots.push(state);
+    const result = await runWorkflow(getWorkflow('review/code'), {
+      mode: 'mock', host: 'mock', cwd: repo, goldbandHome: state,
+      diffFile: 'candidate.diff', evidenceManifestFile: 'evidence.json',
+    });
+    const artifact = JSON.parse(readFileSync(result.artifacts.find((file) => file.endsWith('-review-evidence.json'))!, 'utf8')) as InitialReviewArtifact;
+    expect(artifact.hostCallCount).toBe(0);
+    expect(artifact.evidence.records[0]).toMatchObject({ status: 'runtime-incomplete', fresh: false });
+    expect(artifact.evidence.completeness.hostEligible).toBe(false);
+    expect(artifact.evidence.completeness.complete).toBe(false);
+    expect(artifact.findings).toContainEqual(expect.objectContaining({ classification: 'runtime-incomplete', blocking: true }));
+    expect(String(result.output)).toContain('completion-authorized: false');
+  });
+
   test('rejects a Python interpreter selected through the source checkout venv', async () => {
     if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
     const python = spawnSync('/usr/bin/which', ['python3.14'], { encoding: 'utf8' }).stdout.trim();

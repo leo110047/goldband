@@ -15,11 +15,10 @@ import {
 } from './lib/goldband-source-inventory.mjs';
 import { assertInstalledTaskEmissionCliRuns } from './lib/goldband-task-emission-smoke.mjs';
 import { assertInstalledManagedWorktreeSurface } from './lib/managed-worktree-install-check.mjs';
-import { assertInstalledWorkflowDocuments } from './lib/workflow-contract-install-check.mjs';
+import * as installedContracts from './lib/workflow-contract-install-check.mjs';
 import { assertInstalledWorkflowDistribution } from './lib/workflow-distribution-install-check.mjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const ROOT_DIR = path.resolve(path.dirname(__filename), '..');
+const ROOT_DIR = fileURLToPath(new URL('../', import.meta.url));
 const LOOP_DIR = path.join(ROOT_DIR, 'goldband-loop');
 const INVENTORY_PATH = path.join(LOOP_DIR, 'inventory.json');
 const CAPABILITY_CONTRACT_PATH = path.join(
@@ -81,6 +80,7 @@ function main() {
     runInstall(tmpHome, 'workflow');
     runInstall(tmpHome, 'workflow-codex');
     assertInstalledStandardInventory(tmpHome, inventory, capabilityContract);
+    installedContracts.assertInstalledPythonContract(tmpHome);
     assertInstalledManagedWorktreeSurface(tmpHome);
     assertInstalledWorkflowDistribution(tmpHome, LOOP_DIR);
     assertInstalledGbrainRetirement({
@@ -105,6 +105,7 @@ function main() {
       reinstall: (target) =>
         runInstall(copyHome, target, { GOLDBAND_FORCE_COPY: '1' }),
     });
+    installedContracts.assertInstalledPythonContract(copyHome);
     assertInstalledKnowledgeCliRuns(copyHome);
     assertInstalledCrossReviewCliRuns(copyHome);
     assertInstalledTaskEmissionCliRuns(copyHome);
@@ -461,13 +462,13 @@ function assertInstalledStandardInventory(home, inventory, capabilityContract) {
     skillDirectories(codexSkillsDir),
     ['goldband'],
   );
-  assertInstalledWorkflowDocuments(
+  installedContracts.assertInstalledWorkflowDocuments(
     'Claude',
     claudeRuntime,
     capabilityContract,
     LOOP_DIR,
   );
-  assertInstalledWorkflowDocuments(
+  installedContracts.assertInstalledWorkflowDocuments(
     'Codex',
     codexRuntime,
     capabilityContract,
