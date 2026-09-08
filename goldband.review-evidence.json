@@ -201,11 +201,11 @@
     },
     {
       "id": "sandbox-error-signature",
-      "behavior": "Only an explicit sandbox launcher failure signature is classified runtime-incomplete.",
+      "behavior": "Explicit runner initialization or compiler output permission failures are runtime-incomplete, never valid RED evidence.",
       "kind": "exception",
-      "input": "a successful command whose ordinary output contains the word sandbox",
-      "preconditions": "the local Seatbelt runner launched successfully",
-      "expected": "ordinary program output cannot impersonate a sandbox launcher failure",
+      "input": "launcher failures, TypeScript output permission diagnostics on stdout or stderr, ordinary type errors, and successful output mentioning sandbox",
+      "preconditions": "the operation runs through the local Seatbelt runner",
+      "expected": "known environment failures block completion regardless of expected exit; ordinary output and type errors do not impersonate them",
       "risk": "medium",
       "disposition": "automated",
       "providerIds": ["review-evidence-tests"]
