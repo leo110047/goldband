@@ -221,6 +221,15 @@ metadata 查詢由固定 adapter 擁有，不執行 candidate 的 argv 或接受
 `verified-pass`；失敗的 step metadata 不足以宣稱原命令的 `verified-failure`。
 因此尚未推送並跑完 CI 時，semantic host 仍會被 evidence completeness 擋住。
 
+若已提交版本的 CI 尚在執行，請在完成後沿用相同 base／scope 與最新
+`--closure-artifact` 重驗。當原紀錄尚未呼叫 semantic host、所有未解 finding
+皆為 `runtime-incomplete`，且 candidate 與 behavior contract 未改變時，既有
+`evidence-repair` 允許刷新相同版本的證據，不要求為此修改程式。Runtime 仍會
+重新查證原 finding 對應的 providers；證據未完成時維持 blocker 與零 host calls，
+必須使用該次產生的最新 artifact 繼續重驗。Receipt、lineage、candidate binding
+及 freshness 檢查均保留。真正的 `verified-failure` 或已執行 semantic review
+仍走原本需要修復 candidate 的流程。
+
 既有三組 provider 可由舊 `macos-review-contract-host` 單向遷移到此固定 lane，
 但不得改掉 operation、降低證據等級或移除 cell。舊 receipt／lineage／finding
 保留，仍須透過原有 evidence-repair／closure 驗證 fresh evidence；契約遷移本身
@@ -242,7 +251,7 @@ Operation 的主要欄位：
 | `authorizationId` | `network: authorized` 時必填；deny 時禁止。 |
 | `evidenceLevel` | `fixture`、`local`、`sandboxed-service`、`live-provider`、`device-platform` 或 `production-readback`。 |
 | `requiredSystemTools` | 可選的 PATH tool names；不會因此放寬任意 filesystem access。 |
-| `pythonRuntime` | 可選的 first-class Python runtime contract；目前只接受 Python 3.14、`uv`、`pyproject.toml` 與 `uv.lock`。 |
+| `pythonRuntime` | Python gate 必填，非 Python operation 才可省略的 runtime contract；目前只接受 Python 3.14、`uv`、`pyproject.toml` 與 `uv.lock`。 |
 | `seed`、`iterations` | `property-fuzz` operations 必填，用於 replay。 |
 
 Script launcher 必須把 interpreter 寫進 argv，例如：
@@ -255,7 +264,11 @@ Script launcher 必須把 interpreter 寫進 argv，例如：
 
 ### Python 3.14 + uv runtime
 
-Python gate 必須明確 opt in，不能只靠 `argv[0]`、檔名或 framework 猜測：
+直接 Python 指令（`python`、`python3`、`python3.14` 等數字版本，以及 `d`／`t`／`w`、`.exe` 變體，不分大小寫）缺少 `pythonRuntime` 時，validator 會在執行前拒絕。只有精確的 `python3.14` 指令與下列契約受支援；其他版本或變體必須改成受支援的宣告，不能只補欄位。
+
+`requiredSystemTools` 的 Python interpreter 也會被拒絕：該入口只提供通用子工具投影，不能準備 Python environment。請把 Python gate 宣告為獨立 operation。工具不解析 shell 字串或猜測 project scripts；不要藉由 wrapper 取代必要的 Python runtime 宣告。
+
+Python gate 必須明確宣告，不能猜測專案路徑或 lockfile：
 
 ```json
 {

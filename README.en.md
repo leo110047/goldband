@@ -68,6 +68,8 @@ See the [workflow catalog](docs/generated/capabilities.md) for other actions.
 
 Code review requires a verification contract for the target project; begin with the [review quick start](docs/review-evidence-manifest.md#quick-start). Formal review requiring locally sandboxed test execution currently supports macOS only; Linux/Windows report incomplete when this evidence is unavailable. Successful installation or tests do not imply that review or deployment is complete.
 
+Python review gates in Claude/Codex require `pythonRuntime`: macOS Python 3.14 + uv, candidate `pyproject.toml`/`uv.lock`, and complete offline dependencies. Missing prerequisites block execution.
+
 ## Update and Uninstall
 
 Update the source in your original checkout:

@@ -69,7 +69,7 @@ describe("review receipt authority provisioning", () => {
 		});
 	});
 
-	test("Claude-installed launcher forwards its authority to the source runtime", () => {
+	test.each(["linked", "bundled"])("Claude-installed %s shell launcher preserves authority and plan boundaries", (installation) => {
 		const root = mkdtempSync(join(tmpdir(), "review-receipt-claude-launcher-"));
 		roots.push(root);
 		const sourceRoot = join(import.meta.dir, "..");
@@ -82,8 +82,18 @@ describe("review receipt authority provisioning", () => {
 		], { encoding: "utf8" });
 		expect(provision.status, provision.stderr).toBe(0);
 		cpSync(join(sourceRoot, "bin"), join(runtimeRoot, "bin"), { recursive: true });
-		symlinkSync(join(sourceRoot, "lib"), join(runtimeRoot, "lib"), "dir");
+		if (installation === "bundled") {
+			const bundle = spawnSync(process.execPath, ["build", join(sourceRoot, "bin/goldband.ts"), "--target", "bun", "--outfile", join(runtimeRoot, "bin/goldband.ts")], { encoding: "utf8" });
+			expect(bundle.status, bundle.stderr).toBe(0);
+		} else {
+			symlinkSync(join(sourceRoot, "lib"), join(runtimeRoot, "lib"), "dir");
+		}
 		writeFileSync(join(runtimeRoot, ".installed-source"), `${sourceRoot}\n`);
+		const inputFile = join(root, "plan.json");
+		writeFileSync(inputFile, "{}");
+		const plan = spawnSync("bash", [join(runtimeRoot, "bin/goldband"), "plan", "create", "--input", inputFile, "--host", "claude"], { encoding: "utf8" });
+		expect(plan.status).not.toBe(0);
+		expect(plan.stderr).toContain("installed Work Map runtime unavailable");
 
 		const repo = join(root, "repo");
 		const stateRoot = join(root, "workflow-state");
@@ -130,7 +140,7 @@ describe("review receipt authority provisioning", () => {
 			expect(spawnSync("git", ["commit", "-m", "add review contract"], { cwd: repo }).status).toBe(0);
 			writeFileSync(join(repo, "candidate.txt"), "review me\n");
 		const reviewArgs = [
-			join(runtimeRoot, "bin", "goldband.ts"),
+			join(runtimeRoot, "bin", "goldband"),
 			"review", "code", "--host", "claude",
 		];
 		const reviewOptions = {
@@ -142,7 +152,7 @@ describe("review receipt authority provisioning", () => {
 				GOLDBAND_HOME: stateRoot,
 			},
 		};
-		const review = spawnSync(process.execPath, reviewArgs, reviewOptions);
+		const review = spawnSync("bash", reviewArgs, reviewOptions);
 		expect(review.status, review.stderr).toBe(0);
 		expect(review.stdout).toContain("Semantic host calls: 0.");
 		const result = JSON.parse(review.stdout) as { artifacts: string[] };
@@ -209,7 +219,7 @@ describe("review receipt authority provisioning", () => {
 		const repairedManifestFile = join(root, "repaired-manifest.json");
 		writeFileSync(repairedManifestFile, `${JSON.stringify(repairedManifest)}\n`);
 		writeFileSync(join(repo, "candidate.txt"), "review repaired\n");
-		const repaired = spawnSync(process.execPath, [
+		const repaired = spawnSync("bash", [
 			...reviewArgs,
 			"--evidence-manifest", repairedManifestFile,
 			"--closure-artifact", artifactPath!,
@@ -239,7 +249,7 @@ describe("review receipt authority provisioning", () => {
 		expect(repairedArtifact.evidence.records.map((record) => record.id)).toEqual(["claude-repair-gate:candidate-green"]);
 		expect(repairedArtifact.findings).toMatchObject([{ id: "S-001", classification: "semantic-concern" }]);
 		writeFileSync(join(repo, "candidate.txt"), "semantic concern repaired\n");
-		const closure = spawnSync(process.execPath, [
+		const closure = spawnSync("bash", [
 			...reviewArgs, "--evidence-manifest", repairedManifestFile,
 			"--closure-artifact", repairedArtifactPath,
 		], {

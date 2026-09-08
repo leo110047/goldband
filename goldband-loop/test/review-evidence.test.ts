@@ -1680,6 +1680,31 @@ describe('review evidence contracts', () => {
     });
   });
 
+  test('Python preparation failure blocks semantic dispatch and completion in the full workflow', async () => {
+    if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
+    const repo = gitFixture();
+    const value = manifest();
+    value.providers[0]!.operations[0] = {
+      ...operation('missing-python-project', ['python3.14', '-c', 'raise SystemExit(23)'], 'candidate', 'zero'),
+      pythonRuntime: { interpreter: 'python3.14', resolver: 'uv', projectFile: 'pyproject.toml', lockFile: 'uv.lock' },
+    };
+    writeFileSync(join(repo, 'evidence.json'), JSON.stringify(value));
+    writeFileSync(join(repo, 'candidate.diff'), 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old();\n+newValue();\n');
+    const state = mkdtempSync(join(tmpdir(), 'python-workflow-'));
+    roots.push(state);
+    const result = await runWorkflow(getWorkflow('review/code'), {
+      mode: 'mock', host: 'mock', cwd: repo, goldbandHome: state,
+      diffFile: 'candidate.diff', evidenceManifestFile: 'evidence.json',
+    });
+    const artifact = JSON.parse(readFileSync(result.artifacts.find((file) => file.endsWith('-review-evidence.json'))!, 'utf8')) as InitialReviewArtifact;
+    expect(artifact.hostCallCount).toBe(0);
+    expect(artifact.evidence.records[0]).toMatchObject({ status: 'runtime-incomplete', fresh: false });
+    expect(artifact.evidence.completeness.hostEligible).toBe(false);
+    expect(artifact.evidence.completeness.complete).toBe(false);
+    expect(artifact.findings).toContainEqual(expect.objectContaining({ classification: 'runtime-incomplete', blocking: true }));
+    expect(String(result.output)).toContain('completion-authorized: false');
+  });
+
   test('rejects a Python interpreter selected through the source checkout venv', async () => {
     if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
     const python = spawnSync('/usr/bin/which', ['python3.14'], { encoding: 'utf8' }).stdout.trim();
@@ -2500,6 +2525,26 @@ describe('review evidence contracts', () => {
     };
     expect(() => validateInitialReviewArtifact(forged))
       .toThrow('pre-semantic recovery requires deterministic-only findings');
+  });
+
+  test('same candidate refresh remains limited to unchanged pre-semantic runtime blockers', () => {
+    const original = initialArtifact();
+    original.hostCallCount = 0;
+    original.findings[0] = { ...original.findings[0]!, classification: 'runtime-incomplete', behaviorCellIds: ['behavior-a'] };
+    const build = (artifact: InitialReviewArtifact, binding = artifact.binding) =>
+      buildClosureInput(artifact, binding, artifact.diff, artifact.evidence.manifest);
+    expect(build(original)).toMatchObject({ kind: 'evidence-repair', repairDelta: '', affectedCellIds: ['behavior-a'] });
+    for (const classification of ['verified-failure', 'coverage-gap', 'semantic-concern'] as const) {
+      const mixed = structuredClone(original);
+      mixed.findings.push({ ...mixed.findings[0]!, id: 'other', classification });
+      expect(() => build(mixed)).toThrow('different digest');
+    }
+    expect(() => build({ ...original, hostCallCount: 1 })).toThrow('different digest');
+    expect(() => build({ ...original, findings: [] })).toThrow('different digest');
+    expect(() => build(original, { ...original.binding, behaviorContractDigest: 'f'.repeat(64) })).toThrow('different digest');
+    for (const field of ['repository', 'baseRef', 'baseDigest', 'scopeDigest'] as const) {
+      expect(() => build(original, { ...original.binding, [field]: 'different' })).toThrow('provenance');
+    }
   });
 
   test('closure accepts only original finding IDs and evidence-backed direct regressions', () => {
@@ -3528,6 +3573,53 @@ describe('candidate-bound GitHub review evidence', () => {
       expect(() => assertReviewContractNotWeaker(before, changed)).toThrow('contract laundering blocked');
     }
   });
+  test('same candidate refreshes pending CI through signed evidence repair without dispatching early', async () => {
+    const repo = gitFixture();
+    git(repo, ['remote', 'add', 'origin', 'https://github.com/leo110047/goldband.git']);
+    mkdirSync(join(repo, '.github/workflows'), { recursive: true });
+    copyFileSync(join(import.meta.dir, '../../.github/workflows/validate.yml'), join(repo, '.github/workflows/validate.yml'));
+    git(repo, ['add', '.']); git(repo, ['commit', '-m', 'CI recipe']);
+    const base = git(repo, ['rev-parse', 'HEAD']).trim();
+    writeFileSync(join(repo, 'a.ts'), 'candidate();\n');
+    git(repo, ['add', '.']); git(repo, ['commit', '-m', 'candidate']);
+    const value = manifest();
+    const rootManifest = JSON.parse(readFileSync(join(import.meta.dir, '../../goldband.review-evidence.json'), 'utf8'));
+    const provider = rootManifest.providers.find((p: any) => p.id === providerId);
+    provider.cellIds = ['behavior-a']; provider.applicability = { kind: 'global', reason: 'CI refresh fixture' };
+    value.providers = [provider]; value.behaviorMatrix[0]!.providerIds = [providerId];
+    const state = mkdtempSync(join(tmpdir(), 'ci-refresh-state-')); roots.push(state);
+    const file = join(state, 'manifest.json'); writeFileSync(file, JSON.stringify(value));
+    const options = { mode: 'mock' as const, host: 'mock' as const, cwd: repo, base, goldbandHome: state, evidenceManifestFile: file };
+    const api = apiFixture(git(repo, ['rev-parse', 'HEAD']).trim(), git(repo, ['rev-parse', 'HEAD^{tree}']).trim());
+    api.run.status = 'in_progress';
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url) => Response.json(await api.read(String(url).split('/goldband/')[1]!))) as typeof fetch;
+    const artifactFile = (result: { artifacts: string[] }) => result.artifacts.find((path) => path.endsWith('-review-evidence.json'))!;
+    try {
+      const initial = await runWorkflow(getWorkflow('review/code'), options);
+      const initialFile = artifactFile(initial);
+      const original = JSON.parse(readFileSync(initialFile, 'utf8')) as InitialReviewArtifact;
+      expect(original.hostCallCount).toBe(0);
+      expect(original.findings.every((finding) => finding.classification === 'runtime-incomplete')).toBe(true);
+      const pending = await runWorkflow(getWorkflow('review/code'), { ...options, closureArtifactFile: initialFile });
+      const pendingFile = artifactFile(pending);
+      const stillPending = JSON.parse(readFileSync(pendingFile, 'utf8')) as InitialReviewArtifact;
+      expect(stillPending.hostCallCount).toBe(0);
+      expect(stillPending.findings.map((finding) => finding.id)).toEqual(original.findings.map((finding) => finding.id));
+      expect(stillPending.binding).toEqual(original.binding);
+      expect(String(pending.output)).toContain('completion-authorized: false');
+      api.run.status = 'completed';
+      const refreshed = await runWorkflow(getWorkflow('review/code'), { ...options, closureArtifactFile: pendingFile });
+      const fresh = JSON.parse(readFileSync(artifactFile(refreshed), 'utf8')) as InitialReviewArtifact;
+      expect(fresh.binding).toEqual(original.binding);
+      expect(fresh.hostCallCount).toBe(1);
+      expect(fresh.evidence.records[0]).toMatchObject({ status: 'verified-pass', fresh: true });
+      expect(fresh.predecessor).toMatchObject({ transition: 'evidence-repair', runId: stillPending.runId });
+      expect(String(refreshed.output)).toContain('completion-authorized: true');
+      await expect(runWorkflow(getWorkflow('review/code'), { ...options, closureArtifactFile: initialFile })).rejects.toThrow();
+    } finally { globalThis.fetch = originalFetch; }
+  });
+
   test('producer signs CI provenance, rejects tampering, and closes only the original matching failure', async () => {
     const repo = gitFixture();
     git(repo, ['remote', 'add', 'origin', 'https://github.com/leo110047/goldband.git']);

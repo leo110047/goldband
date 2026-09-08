@@ -153,6 +153,27 @@ describe("review contract authoring", () => {
 		}
 	});
 
+	test("direct Python commands and child tools cannot omit the dedicated runtime", () => {
+		const validateJsonSchema = jsonSchemaValidator();
+		const example = JSON.parse(readFileSync(join(repoRoot, "examples/review-evidence/minimal-local-gate.json"), "utf8"));
+		for (const command of ["python", "python2", "python2.7", "python3", "python3.13", "python3.14", "python3.14t", "python3.14d", "pythonw.exe", "PYTHON3.EXE"]) {
+			for (const child of [false, true]) {
+				const value = structuredClone(example);
+				const op = value.providers[0].operations[0];
+				if (child) op.requiredSystemTools = [command];
+				else op.argv = [command, "-I", "-S", "-c", "print('GOLDBAND_PYTHON_STARTED')"];
+				expect(validateJsonSchema(value), command).toBe(false);
+				expect(() => reviewEvidenceManifestSchema.validate(value), command).toThrow("pythonRuntime");
+			}
+		}
+		for (const command of ["bun", "node", "python-check", "python3-config"]) {
+			const value = structuredClone(example);
+			value.providers[0].operations[0].argv = [command];
+			expect(validateJsonSchema(value), command).toBe(true);
+			expect(reviewEvidenceManifestSchema.validate(value).providers[0]!.operations[0]!.argv).toEqual([command]);
+		}
+	});
+
 	test("JSON Schema and runtime conformance corpus covers local constraints and runtime-only graph rules", () => {
 		const validateJsonSchema = jsonSchemaValidator();
 		const example = JSON.parse(

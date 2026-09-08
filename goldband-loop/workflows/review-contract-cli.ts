@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { resolveGoldbandStateRoot } from '../lib/state-root';
 import {
   evaluateEvidenceCompleteness,
+  PYTHON_RUNTIME_GUIDANCE,
   reviewEvidenceManifestSchema,
   type ReviewEvidenceManifest,
 } from './review-evidence';
@@ -200,7 +201,7 @@ function runAuthoringCommand(selection: CliSelection, cwd: string): boolean {
       inspect: 'goldband review contract inspect',
       import: 'goldband review contract import --manifest <path>',
       remove: 'goldband review contract remove',
-    }, assets: assets(), authority: 'validate uses the installed runtime validator; success does not mean evidence ran or review completed' });
+    }, pythonRuntime: PYTHON_RUNTIME_GUIDANCE, assets: assets(), authority: 'validate uses the installed runtime validator; success does not mean evidence ran or review completed' });
     return true;
   }
   if (selection.command === 'init') {
