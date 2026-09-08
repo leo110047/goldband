@@ -44,6 +44,8 @@ import {
   type ReviewEvidenceManifest,
 } from '../workflows/review-evidence';
 import { getWorkflow } from '../workflows/registry';
+import { readReviewCiResult, reviewCandidateTree, collectReviewCiEvidence, validateReviewCiProvenance } from '../workflows/review-ci-evidence';
+import { assertReviewContractNotWeaker } from '../workflows/review-lineage';
 import { runWorkflow } from '../workflows/runtime';
 import {
   buildClosureReviewPrompt,
@@ -978,7 +980,8 @@ describe('review evidence contracts', () => {
   test('repairs deterministic-only lineage before the first semantic host call', async () => {
     if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
     const repo = gitFixture();
-    const state = join(repo, '.state');
+    const state = mkdtempSync(join(tmpdir(), 'review-repair-state-'));
+    roots.push(state);
     const diffFile = join(repo, 'candidate.diff');
     const evidenceFile = join(repo, 'evidence.json');
     const unsupported = manifest();
@@ -988,7 +991,25 @@ describe('review evidence contracts', () => {
       providerIds: [],
       reason: 'The deterministic provider is not wired yet.',
     };
-    unsupported.providers = [];
+    unsupported.behaviorMatrix.push({
+      ...unsupported.behaviorMatrix[0]!,
+      id: 'unrelated-manual',
+      behavior: 'The unrelated manual boundary is checked.',
+      disposition: 'manual',
+      reason: 'The unrelated path needs its existing provider binding.',
+    });
+    unsupported.providers = [{
+      ...manifest().providers[0]!,
+      id: 'unrelated-provider',
+      cellIds: ['unrelated-static'],
+      applicability: { kind: 'paths', pathPrefixes: ['unrelated'] },
+    }];
+    unsupported.behaviorMatrix.push({
+      ...manifest().behaviorMatrix[0]!,
+      id: 'unrelated-static',
+      behavior: 'The unrelated static boundary is checked.',
+      providerIds: ['unrelated-provider'],
+    });
     writeFileSync(evidenceFile, `${JSON.stringify(unsupported)}\n`);
     writeFileSync(diffFile, 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old();\n+bad();\n');
 
@@ -1004,7 +1025,7 @@ describe('review evidence contracts', () => {
       file.endsWith('-review-evidence.json'))!;
     const initialArtifact = JSON.parse(readFileSync(initialArtifactFile, 'utf8')) as InitialReviewArtifact;
     expect(initialArtifact.hostCallCount).toBe(0);
-    expect(initialArtifact.findings.map((finding) => finding.id)).toEqual(['D-001']);
+    expect(initialArtifact.findings.map((finding) => finding.id), JSON.stringify(initialArtifact.findings)).toEqual(['D-001', 'D-002']);
 
     writeFileSync(diffFile, 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old();\n+still-bad();\n');
     const incompleteRecovery = await runWorkflow(getWorkflow('review/code'), {
@@ -1024,9 +1045,24 @@ describe('review evidence contracts', () => {
     const incompleteArtifact = JSON.parse(
       readFileSync(incompleteArtifactFile, 'utf8'),
     ) as InitialReviewArtifact;
-    expect(incompleteArtifact.findings.map((finding) => finding.id)).toEqual(['D-001']);
+    expect(incompleteArtifact.findings.map((finding) => finding.id)).toEqual(['D-001', 'D-002']);
 
     const repaired = manifest();
+    repaired.providers[0]!.operations[0] = {
+      ...operation('pass', ['node', '-e',
+        "process.exit(require('node:fs').readFileSync('a.ts', 'utf8').includes('fixed') ? 0 : 1)",
+      ], 'candidate', 'zero'),
+      requiredSystemTools: ['node'],
+    };
+    repaired.behaviorMatrix.push(
+      { ...unsupported.behaviorMatrix[1]!, providerIds: ['unrelated-provider'] },
+      unsupported.behaviorMatrix[2]!,
+    );
+    repaired.providers.push({
+      ...unsupported.providers[0]!,
+      cellIds: ['unrelated-static', 'unrelated-manual'],
+    });
+    reviewEvidenceManifestSchema.validate(repaired);
     writeFileSync(evidenceFile, `${JSON.stringify(repaired)}\n`);
     writeFileSync(diffFile, 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old();\n+good();\n');
     const recovery = await runWorkflow(getWorkflow('review/code'), {
@@ -1041,12 +1077,18 @@ describe('review evidence contracts', () => {
 
     expect(String(recovery.output)).toContain('Phase: evidence-repair.');
     expect(String(recovery.output)).toContain('Semantic host calls: 1.');
-    expect(String(recovery.output)).toContain('completion-authorized: true');
+    expect(String(recovery.output)).toContain('completion-authorized: false');
     const recoveredArtifactFile = recovery.artifacts.find((file) =>
       file.endsWith('-review-evidence.json'))!;
     const recoveredArtifact = validateInitialReviewArtifact(
       JSON.parse(readFileSync(recoveredArtifactFile, 'utf8')),
     );
+    expect(recoveredArtifact.evidence.completeness.complete).toBe(true);
+    expect(recoveredArtifact.findings).toMatchObject([
+      { classification: 'verified-failure', blocking: true },
+      { classification: 'semantic-concern' },
+    ]);
+    expect(recoveredArtifact.evidence.records.map((entry) => entry.id)).toEqual(['provider-a:pass']);
     expect(recoveredArtifact).toMatchObject({
       phase: 'initial',
       hostCallCount: 1,
@@ -1054,9 +1096,44 @@ describe('review evidence contracts', () => {
         transition: 'evidence-repair',
         runId: incompleteArtifact.runId,
         receiptId: incompleteArtifact.runtimeReceipt.id,
-        findingIds: ['D-001'],
+        findingIds: ['D-001', 'D-002'],
+        affectedCellIds: ['behavior-a', 'unrelated-manual', 'unrelated-static'],
       },
     });
+    const closureContext = {
+      ...context(repo),
+      options: { mode: 'mock' as const, goldbandHome: state, closureArtifactFile: recoveredArtifactFile },
+    };
+    expect(readClosureArtifact(closureContext)).toEqual(recoveredArtifact);
+    const corruptFile = join(repo, 'corrupt.json');
+    for (const corrupt of [
+      (value: InitialReviewArtifact) => { value.evidence.records = []; },
+      (value: InitialReviewArtifact) => { value.evidence.records[0]!.fresh = false; },
+      (value: InitialReviewArtifact) => { value.evidence.records[0]!.cellIds = ['unrelated-static']; },
+      (value: InitialReviewArtifact) => { value.findings[0]!.summary = 'forged'; },
+      (value: InitialReviewArtifact) => { value.runtimeReceipt.signature = '0'.repeat(64); },
+    ]) {
+      const value = structuredClone(recoveredArtifact);
+      corrupt(value);
+      writeFileSync(corruptFile, JSON.stringify(value));
+      expect(() => readClosureArtifact({
+        ...closureContext,
+        options: { ...closureContext.options, closureArtifactFile: corruptFile },
+      })).toThrow();
+    }
+    writeFileSync(diffFile, 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old();\n+fixed();\n');
+    const closure = await runWorkflow(getWorkflow('review/code'), {
+      mode: 'mock', host: 'mock', cwd: repo, goldbandHome: state,
+      diffFile: 'candidate.diff', evidenceManifestFile: 'evidence.json',
+      closureArtifactFile: recoveredArtifactFile,
+    });
+    expect(String(closure.output)).toContain('Phase: closure.');
+    expect(String(closure.output)).toContain('completion-authorized: true');
+    const closureArtifact = JSON.parse(readFileSync(closure.artifacts.find((file) =>
+      file.endsWith('-review-closure.json'))!, 'utf8'));
+    expect(closureArtifact.affectedCellIds).toEqual(['behavior-a', 'unrelated-manual', 'unrelated-static']);
+    expect(closureArtifact.evidence.records.map((entry) => entry.id)).toEqual(['provider-a:pass']);
+    expect(closureArtifact.results.map((entry) => entry.status)).toEqual(['closed', 'closed']);
   });
 
   test('partial evidence repair preserves unresolved deterministic finding identity', async () => {
@@ -2138,12 +2215,16 @@ describe('review evidence contracts', () => {
 
   test('root external-runner enforcement remains fail closed when its provider applies', async () => {
     const repo = gitFixture();
+    mkdirSync(join(repo, 'goldband-loop/workflows'), { recursive: true });
+    writeFileSync(join(repo, 'goldband-loop/workflows/review-evidence.ts'), 'old();\n');
+    git(repo, ['add', '.']); git(repo, ['commit', '-m', 'provider scope']);
+    writeFileSync(join(repo, 'goldband-loop/workflows/review-evidence.ts'), 'fixed();\n');
     const rootManifest = reviewEvidenceManifestSchema.validate(
       JSON.parse(readFileSync(join(import.meta.dir, '../../goldband.review-evidence.json'), 'utf8')),
     );
     const input = {
       source: 'git diff',
-      diff: 'diff --git a/goldband-loop/workflows/review-evidence.ts b/goldband-loop/workflows/review-evidence.ts',
+      diff: git(repo, ['diff', '--binary']),
       changedFiles: ['goldband-loop/workflows/review-evidence.ts'],
     };
     const evidence = await executeEvidencePlan(
@@ -3354,3 +3435,203 @@ function initialArtifact(): InitialReviewArtifact {
     },
   };
 }
+
+
+describe('candidate-bound GitHub review evidence', () => {
+  const revision = 'a'.repeat(40);
+  const tree = 'b'.repeat(40);
+  const providerId = 'review-evidence-tests';
+  function apiFixture(revisionValue = revision, treeValue = tree) {
+    const revision = revisionValue; const tree = treeValue;
+    const run = { id: 10, run_attempt: 2, head_sha: revision, path: '.github/workflows/validate.yml',
+      event: 'push', head_branch: 'dev', repository: { full_name: 'leo110047/goldband' },
+      head_repository: { full_name: 'leo110047/goldband' }, status: 'completed' };
+    const step = { name: `Review evidence - ${providerId}`, status: 'completed', conclusion: 'success' };
+    const job = { id: 20, run_id: 10, head_sha: revision, name: 'macOS Seatbelt review evidence contracts',
+      status: 'completed', conclusion: 'failure', steps: [step] };
+    const replies: Record<string, any> = {
+      [`git/commits/${revision}`]: { sha: revision, tree: { sha: tree } },
+      [`actions/workflows/validate.yml/runs?head_sha=${revision}&event=push&branch=dev&per_page=100`]: { workflow_runs: [run] },
+      'actions/runs/10/attempts/2/jobs?per_page=100': { total_count: 1, jobs: [job] },
+      'actions/runs/10': structuredClone(run),
+    };
+    const calls: string[] = [];
+    const read = async (path: string) => { calls.push(path); if (!(path in replies)) throw new Error(`unexpected API ${path}`); return replies[path]; };
+    return { run, step, job, replies, calls, read };
+  }
+  test('accepts only the exact step and attempt, independently of a later unrelated job failure', async () => {
+    const api = apiFixture();
+    const proof = await readReviewCiResult(revision, tree, providerId, api.read);
+    expect(proof).toMatchObject({ revision, tree, runId: 10, attempt: 2, jobId: 20, conclusion: 'success' });
+    expect(api.calls).toEqual(Object.keys(api.replies));
+    expect(() => validateReviewCiProvenance(proof, providerId)).not.toThrow();
+    expect(() => validateReviewCiProvenance({ ...proof, runId: -1 }, providerId)).toThrow();
+  });
+  test('rejects a replacement tree even when the local commit identity has a green run', async () => {
+    const api = apiFixture();
+    await expect(readReviewCiResult(revision, 'c'.repeat(40), providerId, api.read)).rejects.toThrow('commit tree');
+    expect(api.calls).toHaveLength(1);
+  });
+  test('does not reuse an older green run when the newest attempt is pending', async () => {
+    const api = apiFixture();
+    api.replies[Object.keys(api.replies)[1]!].workflow_runs.push({ ...api.run, id: 11, status: 'in_progress' });
+    await expect(readReviewCiResult(revision, tree, providerId, api.read)).rejects.toThrow('still running');
+  });
+  for (const conclusion of ['failure', 'cancelled', 'skipped', 'timed_out', 'neutral']) {
+    test(`does not promote CI ${conclusion} to verified execution`, async () => {
+      const api = apiFixture(); api.step.conclusion = conclusion;
+      await expect(readReviewCiResult(revision, tree, providerId, api.read)).rejects.toThrow('no successful execution');
+    });
+  }
+  test('rejects wrong run provenance, ambiguous steps, truncated jobs, and concurrent reruns', async () => {
+    for (const field of ['event', 'head_branch', 'path', 'head_sha']) {
+      const api = apiFixture(); (api.run as any)[field] = 'wrong';
+      await expect(readReviewCiResult(revision, tree, providerId, api.read)).rejects.toThrow('does not match');
+    }
+    let api = apiFixture(); api.job.steps.push({ ...api.step });
+    await expect(readReviewCiResult(revision, tree, providerId, api.read)).rejects.toThrow('no successful execution');
+    api = apiFixture(); api.replies['actions/runs/10/attempts/2/jobs?per_page=100'].total_count = 101;
+    await expect(readReviewCiResult(revision, tree, providerId, api.read)).rejects.toThrow('truncated');
+    api = apiFixture(); api.replies['actions/runs/10'].run_attempt = 3;
+    await expect(readReviewCiResult(revision, tree, providerId, api.read)).rejects.toThrow('changed while');
+  });
+  test('materialized tree matches native Git with modes, symlinks, sorting and empty directories', () => {
+    const repo = gitFixture();
+    mkdirSync(join(repo, 'a-dir')); mkdirSync(join(repo, 'a-dir', 'empty'));
+    writeFileSync(join(repo, 'a-dir', 'unicode-中'), 'content');
+    writeFileSync(join(repo, 'a-dir.txt'), 'prefix ordering');
+    chmodSync(join(repo, 'check.mjs'), 0o755); symlinkSync('a.ts', join(repo, 'link'));
+    git(repo, ['add', '.']); git(repo, ['commit', '-m', 'tree']);
+    const snapshot = mkdtempSync(join(tmpdir(), 'review-ci-tree-')); roots.push(snapshot);
+    const archive = spawnSync('git', ['archive', 'HEAD'], { cwd: repo });
+    expect(spawnSync('tar', ['-xf', '-', '-C', snapshot], { input: archive.stdout }).status).toBe(0);
+    expect(reviewCandidateTree(snapshot)).toBe(git(repo, ['rev-parse', 'HEAD^{tree}']).trim());
+    writeFileSync(join(snapshot, 'a.ts'), 'different');
+    expect(reviewCandidateTree(snapshot)).not.toBe(git(repo, ['rev-parse', 'HEAD^{tree}']).trim());
+  });
+  test('only permits the three named one-way runner migrations while preserving the operation contract', () => {
+    const after = reviewEvidenceManifestSchema.validate(JSON.parse(readFileSync(join(import.meta.dir, '../../goldband.review-evidence.json'), 'utf8')));
+    const before = structuredClone(after);
+    const providers = before.providers.filter((provider) => provider.executionContext.runner === 'github-actions');
+    expect(providers).toHaveLength(3);
+    for (const provider of providers) provider.executionContext = { sandboxOwner: 'provider', runner: 'host-seatbelt', lane: 'macos-review-contract-host' };
+    expect(() => assertReviewContractNotWeaker(before, after)).not.toThrow();
+    expect(() => assertReviewContractNotWeaker(after, before)).toThrow('contract laundering blocked');
+    for (const mutate of [
+      (p: any) => { p.executionContext.lane = 'other'; },
+      (p: any) => { p.operations[0].argv = ['true']; },
+      (p: any) => { p.operations[0].expectedExit = 'nonzero'; },
+      (p: any) => { p.operations[0].evidenceLevel = 'fixture'; },
+      (p: any) => { p.operations[0].network = 'authorized'; },
+    ]) {
+      const changed = structuredClone(after); mutate(changed.providers.find((p) => p.id === providerId));
+      expect(() => assertReviewContractNotWeaker(before, changed)).toThrow('contract laundering blocked');
+    }
+  });
+  test('producer signs CI provenance, rejects tampering, and closes only the original matching failure', async () => {
+    const repo = gitFixture();
+    git(repo, ['remote', 'add', 'origin', 'https://github.com/leo110047/goldband.git']);
+    mkdirSync(join(repo, '.github/workflows'), { recursive: true });
+    copyFileSync(join(import.meta.dir, '../../.github/workflows/validate.yml'), join(repo, '.github/workflows/validate.yml'));
+    git(repo, ['add', '.']); git(repo, ['commit', '-m', 'CI recipe']);
+    let value = manifest();
+    const rootManifest = JSON.parse(readFileSync(join(import.meta.dir, '../../goldband.review-evidence.json'), 'utf8'));
+    const provider = rootManifest.providers.find((p: any) => p.id === providerId);
+    provider.cellIds = ['behavior-a']; provider.applicability = { kind: 'global', reason: 'CI producer fixture' };
+    value.providers = [provider]; value.behaviorMatrix[0]!.providerIds = [providerId];
+    value = reviewEvidenceManifestSchema.validate(value);
+    const input = { source: 'git diff', diff: '', changedFiles: [] };
+    const binding = createCandidateBinding(repo, input, value);
+    const api = apiFixture(git(repo, ['rev-parse', 'HEAD']).trim(), git(repo, ['rev-parse', 'HEAD^{tree}']).trim());
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string, options: RequestInit) => {
+      expect(String(url)).toStartWith('https://api.github.com/repos/leo110047/goldband/');
+      expect(options.redirect).toBe('error');
+      expect(options.headers).not.toHaveProperty('Authorization');
+      return Response.json(await api.read(String(url).split('/goldband/')[1]!));
+    }) as typeof fetch;
+    const state = mkdtempSync(join(tmpdir(), 'review-ci-state-')); roots.push(state);
+    const ctx = { ...context(repo), options: { mode: 'mock' as const, goldbandHome: state } };
+    try {
+      const evidence = await executeEvidencePlan(ctx, input, value, binding);
+      expect(evidence.completeness).toMatchObject({ complete: true, hostEligible: true });
+      expect(evidence.records[0]).toMatchObject({ status: 'verified-pass', fresh: true });
+      expect(evidence.records[0]!.exitStatus).toBeUndefined();
+      expect(evidence.records[0]!.snapshotDigestBefore).toBeUndefined();
+      const artifact = initialArtifact(); artifact.evidence = evidence; artifact.binding = binding; artifact.diff = '';
+      artifact.findings[0]!.evidenceIds = [evidence.records[0]!.id];
+      expect(validateInitialReviewArtifact(artifact)).toBe(artifact);
+      const { runtimeReceipt: _receipt, ...payload } = artifact;
+      const file = join(state, 'ci-artifact.json');
+      writeInitialReviewArtifact(file, payload, ctx);
+      const readCtx = { ...ctx, options: { ...ctx.options, closureArtifactFile: file } };
+      expect(readClosureArtifact(readCtx)!.evidence.records[0]!.ciProvenance).toEqual(evidence.records[0]!.ciProvenance);
+      const corrupt = JSON.parse(readFileSync(file, 'utf8'));
+      corrupt.evidence.records[0].ciProvenance.runId += 1;
+      writeFileSync(file, JSON.stringify(corrupt));
+      expect(() => readClosureArtifact(readCtx)).toThrow();
+      const fabricated = structuredClone(artifact); fabricated.evidence.records[0]!.exitStatus = 0;
+      expect(() => validateInitialReviewArtifact(fabricated)).toThrow('cannot claim a local exit');
+
+      const original = structuredClone(artifact);
+      original.evidence.manifest.providers[0]!.executionContext = { sandboxOwner: 'provider', runner: 'host-seatbelt', lane: 'macos-review-contract-host' };
+      original.binding = { ...createCandidateBinding(repo, input, original.evidence.manifest), candidateDigest: 'e'.repeat(64) };
+      original.evidence.binding = original.binding;
+      original.findings[0]!.classification = 'verified-failure';
+      original.evidence.records[0] = { ...original.evidence.records[0]!, status: 'verified-failure', exitStatus: 1,
+        ciProvenance: undefined, candidateDigest: original.binding.candidateDigest, environment: 'host-seatbelt-darwin-snapshot', snapshotDigestBefore: 'f'.repeat(64), snapshotDigestAfter: 'f'.repeat(64), replayCommand: provider.operations[0].argv };
+      const closure = buildClosureInput(original, binding, '', value);
+      const result = [{ findingId: 'F-001', status: 'closed' as const, summary: 'same operation passed on its CI host', evidenceIds: [evidence.records[0]!.id] }];
+      expect(validateClosureResults(result, closure, evidence)[0]).toMatchObject({ findingId: 'F-001', status: 'closed' });
+      const missing = structuredClone(evidence); missing.records[0]!.status = 'runtime-incomplete'; missing.records[0]!.fresh = false;
+      expect(() => validateClosureResults(result, closure, missing)).toThrow();
+      const weaker = structuredClone(evidence); weaker.manifest.providers[0]!.operations[0]!.argv = ['true'];
+      expect(() => validateClosureResults(result, closure, weaker)).toThrow('unchanged original failed operation');
+    } finally { globalThis.fetch = originalFetch; }
+  });
+  test('subdirectory CI incomplete evidence survives signed artifact readback', async () => {
+    const repo = gitFixture(); const cwd = join(repo, 'goldband-loop');
+    mkdirSync(cwd); writeFileSync(join(cwd, 'tracked.ts'), 'tracked();');
+    git(repo, ['add', '.']); git(repo, ['commit', '-m', 'subdirectory']);
+    const value = manifest();
+    const rootManifest = JSON.parse(readFileSync(join(import.meta.dir, '../../goldband.review-evidence.json'), 'utf8'));
+    const provider = rootManifest.providers.find((p: any) => p.id === providerId);
+    provider.cellIds = ['behavior-a']; provider.applicability = { kind: 'global', reason: 'CI producer fixture' };
+    value.providers = [provider]; value.behaviorMatrix[0]!.providerIds = [providerId];
+    const validated = reviewEvidenceManifestSchema.validate(value);
+    const input = { source: 'git diff', diff: '', changedFiles: [] };
+    const binding = createCandidateBinding(cwd, input, validated);
+    const state = mkdtempSync(join(tmpdir(), 'review-ci-subdir-state-')); roots.push(state);
+    const ctx = { ...context(cwd), options: { mode: 'mock' as const, goldbandHome: state } };
+    const evidence = await executeEvidencePlan(ctx, input, validated, binding);
+    expect(evidence.completeness.hostEligible).toBe(false);
+    expect(evidence.records[0]!.outputSummary).toContain('invocation directory');
+    expect(evidence.records[0]!.ciProvenance).toBeUndefined();
+    const artifact = initialArtifact(); artifact.binding = binding; artifact.evidence = evidence; artifact.diff = '';
+    artifact.findings = [{ ...artifact.findings[0]!, id: 'D-001', category: 'deterministic-evidence',
+      classification: 'runtime-incomplete', evidenceIds: [evidence.records[0]!.id] }]; artifact.hostCallCount = 0;
+    const { runtimeReceipt: _receipt, ...payload } = artifact;
+    const file = join(state, 'subdir-artifact.json'); writeInitialReviewArtifact(file, payload, ctx);
+    const restored = readClosureArtifact({ ...ctx, options: { ...ctx.options, closureArtifactFile: file } })!;
+    expect(restored.evidence.completeness.hostEligible).toBe(false);
+    expect(restored.findings[0]).toMatchObject({ id: artifact.findings[0]!.id, classification: 'runtime-incomplete' });
+  });
+  test('producer reports absent candidate CI as incomplete, without a nested sandbox or fabricated exit', async () => {
+    const repo = gitFixture();
+    let value = manifest();
+    const rootManifest = JSON.parse(readFileSync(join(import.meta.dir, '../../goldband.review-evidence.json'), 'utf8'));
+    const provider = rootManifest.providers.find((p: any) => p.id === providerId);
+    provider.cellIds = ['behavior-a']; provider.applicability = { kind: 'global', reason: 'CI producer fixture' };
+    value.providers = [provider]; value.behaviorMatrix[0]!.providerIds = [providerId];
+    value = reviewEvidenceManifestSchema.validate(value);
+    const input = { source: 'git diff', diff: '', changedFiles: [] };
+    const evidence = await executeEvidencePlan(context(repo), input, value, createCandidateBinding(repo, input, value));
+    expect(evidence.completeness).toMatchObject({ complete: false, hostEligible: false });
+    expect(evidence.records[0]).toMatchObject({ status: 'runtime-incomplete', fresh: false, environment: 'github-actions/macos-writable-checkout' });
+    expect(evidence.records[0]!.exitStatus).toBeUndefined();
+    expect(evidence.records[0]!.snapshotDigestBefore).toBeUndefined();
+    expect(evidence.records[0]!.ciProvenance).toBeUndefined();
+    expect(evidence.records[0]!.outputSummary).toContain('CI evidence incomplete');
+    await expect(collectReviewCiEvidence(repo, repo, provider, 'goldband-loop')).rejects.toThrow('invocation directory');
+  });
+});

@@ -52,6 +52,7 @@ import {
   sealedEvidenceExecutionUnavailable,
 } from './review-evidence-sandbox';
 import { resolveReviewWorkspace, workspacePath } from './review-workspace';
+import { collectReviewCiEvidence, isReviewCiMigration, isReviewCiProvider, REVIEW_CI_LANE, validateReviewCiProvenance, type ReviewCiProvenance } from './review-ci-evidence';
 
 export { isEvidenceSandboxRuntimeFailure } from './review-evidence-sandbox';
 
@@ -176,7 +177,7 @@ type EvidenceApplicability = { kind: 'paths'; pathPrefixes: string[] } | { kind:
 
 type EvidenceExecutionContext =
   | { sandboxOwner: 'review-runtime'; runner: 'sealed' }
-  | { sandboxOwner: 'provider'; runner: 'host-seatbelt'; lane: string };
+  | { sandboxOwner: 'provider'; runner: 'host-seatbelt' | 'github-actions'; lane: string };
 
 type TransitionEvidenceBinding = {
   repository: string;
@@ -246,6 +247,7 @@ export type ReviewEvidenceRecord = {
   environment: string;
   commandDigest?: string;
   executionIdentityDigest?: string;
+  ciProvenance?: ReviewCiProvenance;
   snapshotDigestBefore?: string;
   snapshotDigestAfter?: string;
   replayCommand?: string[];
@@ -471,29 +473,10 @@ export async function executeEvidencePlan(
           throw new Error(`review evidence operation limit exceeded: ${MAX_REVIEW_EVIDENCE_OPERATIONS}`);
         }
         validateOperationAuthorization(operation, manifest);
-        if (provider.executionContext.runner === 'sealed') {
-          const unavailable = sealedEvidenceExecutionUnavailable();
-          if (unavailable) {
-            records.push(executionContextIncompleteRecord(
-              provider,
-              operation,
-              binding,
-              unavailable,
-            ));
-            continue;
-          }
-        }
-        if (provider.executionContext.runner === 'host-seatbelt') {
-          const unavailable = hostEvidenceExecutionUnavailable(ctx, provider);
-          if (unavailable) {
-            records.push(executionContextIncompleteRecord(
-              provider,
-              operation,
-              binding,
-              unavailable,
-            ));
-            continue;
-          }
+        const unavailable = evidenceExecutionUnavailable(ctx, provider);
+        if (unavailable) {
+          records.push(executionContextIncompleteRecord(provider, operation, binding, unavailable));
+          continue;
         }
         const operationKey = `${records.length}-${safePathSegment(provider.id)}-${safePathSegment(operation.id)}`;
         const operationRoot = join(
@@ -502,16 +485,13 @@ export async function executeEvidencePlan(
           operationKey,
         );
         const runnerRoot = join(tempRoot, 'runners', operationKey);
-        if (operation.target === 'base') {
-          materializeBase(workspace.repositoryRoot, operationRoot, input.changedFiles, binding.baseRef);
-        } else {
-          materializeExactCandidate(
-            { ...ctx, cwd: workspace.repositoryRoot },
-            input,
-            operationRoot,
-            binding.baseRef,
-            binding.redactedUntrackedFiles,
-          );
+        materializeOperationSnapshot({ ctx: { ...ctx, cwd: workspace.repositoryRoot }, input,
+          binding, operation, root: operationRoot });
+        if (provider.executionContext.runner === 'github-actions') {
+          records.push(await ciEvidenceRecord({ provider, operation, binding, repositoryRoot: workspace.repositoryRoot,
+            candidateRoot: operationRoot, executionOffset: workspace.invocationOffset }));
+          rmSync(operationRoot, { recursive: true, force: true });
+          continue;
         }
         if (operationNeedsDependencies(operation)) {
           projectDependencyDirectories(workspace.repositoryRoot, operationRoot, input.changedFiles);
@@ -789,11 +769,11 @@ function persistedArtifactEvidenceCells(
   artifact: InitialReviewArtifact,
   manifest: ReviewEvidenceManifest,
 ): ReviewEvidenceManifest['behaviorMatrix'] {
-  if (!artifact.predecessor) {
-    return effectiveEvidenceCells(manifest, artifact.binding.changedFiles);
-  }
-  const affected = new Set(artifact.predecessor.affectedCellIds);
-  return manifest.behaviorMatrix.filter((cell) => affected.has(cell.id));
+  return effectiveEvidenceCells(
+    manifest,
+    artifact.binding.changedFiles,
+    artifact.predecessor ? new Set(artifact.predecessor.affectedCellIds) : undefined,
+  );
 }
 
 function validatePersistedContractResolution(
@@ -907,6 +887,12 @@ function validatePersistedEvidenceRecord(
     return;
   }
   const operation = persistedRecordOperation(record, manifest);
+  const provider = manifest.providers.find((entry) => entry.id === record.providerId)!;
+  if (provider.executionContext.runner === 'github-actions') {
+    validatePersistedCiRecord(record, provider);
+    return;
+  }
+  if (record.ciProvenance !== undefined) throw new Error('Local evidence cannot claim CI provenance');
   validatePersistedCommandRecord(record, operation);
 }
 
@@ -990,6 +976,24 @@ function persistedRecordOperation(
     throw new Error(`initial evidence command record contract is invalid: ${record.id}`);
   }
   return operation;
+}
+
+function validatePersistedCiRecord(record: ReviewEvidenceRecord, provider: EvidenceProvider): void {
+  if (!isReviewCiProvider(provider) || provider.executionContext.runner !== 'github-actions' ||
+      provider.executionContext.lane !== REVIEW_CI_LANE) throw new Error('Invalid persisted CI provider');
+  if (record.commandDigest !== operationCommandDigest({ operation: provider.operations[0]!, executionOffset: '' })) {
+    throw new Error('CI command digest does not match the provider operation');
+  }
+  if (record.exitStatus !== undefined || record.snapshotDigestBefore !== undefined ||
+      record.snapshotDigestAfter !== undefined) throw new Error('CI evidence cannot claim a local exit or sealed snapshot');
+  if (record.status === 'runtime-incomplete' && !record.fresh && record.ciProvenance === undefined &&
+      record.executionIdentityDigest === undefined) return;
+  if (record.status !== 'verified-pass' || !record.fresh || !record.ciProvenance ||
+      record.environment !== 'github-actions/macos-writable-checkout') throw new Error('Invalid CI evidence status');
+  validateReviewCiProvenance(record.ciProvenance, provider.id);
+  if (record.executionIdentityDigest !== sha256(stableJson(record.ciProvenance))) {
+    throw new Error('CI execution identity does not match provenance');
+  }
 }
 
 function validatePersistedCommandRecord(
@@ -1223,6 +1227,9 @@ function sameEvidenceOperationContract(
   if (!original.providerId || !original.operationId ||
       original.providerId !== rerun.providerId || original.operationId !== rerun.operationId ||
       !original.commandDigest || original.commandDigest !== rerun.commandDigest) return false;
+  const originalProvider = originalManifest.providers.find((entry) => entry.id === original.providerId);
+  const rerunProvider = rerunManifest.providers.find((entry) => entry.id === rerun.providerId);
+  const migrated = originalProvider && rerunProvider && isReviewCiMigration(originalProvider, rerunProvider);
   const contract = (manifest: ReviewEvidenceManifest, record: ReviewEvidenceRecord) => {
     const provider = manifest.providers.find((entry) => entry.id === record.providerId);
     const operation = provider?.operations.find((entry) => entry.id === record.operationId);
@@ -1234,7 +1241,7 @@ function sameEvidenceOperationContract(
         lifecycle: provider.lifecycle,
         cellIds: provider.cellIds,
         applicability: provider.applicability,
-        executionContext: provider.executionContext,
+        executionContext: migrated ? rerunProvider.executionContext : provider.executionContext,
       },
       operation: {
         id: operation.id,
@@ -1486,7 +1493,7 @@ function validateEvidenceExecutionContext(value: unknown): EvidenceExecutionCont
     }
     return { sandboxOwner, runner };
   }
-  if (sandboxOwner === 'provider' && runner === 'host-seatbelt') {
+  if (sandboxOwner === 'provider' && (runner === 'host-seatbelt' || runner === 'github-actions')) {
     return {
       sandboxOwner,
       runner,
@@ -3085,7 +3092,7 @@ function operationExecutionIdentity(
   }));
 }
 
-function operationCommandDigest(options: RunEvidenceOperationOptions): string {
+function operationCommandDigest(options: Pick<RunEvidenceOperationOptions, 'operation' | 'executionOffset'>): string {
   const { operation } = options;
   return sha256(stableJson({
     argv: operation.argv,
@@ -3959,6 +3966,53 @@ export function selectedEvidenceProviderIds(manifest: ReviewEvidenceManifest, ch
     .filter((provider) => providerApplies(provider, changedFiles))
     .map((provider) => provider.id)
     .sort();
+}
+
+function evidenceExecutionUnavailable(ctx: WorkflowContext, provider: EvidenceProvider) {
+  if (provider.executionContext.runner === 'sealed') return sealedEvidenceExecutionUnavailable();
+  if (provider.executionContext.runner === 'host-seatbelt') return hostEvidenceExecutionUnavailable(ctx, provider);
+  return undefined;
+}
+
+function materializeOperationSnapshot(options: {
+  ctx: WorkflowContext; input: ReviewDiffInput; binding: CandidateBinding;
+  operation: EvidenceOperation; root: string;
+}): void {
+  const { ctx, input, binding, operation, root } = options;
+  if (operation.target === 'base') materializeBase(ctx.cwd, root, input.changedFiles, binding.baseRef);
+  else materializeExactCandidate(ctx, input, root, binding.baseRef, binding.redactedUntrackedFiles);
+}
+
+async function ciEvidenceRecord(options: {
+  provider: EvidenceProvider; operation: EvidenceOperation; binding: CandidateBinding;
+  repositoryRoot: string; candidateRoot: string; executionOffset: string;
+}): Promise<ReviewEvidenceRecord> {
+  const { provider, operation, binding, repositoryRoot, candidateRoot, executionOffset } = options;
+  const startedAt = new Date().toISOString();
+  const record: ReviewEvidenceRecord = {
+    id: `${provider.id}:${operation.id}`, providerId: provider.id, operationId: operation.id,
+    cellIds: [...provider.cellIds], owner: provider.owner, kind: provider.kind,
+    status: 'runtime-incomplete', evidenceLevel: operation.evidenceLevel,
+    environment: 'github-actions/macos-writable-checkout',
+    // CI records describe the fixed root recipe, including when the caller offset is rejected.
+    commandDigest: operationCommandDigest({ operation, executionOffset: '' }),
+    startedAt, finishedAt: startedAt, outputDigest: '', outputSummary: '',
+    candidateDigest: binding.candidateDigest, baseDigest: binding.baseDigest,
+    scopeDigest: binding.scopeDigest, fresh: false,
+  };
+  try {
+    const provenance = await collectReviewCiEvidence(repositoryRoot, candidateRoot, provider, executionOffset);
+    record.ciProvenance = provenance;
+    record.executionIdentityDigest = sha256(stableJson(provenance));
+    record.status = 'verified-pass';
+    record.fresh = true;
+    record.outputSummary = `Exact candidate CI step passed: https://github.com/${provenance.repository}/actions/runs/${provenance.runId}/attempts/${provenance.attempt}; step=${provenance.step}; revision=${provenance.revision}; writable CI checkout, not a sealed local execution`;
+  } catch (error) {
+    record.outputSummary = boundText(`CI evidence incomplete: ${error instanceof Error ? error.message : String(error)}`, operation.maxOutputBytes);
+  }
+  record.finishedAt = new Date().toISOString();
+  record.outputDigest = sha256(record.outputSummary);
+  return record;
 }
 
 function executionContextIncompleteRecord(

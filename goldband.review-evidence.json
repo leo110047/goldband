@@ -332,8 +332,8 @@
       },
       "executionContext": {
         "sandboxOwner": "provider",
-        "runner": "host-seatbelt",
-        "lane": "macos-review-contract-host"
+        "runner": "github-actions",
+        "lane": "goldband-macos-review-host"
       },
       "operations": [
         {
@@ -396,8 +396,8 @@
       },
       "executionContext": {
         "sandboxOwner": "provider",
-        "runner": "host-seatbelt",
-        "lane": "macos-review-contract-host"
+        "runner": "github-actions",
+        "lane": "goldband-macos-review-host"
       },
       "operations": [
         {
@@ -439,8 +439,8 @@
       },
       "executionContext": {
         "sandboxOwner": "provider",
-        "runner": "host-seatbelt",
-        "lane": "macos-review-contract-host"
+        "runner": "github-actions",
+        "lane": "goldband-macos-review-host"
       },
       "operations": [
         {

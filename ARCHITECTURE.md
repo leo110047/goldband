@@ -116,6 +116,17 @@ records remote identity; moves, path reuse, clones, remote changes, and
 ambiguity fail closed until explicit re-import. Review never mutates repository
 manifests.
 
+Goldband's three macOS sandbox self-test providers are an explicit exception to
+local execution. `workflows/review-ci-evidence.ts` owns their fixed GitHub Actions
+recipe and read-only public API adapter, bundled by the existing Claude and
+Codex runtime installers. No new binary, skill, token store, or artifact import
+surface is introduced. The adapter binds an exact materialized Git tree to the
+remote commit and latest run/attempt/step, then the existing runtime signs the
+CI provenance. This is trusted writable CI checkout evidence, not a local
+sealed-snapshot or network-isolation attestation. Missing or unsuccessful CI
+keeps review incomplete. Only the three unchanged operations can migrate from
+the previous host lane; the signed finding lineage and closure checks remain.
+
 The resolved contract declares stable behavior cells and typed providers. The
 runtime validates every disposition and reciprocal provider/cell
 ownership, materializes a fresh read-only candidate snapshot per operation,

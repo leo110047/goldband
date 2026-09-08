@@ -106,6 +106,23 @@ describe("review receipt authority provisioning", () => {
 			providers: [],
 			authorizations: [],
 		};
+		const unrelatedProvider = {
+			id: "unrelated-gate", owner: "fixture", kind: "static", lifecycle: "persistent",
+			cellIds: ["unrelated-static"],
+			applicability: { kind: "paths", pathPrefixes: ["unrelated"] },
+			executionContext: { sandboxOwner: "review-runtime", runner: "sealed" },
+			operations: [{ id: "pass", target: "candidate", argv: ["true"], expectedExit: "zero",
+				timeoutMs: 1000, maxOutputBytes: 1024, network: "deny", evidenceLevel: "fixture",
+				requiredSystemTools: ["true"] }],
+		};
+		unsupportedManifest.providers.push(unrelatedProvider);
+		unsupportedManifest.behaviorMatrix.push(
+			{ ...unsupportedManifest.behaviorMatrix[0], id: "unrelated-manual",
+				behavior: "The unrelated manual boundary is checked.", disposition: "manual" },
+			{ ...unsupportedManifest.behaviorMatrix[0], id: "unrelated-static",
+				behavior: "The unrelated static boundary is checked.", disposition: "static",
+				providerIds: ["unrelated-gate"], reason: undefined },
+		);
 			writeFileSync(join(repo, "goldband.review-evidence.json"), `${JSON.stringify(unsupportedManifest)}\n`);
 			expect(spawnSync("git", ["config", "user.email", "test@example.com"], { cwd: repo }).status).toBe(0);
 			expect(spawnSync("git", ["config", "user.name", "Goldband Test"], { cwd: repo }).status).toBe(0);
@@ -152,8 +169,12 @@ describe("review receipt authority provisioning", () => {
 			"  exit 0",
 			"fi",
 			'printf "%s\\n" claude >> "$GOLDBAND_TEST_HOST_CALL_LOG"',
-			"cat >/dev/null",
-			'printf \'%s\\n\' \'{"result":"{\\"findings\\":[]}","usage":{"input_tokens":1,"output_tokens":1}}\'',
+			"prompt=\"$(cat)\"",
+			"if printf '%s' \"$prompt\" | grep -q CLOSURE_INPUT_START; then",
+			"printf '%s\\n' '{\"result\":\"{\\\"results\\\":[{\\\"findingId\\\":\\\"S-001\\\",\\\"status\\\":\\\"closed\\\",\\\"summary\\\":\\\"repair verified\\\",\\\"evidenceIds\\\":[\\\"claude-repair-gate:candidate-green\\\"]}]}\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'",
+			"else",
+			"printf '%s\\n' '{\"result\":\"{\\\"findings\\\":[{\\\"id\\\":\\\"F-001\\\",\\\"file\\\":\\\"candidate.txt\\\",\\\"line\\\":1,\\\"severity\\\":\\\"medium\\\",\\\"summary\\\":\\\"fixture concern\\\",\\\"evidence\\\":\\\"fixture semantic observation\\\",\\\"failureScenario\\\":\\\"fixture path\\\",\\\"suggestedVerification\\\":\\\"rerun gate\\\",\\\"classification\\\":\\\"semantic-concern\\\",\\\"blocking\\\":false,\\\"evidenceIds\\\":[\\\"claude-repair-gate:candidate-green\\\"],\\\"behaviorCellIds\\\":[\\\"unsupported-runtime\\\"]}]}\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'",
+			"fi",
 		].join("\n"));
 		chmodSync(fakeClaude, 0o755);
 		const repairedManifest = structuredClone(unsupportedManifest);
@@ -183,6 +204,8 @@ describe("review receipt authority provisioning", () => {
 				requiredSystemTools: ["true"],
 			}],
 		}];
+		repairedManifest.behaviorMatrix[1].providerIds = ["unrelated-gate"];
+		repairedManifest.providers.push({ ...unrelatedProvider, cellIds: ["unrelated-static", "unrelated-manual"] });
 		const repairedManifestFile = join(root, "repaired-manifest.json");
 		writeFileSync(repairedManifestFile, `${JSON.stringify(repairedManifest)}\n`);
 		writeFileSync(join(repo, "candidate.txt"), "review repaired\n");
@@ -209,8 +232,25 @@ describe("review receipt authority provisioning", () => {
 			transition: "evidence-repair",
 			runId: artifact.runId,
 			receiptId: artifact.runtimeReceipt.id,
-			findingIds: ["D-001"],
+			findingIds: ["D-001", "D-002"],
+			affectedCellIds: ["unrelated-manual", "unrelated-static", "unsupported-runtime"],
 		});
 		expect(readFileSync(hostCalls, "utf8").trim()).toBe("claude");
+		expect(repairedArtifact.evidence.records.map((record) => record.id)).toEqual(["claude-repair-gate:candidate-green"]);
+		expect(repairedArtifact.findings).toMatchObject([{ id: "S-001", classification: "semantic-concern" }]);
+		writeFileSync(join(repo, "candidate.txt"), "semantic concern repaired\n");
+		const closure = spawnSync(process.execPath, [
+			...reviewArgs, "--evidence-manifest", repairedManifestFile,
+			"--closure-artifact", repairedArtifactPath,
+		], {
+			...reviewOptions,
+			env: { ...reviewOptions.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+				GOLDBAND_TEST_HOST_CALL_LOG: hostCalls },
+		});
+		expect(closure.status, closure.stderr).toBe(0);
+		expect(closure.stdout).toContain("Phase: closure.");
+		expect(closure.stdout).toContain("[closed] S-001");
+		expect(readFileSync(hostCalls, "utf8").trim().split("\n")).toEqual(["claude", "claude"]);
+
 	}, 30_000);
 });

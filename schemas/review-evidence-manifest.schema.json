@@ -90,7 +90,7 @@
                 "required": ["sandboxOwner", "runner", "lane"],
                 "properties": {
                   "sandboxOwner": { "const": "provider" },
-                  "runner": { "const": "host-seatbelt" },
+                  "runner": { "enum": ["host-seatbelt", "github-actions"] },
                   "lane": { "type": "string", "minLength": 1 }
                 }
               }

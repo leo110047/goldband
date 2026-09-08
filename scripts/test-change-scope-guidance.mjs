@@ -52,6 +52,35 @@ assert.throws(
   'the negative regression must detect the removed healthiest-path default',
 );
 
+// READMEs explain the optional workflow role in their own language. They do
+// not need to repeat the internal English term "workflow runtime".
+function assertReadmeGuidance(content, required, label) {
+  const normalized = normalize(content);
+  for (const text of required) {
+    assert.ok(normalized.includes(text), `${label} is missing ${text}`);
+  }
+}
+
+for (const [file, role] of [
+  ['README.md', '選裝 Goldband Loop'],
+  ['README.en.md', 'Optionally adds Goldband Loop'],
+]) {
+  const content = read(file);
+  const required = [role, 'goldband-loop/', 'ARCHITECTURE.md'];
+  assertReadmeGuidance(content, required, file);
+  for (const removed of required) {
+    assert.throws(
+      () =>
+        assertReadmeGuidance(content.replaceAll(removed, ''), required, file),
+      { name: 'AssertionError' },
+      `${file} must reject removal of ${removed}`,
+    );
+  }
+}
+console.log(
+  '[OK] localized README guidance and missing-content regressions passed',
+);
+
 const manifest = JSON.parse(read('goldband.manifest.json'));
 const changeScope = manifest.policies.find(
   (policy) => policy.id === 'change-scope',

@@ -2452,3 +2452,37 @@ Revisit triggers:
   that justify a curated preset with a named owner and compatibility policy.
 - The manifest model moves to a declarative source capable of generating both
   the runtime validator and JSON Schema without losing graph semantics.
+
+
+## 2026-09-08 — CI owns Goldband's macOS sandbox self-tests
+
+Supersedes the self-test execution choice in “Same-host execution for
+provider-owned review evidence”; other local evidence boundaries remain.
+
+The named host lane still wrapped each test process in the runtime's Seatbelt
+profile. Tests creating a different inner profile failed with `sandbox_apply`,
+and installed-runtime tests lost their temporary environment inside the sealed
+runtime, failed with EPERM and timed out. Identical nested profiles can work,
+but the actual tests require different profiles; broadening individual allowed
+operations did not provide a valid boundary for these tests.
+
+Use the existing public `push dev` macOS CI job for the three existing provider
+operations. Add explicit steps before candidate build scripts, keep the full
+workflow suite, and read only exact commit/tree/run/attempt/step metadata through
+a fixed GitHub API adapter. The trusted runtime pins the entire workflow recipe.
+GitHub's native commit tree is checked as well as local Git to reject replacement
+objects or a misleading local HEAD. No new runner service, token handling,
+evidence upload, caller-supplied JSON, or unsandboxed local fallback is added.
+
+This explicitly accepts trusted writable CI execution for these self-tests;
+it does not attest an immutable checkout, exit code, network denial, or overall
+pipeline success. Non-success or unavailable metadata stays runtime-incomplete.
+The operation network field does not grant the consumer candidate-controlled
+network actions; the CI workflow owns its network environment. Only the three
+unchanged operations have a one-way transport migration. Existing signed
+receipts, finding IDs and closure obligations remain authoritative.
+
+Consequences: uncommitted candidates cannot obtain CI evidence, and a changed
+workflow requires a reviewed runtime recipe update. Local unit and installed
+fixture tests validate the adapter but cannot substitute for a live candidate
+CI run. Both existing installers bundle the shared consumer and guide.
