@@ -80,14 +80,9 @@ check_contains "skills/global/security-checklist/SKILL.md" "Goldband cso workflo
 check_contains "skills/global/decision-log/SKILL.md" "### Failure Signals" "decision-log failure signals section"
 check_contains "skills/global/decision-log/SKILL.md" "### Revisit Triggers / Exit Criteria" "decision-log revisit triggers section"
 
-check_contains "README.md" "goldband-loop/" "README references Goldband Loop runtime source"
-check_contains "README.md" "workflow runtime" "README documents Goldband Loop as workflow runtime"
-check_contains "README.md" "ARCHITECTURE.md" "README points boundary details to architecture"
-check_contains "README.en.md" "goldband-loop/" "README.en references Goldband Loop runtime source"
-check_contains "README.en.md" "workflow runtime" "README.en documents Goldband Loop as workflow runtime"
-check_contains "README.en.md" "ARCHITECTURE.md" "README.en points boundary details to architecture"
 check_contains "commands/verify-config.md" "scripts/verify-decision-guidance.sh" "verify-config documents decision guidance check"
 
+# README role/link checks and their negative regressions share the guidance test owner below.
 node "$ROOT_DIR/scripts/test-change-scope-guidance.mjs" || EXIT_CODE=1
 
 if [ "$EXIT_CODE" -eq 0 ]; then
