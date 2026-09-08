@@ -117,6 +117,18 @@
         "description": "Native async typecheck worker with debounce"
       }
     ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${HOOKS_DIR}/scripts/hooks/hook-router.js\""
+          }
+        ],
+        "description": "Actionable Goldband review failure guidance"
+      }
+    ],
     "Stop": [
       {
         "hooks": [

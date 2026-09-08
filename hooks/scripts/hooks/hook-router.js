@@ -62,7 +62,10 @@ function dispatchByEvent(input) {
     return evaluatePreToolUse(input);
   }
 
-  if (hookEventName === 'PostToolUse') {
+  if (
+    hookEventName === 'PostToolUse' ||
+    hookEventName === 'PostToolUseFailure'
+  ) {
     return evaluatePostToolUse(input);
   }
 
