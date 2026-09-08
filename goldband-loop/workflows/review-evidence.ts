@@ -49,6 +49,7 @@ import type { ReviewContractResolution } from './review-contract-resolution';
 import {
   evidenceSandboxCommand,
   isEvidenceSandboxRuntimeFailure,
+  createCompilerOutputDiagnosticCapture,
   sealedEvidenceExecutionUnavailable,
 } from './review-evidence-sandbox';
 import { resolveReviewWorkspace, workspacePath } from './review-workspace';
@@ -3197,6 +3198,7 @@ async function executePreparedOperation(
       reason: capture.result.reason,
       exitCode: capture.result.exitCode,
       stderr: capture.stderrDiagnosticHead,
+      compilerOutputDenied: capture.compilerOutputDenied,
     },
     runner.sandbox.brokered,
   );
@@ -3226,10 +3228,13 @@ async function captureEvidenceCommand(
   result: EvidenceCommandResult;
   outputDigest: string;
   stderrDiagnosticHead: string;
+  compilerOutputDenied: boolean;
 }> {
   const stdoutHash = createHash('sha256');
   const stderrHash = createHash('sha256');
   let stderrDiagnosticHead = '';
+  const stdoutDiagnostics = createCompilerOutputDiagnosticCapture();
+  const stderrDiagnostics = createCompilerOutputDiagnosticCapture();
   const result = await superviseCommand(runner.sandbox.command, runner.sandbox.args, {
     cwd: options.executionCwd,
     env: runner.env,
@@ -3241,10 +3246,16 @@ async function captureEvidenceCommand(
       stderrMaxBytes: options.operation.maxOutputBytes,
     },
     label: `review evidence ${options.provider.id}:${options.operation.id}`,
-    stdout: { write(chunk: string) { stdoutHash.update(chunk); } },
+    stdout: {
+      write(chunk: string) {
+        stdoutHash.update(chunk);
+        stdoutDiagnostics.write(chunk);
+      },
+    },
     stderr: {
       write(chunk: string) {
         stderrHash.update(chunk);
+        stderrDiagnostics.write(chunk);
         const remaining = MAX_EVIDENCE_RUNTIME_DIAGNOSTIC_CHARS - stderrDiagnosticHead.length;
         if (remaining > 0) stderrDiagnosticHead += chunk.slice(0, remaining);
       },
@@ -3254,6 +3265,7 @@ async function captureEvidenceCommand(
     result,
     outputDigest: sha256(`${stdoutHash.digest('hex')}:${stderrHash.digest('hex')}`),
     stderrDiagnosticHead,
+    compilerOutputDenied: stdoutDiagnostics.denied || stderrDiagnostics.denied,
   };
 }
 
@@ -3300,7 +3312,7 @@ function summarizeEvidenceExecution(
   } else if (!integrity.runtimeUnchanged) {
     error = 'runner incomplete: executable runtime libraries changed during evidence execution';
   } else if (integrity.sandboxDenied) {
-    error = 'runner incomplete: sandbox-exec denied or could not initialize the operation';
+    error = 'runner incomplete: operation initialization or compiler output access failed; keep the snapshot read-only and direct build caches to TMPDIR';
   }
   return boundText([output, error].filter(Boolean).join('\n'), operation.maxOutputBytes);
 }

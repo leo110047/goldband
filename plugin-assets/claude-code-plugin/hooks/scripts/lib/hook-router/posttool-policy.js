@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { getPersistentDataPath, writeFile } = require('../utils');
+const { reviewLaunchAdvisory } = require('./review-launch-advisory');
 
 function parseThreshold(envName, fallback) {
   const parsed = parseInt(process.env[envName] || String(fallback), 10);
@@ -142,7 +143,11 @@ function evaluatePostToolUse(input) {
   const toolName = input.tool_name || '';
   const toolInput = input.tool_input || {};
 
-  const contextMessage = evaluateContextWarning(input);
+  const reviewAdvice = reviewLaunchAdvisory(input);
+  const contextMessage =
+    input.hook_event_name === 'PostToolUseFailure'
+      ? null
+      : evaluateContextWarning(input);
   const filePath = toolInput.file_path || '';
 
   const styleWarnings =
@@ -154,7 +159,14 @@ function evaluatePostToolUse(input) {
     decision: 'allow',
     blockedBy: null,
     logs: [...styleWarnings, ...(contextMessage ? [contextMessage] : [])],
-    outputJson: null,
+    outputJson: reviewAdvice
+      ? {
+          hookSpecificOutput: {
+            hookEventName: input.hook_event_name,
+            additionalContext: reviewAdvice,
+          },
+        }
+      : null,
     spawnedProcesses: 0,
   };
 }

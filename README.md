@@ -10,6 +10,8 @@ Claude Code 與 Codex 的本機工程配套，集中管理開發守則、工具�
 - 管理 Claude Code／Codex 的本機設定，提供安裝狀態檢查與移除入口。
 - 選裝 Goldband Loop，使用程式碼審查、問題調查、規劃、QA 等工作流程。
 
+Review 失敗時，Claude／Codex hook 會提示讀取既有啟動契約；環境證據未完成則提示查看該次報告，不自動重跑。
+
 ## 安裝前
 
 - 準備 Git、Node.js，以及要使用的 Claude Code 或 Codex CLI。

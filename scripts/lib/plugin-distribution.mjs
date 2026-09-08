@@ -58,6 +58,7 @@ const MANAGED_COMMANDS = [
   'codex/hooks/cross-review-gate.js',
   'codex/hooks/module-loader.js',
   'codex/hooks/telemetry-schema.cjs',
+  'codex/hooks/review-launch-advisory.js',
 ];
 
 export function buildPluginArtifacts() {
@@ -113,6 +114,11 @@ export function buildPluginArtifacts() {
 }
 
 function addSharedAdapterArtifacts(artifacts) {
+  addFileArtifact(
+    artifacts,
+    'hooks/scripts/lib/hook-router/review-launch-advisory.js',
+    path.join(ROOT_DIR, 'codex', 'hooks', 'review-launch-advisory.js'),
+  );
   addFileArtifact(
     artifacts,
     'scripts/lib/telemetry-schema.cjs',
@@ -213,6 +219,7 @@ function buildExpectedAssets({ commands, hookConfig, rules, sourceSkills }) {
         'codex/hooks/module-loader.js',
         'codex/hooks/telemetry.js',
         'codex/hooks/telemetry-schema.cjs',
+        'codex/hooks/review-launch-advisory.js',
       ],
       reason:
         'Codex plugins exist but package Codex skills/apps/MCP, not Claude Code settings. Root Codex install remains install.sh.',

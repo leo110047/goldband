@@ -44,6 +44,7 @@ import {
   type ReviewEvidenceManifest,
 } from '../workflows/review-evidence';
 import { getWorkflow } from '../workflows/registry';
+import { createCompilerOutputDiagnosticCapture } from '../workflows/review-evidence-sandbox';
 import { readReviewCiResult, reviewCandidateTree, collectReviewCiEvidence, validateReviewCiProvenance } from '../workflows/review-ci-evidence';
 import { assertReviewContractNotWeaker } from '../workflows/review-lineage';
 import { runWorkflow } from '../workflows/runtime';
@@ -619,6 +620,60 @@ describe('review evidence contracts', () => {
       reason: 'exit',
       exitCode: 1,
       stderr: 'ordinary assertion failure mentioning sandbox',
+    })).toBe(false);
+  });
+
+  test('classifies TypeScript output permission failures on either stream as incomplete evidence', () => {
+    for (const stream of ['stdout', 'stderr']) {
+      for (const denial of [
+        'operation not permitted', 'EACCES: permission denied', 'read-only file system',
+        "EPERM: operation not permitted, open '/snapshot/web/.tsbuildinfo'",
+        "EACCES: permission denied, open '/snapshot/web/.tsbuildinfo'",
+        "EROFS: read-only file system, open '/snapshot/web/.tsbuildinfo'",
+      ]) {
+        expect(isEvidenceSandboxRuntimeFailure('/usr/bin/sandbox-exec', {
+          reason: 'exit', exitCode: 1,
+          [stream]: `STATIC CHECK PASS\nerror TS5033: Could not write file '/snapshot/web/.tsbuildinfo': open /snapshot/web/.tsbuildinfo: ${denial}.\n`,
+        })).toBe(true);
+      }
+    }
+    expect(isEvidenceSandboxRuntimeFailure('/broker', {
+      reason: 'exit', exitCode: 1,
+      stdout: "error TS5033: Could not write file '/snapshot/out.js': EACCES: permission denied.",
+    }, true)).toBe(true);
+  });
+
+  test('captures compiler permission diagnostics after long logs and across stream chunks', () => {
+    const diagnostic = "error TS5033: Could not write file '/snapshot/.tsbuildinfo': EPERM: operation not permitted, open '/snapshot/.tsbuildinfo'.\n";
+    for (let split = 1; split < diagnostic.length; split++) {
+      const capture = createCompilerOutputDiagnosticCapture();
+      capture.write('build log\n'.repeat(4096));
+      capture.write(diagnostic.slice(0, split));
+      capture.write(diagnostic.slice(split));
+      capture.write('more build log\n'.repeat(4096));
+      expect(capture.denied).toBe(true);
+      expect(isEvidenceSandboxRuntimeFailure('/usr/bin/sandbox-exec', {
+        reason: 'exit', exitCode: 1, compilerOutputDenied: capture.denied,
+      })).toBe(true);
+    }
+    const ordinary = createCompilerOutputDiagnosticCapture();
+    ordinary.write("error TS2322: Type 'string' is not assignable to type 'number'.\n");
+    expect(ordinary.denied).toBe(false);
+  });
+
+  test('does not infer compiler environment failure from ordinary errors or a successful operation', () => {
+    for (const diagnostic of [
+      "error TS2322: Type 'string' is not assignable to type 'number'.",
+      'assertion failed: operation not permitted',
+      "error TS5033: Could not write file '/snapshot/out.js': unknown compiler failure.",
+    ]) {
+      expect(isEvidenceSandboxRuntimeFailure('/usr/bin/sandbox-exec', {
+        reason: 'exit', exitCode: 1, stdout: diagnostic, stderr: diagnostic,
+      })).toBe(false);
+    }
+    expect(isEvidenceSandboxRuntimeFailure('/usr/bin/sandbox-exec', {
+      reason: 'exit', exitCode: 0,
+      stdout: "error TS5033: Could not write file '/snapshot/out.js': operation not permitted.",
     })).toBe(false);
   });
 
@@ -1393,6 +1448,44 @@ describe('review evidence contracts', () => {
     expect(evidence.records[1]).toMatchObject({ status: 'verified-pass', fresh: true });
     expect(evidence.records[1]!.snapshotDigestBefore)
       .toBe(evidence.records[1]!.snapshotDigestAfter);
+  });
+
+  test('compiler output denial cannot satisfy RED and redirecting the cache preserves the read-only snapshot', async () => {
+    const repo = gitFixture();
+    // A real filesystem write in the sealed runner, with the compiler's
+    // diagnostic protocol. This checks stream capture, not just the parser.
+    const script = [
+      "const fs = require('node:fs'); const path = require('node:path');",
+      "const output = path.resolve(process.argv[1] === 'temp' ? process.env.TMPDIR : '.', '.tsbuildinfo');",
+      "process.stdout.write('build log\\n'.repeat(4096));",
+      "try { fs.writeFileSync(output, 'cache'); } catch (error) {",
+      "  process.stdout.write(`error TS5033: Could not write file '${output}': ${error.message}.\\n`);",
+      "  process.exit(1);",
+      "}",
+    ].join('\n');
+    const value = manifest();
+    value.providers[0]!.operations = [
+      operation('denied-cache', ['node', '-e', script, 'snapshot'], 'candidate', 'zero'),
+      { ...operation('denied-cache-red', ['node', '-e', script, 'snapshot'], 'candidate', 'nonzero'), expectedExitCode: 1 },
+      operation('temp-cache', ['node', '-e', script, 'temp'], 'candidate', 'zero'),
+      operation('type-error', ['node', '-e', "console.log(\"error TS2322: Type 'string' is not assignable to type 'number'.\");process.exit(1)"], 'candidate', 'zero'),
+    ];
+    // Diagnostics still matter when the caller requests a tiny report body.
+    value.providers[0]!.operations[0]!.maxOutputBytes = 1;
+    const validated = reviewEvidenceManifestSchema.validate(value);
+    const input = { source: 'git diff', diff: '', changedFiles: [] };
+    const evidence = await executeEvidencePlan(
+      context(repo), input, validated, createCandidateBinding(repo, input, validated),
+    );
+    expect(evidence.records.map((entry) => [entry.status, entry.fresh, entry.exitStatus])).toEqual([
+      ['runtime-incomplete', false, 1],
+      ['runtime-incomplete', false, 1],
+      ['verified-pass', true, 0],
+      ['verified-failure', true, 1],
+    ]);
+    for (const entry of evidence.records) expect(entry.snapshotDigestAfter).toBe(entry.snapshotDigestBefore);
+    expect(evidence.completeness).toMatchObject({ complete: false, hostEligible: false });
+    expect(existsSync(join(repo, '.tsbuildinfo'))).toBe(false);
   });
 
   test('each operation receives an independent HOME and TMPDIR', async () => {

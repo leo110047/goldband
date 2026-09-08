@@ -11,6 +11,7 @@ const {
   findHighRiskPatch,
 } = require('./high-risk-policy');
 const { recordHookTelemetry } = require('./telemetry');
+const { reviewLaunchAdvisory } = require('./review-launch-advisory');
 function loadCrossReviewGate() {
   return requireFirst([
     path.resolve(
@@ -214,6 +215,8 @@ function buildPostToolUsePatchContext(input) {
 }
 
 function evaluatePostToolUseResult(input) {
+  const reviewAdvice = reviewLaunchAdvisory(input);
+  if (reviewAdvice) return resultAdditionalContext('PostToolUse', reviewAdvice);
   return (
     buildPostToolUseFailureContext(input) || buildPostToolUsePatchContext(input)
   );

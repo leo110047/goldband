@@ -15,7 +15,7 @@
     "test:decision-guidance": "bash scripts/verify-decision-guidance.sh",
     "lint:style": "node scripts/check-code-style.mjs",
     "lint:style:staged": "node scripts/check-code-style.mjs --staged",
-    "test:hook-router": "node hooks/scripts/tools/replay-hook-router.js && node scripts/test-claude-hook-router-review-readonly.mjs && node scripts/test-codex-high-risk-policy.mjs && node scripts/test-codex-hook-router.mjs && node scripts/test-workflow-trigger-routing.mjs && node scripts/test-hook-noise-policy.mjs && node scripts/test-claude-config-verification-runtime.mjs",
+    "test:hook-router": "node hooks/scripts/tools/replay-hook-router.js && node scripts/test-claude-hook-router-review-readonly.mjs && node scripts/test-codex-high-risk-policy.mjs && node scripts/test-codex-hook-router.mjs && node scripts/test-workflow-trigger-routing.mjs && node scripts/test-hook-noise-policy.mjs && node scripts/test-review-launch-advisory.mjs && node scripts/test-claude-config-verification-runtime.mjs",
     "test:telemetry": "node scripts/test-telemetry-schema.mjs && node scripts/test-telemetry.mjs && node scripts/test-telemetry-otlp.mjs && node scripts/test-telemetry-miner.mjs",
     "test:hook-router:coverage": "node scripts/check-hook-router-coverage.mjs",
     "test:cross-review": "node scripts/test-cross-review.mjs && node scripts/test-cross-review-regressions.mjs",

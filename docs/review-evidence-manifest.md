@@ -262,6 +262,13 @@ Script launcher 必須把 interpreter 寫進 argv，例如：
 
 不要只寫 `scripts/check-contract.sh`。Runtime 會拒絕 path-shaped executable，避免 shebang／interpreter 與依賴邊界變成隱含 contract。
 
+### Writable build caches
+
+程式快照唯讀；`HOME`、`TMPDIR`、`TMP`、`TEMP` 是每個 operation 專屬的可寫暫存目錄。
+TypeScript 啟用 `incremental` 時，`--noEmit` 仍會寫快取；請在原 compiler 指令加上
+`--tsBuildInfoFile "$TMPDIR/typecheck.tsbuildinfo"`（須由 shell 展開，不同 project 使用不同檔名）。
+`TS5033` 寫入權限失敗屬於 `runtime-incomplete`，不能充當 RED 通過或程式缺陷證據。
+
 ### Python 3.14 + uv runtime
 
 直接 Python 指令（`python`、`python3`、`python3.14` 等數字版本，以及 `d`／`t`／`w`、`.exe` 變體，不分大小寫）缺少 `pythonRuntime` 時，validator 會在執行前拒絕。只有精確的 `python3.14` 指令與下列契約受支援；其他版本或變體必須改成受支援的宣告，不能只補欄位。
@@ -313,6 +320,9 @@ lockfile、offline artifact，或 environment/bootstrap 完整性失敗，都會
 typed `runtime-incomplete`，不執行 project gate，也不啟動 semantic host。只有
 preflight 通過後，gate 的 declared exit mismatch 才是 fresh
 `verified-failure`。
+
+缺 offline wheel 時，在審查外依 candidate 的 `uv.lock` 備齊 macOS／Python 相容的
+uv cache 後重跑；Linux container 已安裝的套件不能替代它，gate 仍維持 network deny。
 
 ## Network 與 authorizations
 

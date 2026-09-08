@@ -1069,7 +1069,7 @@ describe("Codex trusted workflow launcher install", () => {
 	test("distinguishes verified, outer-sandbox runtime-incomplete, and unverified coverage", () => {
 		const sandboxDenied = {
 			status: "runtime-incomplete",
-			outputSummary: "runner incomplete: sandbox-exec denied or could not initialize the operation",
+			outputSummary: "runner incomplete: operation initialization or compiler output access failed; keep the snapshot read-only and direct build caches to TMPDIR",
 		};
 		expect(classifyInstalledReviewPath(sandboxDenied, true))
 			.toBe("outer-sandbox-runtime-incomplete");
@@ -1355,7 +1355,7 @@ function classifyInstalledReviewPath(
 		nestedEvidenceBoundaryUnavailable &&
 		record.status === "runtime-incomplete" &&
 		record.outputSummary.includes(
-			"runner incomplete: sandbox-exec denied or could not initialize the operation",
+			"runner incomplete: operation initialization or compiler output access failed; keep the snapshot read-only and direct build caches to TMPDIR",
 		)
 	) {
 		return "outer-sandbox-runtime-incomplete";

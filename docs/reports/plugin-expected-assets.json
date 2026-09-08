@@ -55,6 +55,11 @@
         "commandHooks": 3,
         "promptHooks": 0
       },
+      "PostToolUseFailure": {
+        "entries": 1,
+        "commandHooks": 1,
+        "promptHooks": 0
+      },
       "Stop": {
         "entries": 1,
         "commandHooks": 1,
@@ -106,7 +111,8 @@
       "codex/hooks/high-risk-policy.js",
       "codex/hooks/module-loader.js",
       "codex/hooks/telemetry.js",
-      "codex/hooks/telemetry-schema.cjs"
+      "codex/hooks/telemetry-schema.cjs",
+      "codex/hooks/review-launch-advisory.js"
     ],
     "reason": "Codex plugins exist but package Codex skills/apps/MCP, not Claude Code settings. Root Codex install remains install.sh."
   },

@@ -21,6 +21,7 @@ export const MACOS_REVIEW_HOST_TEST_NAMES = [
   'review evidence contracts > applicability selects only scoped providers and excludes unrelated cells from completeness',
   'review evidence contracts > regression and property providers preserve RED/GREEN and replay metadata',
   'review evidence contracts > each operation receives an independent read-only snapshot',
+  'review evidence contracts > compiler output denial cannot satisfy RED and redirecting the cache preserves the read-only snapshot',
   'review evidence contracts > each operation receives an independent HOME and TMPDIR',
   'review evidence contracts > successful output containing sandbox is not treated as launcher failure',
   'review evidence contracts > evidence sandbox denies reads outside declared runtime and candidate roots',

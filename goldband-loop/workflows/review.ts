@@ -1674,7 +1674,7 @@ function deterministicEvidenceFindings(evidence: ReviewEvidenceBundle): ReviewFi
       summary: `Typed evidence operation ${record.id} violated its declared contract.`,
       evidence: `exit=${record.exitStatus ?? 'incomplete'} outputDigest=${record.outputDigest} candidate=${record.candidateDigest}`,
       failureScenario: record.cellIds.map((cellId) => cells.get(cellId)?.behavior ?? cellId).join('; '),
-      recommendation: `Replay the project-owned operation and repair the candidate at provider ${record.providerId ?? record.owner}.`,
+      recommendation: `Replay the project-owned operation at provider ${record.providerId ?? record.owner} and inspect its diagnostics to distinguish a candidate defect from a runner or environment failure before choosing a repair.`,
       suggestedVerification: record.replayCommand?.join(' '),
       reproductionStep: record.replayCommand?.join(' '),
       classification: 'verified-failure',

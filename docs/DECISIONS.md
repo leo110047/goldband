@@ -641,9 +641,9 @@ entrypoints, skills, and repository instructions instead of lifecycle hooks.
 
 Implementation contract:
 
-- `SessionStart`, `SessionEnd`, `PreCompact`, `PostCompact`, and generic
-  `PostToolUseFailure` reminders are not registered and emit no output when
-  evaluated directly.
+- `SessionStart`, `SessionEnd`, `PreCompact`, and `PostCompact` are not registered.
+  `PostToolUseFailure` is silent except for a failed Goldband review command;
+  its advisory points to the installed launch contract without retrying or changing permissions.
 - Hook events with no implementation are not registered merely to display a
   status message.
 - Context restore remains an explicit Goldband workflow. Starting or resuming

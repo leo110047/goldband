@@ -62,7 +62,6 @@ function testPassiveLifecycleHooksAreNotRegistered() {
   ).hooks;
   const passiveEvents = [
     'SessionStart',
-    'PostToolUseFailure',
     'PreCompact',
     'PostCompact',
     'SessionEnd',
@@ -72,6 +71,8 @@ function testPassiveLifecycleHooksAreNotRegistered() {
     assert.equal(claude[eventName], undefined, `${eventName} is passive noise`);
     assert.equal(plugin[eventName], undefined, `${eventName} is plugin noise`);
   }
+  assert.equal(claude.PostToolUseFailure[0].matcher, 'Bash');
+  assert.equal(plugin.PostToolUseFailure[0].matcher, 'Bash');
   assert.equal(
     codex.SessionStart,
     undefined,

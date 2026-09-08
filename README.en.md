@@ -10,6 +10,8 @@ English | [中文](README.md)
 - Manages local Claude Code and Codex configuration, with installation checks and uninstall commands.
 - Optionally adds Goldband Loop for code review, investigation, planning, QA, and other workflows.
 
+On review failure, Claude/Codex hooks point to the installed launch contract; incomplete environment evidence points to that run's report. Hooks do not retry automatically.
+
 ## Before Installing
 
 - Have Git, Node.js, and the Claude Code or Codex CLI you intend to use available.

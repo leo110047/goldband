@@ -148,9 +148,26 @@ function balancedExpression(source: string, start: number): string | undefined {
 	return undefined;
 }
 
+const COMPILER_OUTPUT_PERMISSION_FAILURE = /^error TS5033: Could not write file '[^\r\n]+': [^\r\n]*(?:operation not permitted|permission denied|read-only file system)\b[^\r\n]*$/im;
+
+export function createCompilerOutputDiagnosticCapture() {
+	let tail = "";
+	let denied = false;
+	return {
+		write(chunk: string) {
+			if (denied) return;
+			const window = tail + chunk;
+			denied = COMPILER_OUTPUT_PERMISSION_FAILURE.test(window);
+			// Keep split diagnostics across chunks without retaining the build log.
+			tail = window.slice(-16 * 1024);
+		},
+		get denied() { return denied; },
+	};
+}
+
 export function isEvidenceSandboxRuntimeFailure(
 	sandboxCommand: string,
-	result: { reason: string; exitCode: number; stderr?: string },
+	result: { reason: string; exitCode: number; stderr?: string; stdout?: string; compilerOutputDenied?: boolean },
 	brokered = false,
 ): boolean {
 	if (
@@ -169,8 +186,16 @@ export function isEvidenceSandboxRuntimeFailure(
 		result.exitCode === 71 && /^(?:sandbox-exec:|sandbox_init:)/im.test(stderr);
 	const dynamicLoaderFailedBeforeMain =
 		result.exitCode !== 0 && /^dyld\[\d+\]:/m.test(stderr);
+	// TypeScript reports output failures on stdout as well as stderr. An
+	// unwritable output (including --noEmit's incremental cache) is incomplete
+	// evidence, even when its exit code happens to match a declared RED result.
+	// Do not classify arbitrary mentions of sandbox/EPERM or type errors here.
+	const compilerOutputDenied = result.exitCode !== 0 &&
+		(result.compilerOutputDenied || COMPILER_OUTPUT_PERMISSION_FAILURE.test(
+			`${result.stdout ?? ""}\n${stderr}`,
+		));
 	return (
-		brokerFailed || sandboxInitializationFailed || dynamicLoaderFailedBeforeMain
+		brokerFailed || sandboxInitializationFailed || dynamicLoaderFailedBeforeMain || compilerOutputDenied
 	);
 }
 
