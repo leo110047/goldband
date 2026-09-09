@@ -47,6 +47,7 @@ import {
 	assertValidReviewScopeFlags,
 	INDEPENDENT_REVIEWER_ERROR,
 	REVIEW_ACTIVE_ENV,
+	REVIEW_CONTRACT_ROOT_ENV,
 	REVIEW_EVIDENCE_DURABILITY_ENV,
 	REVIEW_EVIDENCE_DURABILITY_EPHEMERAL,
 	REVIEW_SCOPE_FLAGS,
@@ -437,7 +438,7 @@ function reviewContract(args: string[]): number {
 		);
 	}
 	const command = args[0];
-	const needsState = command === "inspect" || command === "import" || command === "remove";
+	const needsState = command === "import" || command === "remove";
 	const runtimeEnvironment = needsState
 		? prepareReviewProcessEnvironment(process.env)
 		: undefined;
@@ -920,6 +921,9 @@ export function prepareReviewProcessEnvironment(
 		env,
 		options.home ?? homedir(),
 	);
+	// Contract lookup stays on the durable project registry even when evidence
+	// output must move to a sandbox-writable temporary directory.
+	cleanEnv[REVIEW_CONTRACT_ROOT_ENV] = evidenceRoot;
 	const probe = options.probeStateRoot ?? probeWritableStateRoot;
 	try {
 		probe(evidenceRoot);

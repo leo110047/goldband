@@ -16,6 +16,22 @@
         "required": ["id", "owner", "kind", "lifecycle", "cellIds", "applicability", "executionContext", "operations"],
         "allOf": [
           {
+            "if": { "properties": { "executionContext": { "properties": { "runner": { "const": "local-host" } }, "required": ["runner"] } }, "required": ["executionContext"] },
+            "then": {
+              "properties": {
+                "id": { "enum": ["review-evidence-tests", "work-map-review-tests", "installed-runtime-tests"] },
+                "kind": { "const": "project-gate" },
+                "lifecycle": { "const": "persistent" },
+                "executionContext": { "properties": { "lane": { "const": "goldband-local-review-host" } } },
+                "operations": { "maxItems": 1, "items": { "properties": {
+                  "network": { "const": "host" }, "target": { "const": "candidate" },
+                  "expectedExit": { "const": "zero" }, "evidenceLevel": { "const": "local" }
+                } } }
+              }
+            },
+            "else": { "properties": { "operations": { "items": { "properties": { "network": { "not": { "const": "host" } } } } } } }
+          },
+          {
             "if": { "properties": { "lifecycle": { "const": "transition" } }, "required": ["lifecycle"] },
             "then": { "required": ["transitionBinding"] },
             "else": { "not": { "required": ["transitionBinding"] } }
@@ -90,7 +106,7 @@
                 "required": ["sandboxOwner", "runner", "lane"],
                 "properties": {
                   "sandboxOwner": { "const": "provider" },
-                  "runner": { "enum": ["host-seatbelt", "github-actions"] },
+                  "runner": { "enum": ["host-seatbelt", "github-actions", "local-host"] },
                   "lane": { "type": "string", "minLength": 1 }
                 }
               }
@@ -168,7 +184,7 @@
                 "expectedExitCode": { "type": "integer", "minimum": 1, "maximum": 255 },
                 "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 900000 },
                 "maxOutputBytes": { "type": "integer", "minimum": 1, "maximum": 65536 },
-                "network": { "enum": ["deny", "authorized"] },
+                "network": { "enum": ["deny", "authorized", "host"] },
                 "authorizationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
                 "evidenceLevel": { "enum": ["fixture", "local", "sandboxed-service", "live-provider", "device-platform", "production-readback"] },
                 "requiredSystemTools": {

@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 import {
   closeSync,
   constants,
-  existsSync,
   fstatSync,
   lstatSync,
   mkdirSync,
@@ -17,6 +16,8 @@ import {
 import { basename, dirname, join, resolve } from 'node:path';
 import {
   assertValidReviewExecutionOptions,
+  MAX_REVIEW_DIFF_BYTES,
+  MAX_REVIEW_PROMPT_OVERHEAD_BYTES,
   REVIEW_EVIDENCE_DURABILITY_ENV,
   REVIEW_EVIDENCE_DURABILITY_EPHEMERAL,
 } from '../lib/review-runtime-contract';
@@ -34,7 +35,6 @@ import {
 } from './review-engine';
 import {
   buildClosureInput,
-  claimInitialReviewClosure,
   classifyReviewFindings,
   closureResultsSchema,
   createCandidateBinding,
@@ -42,6 +42,7 @@ import {
   executeEvidencePlan,
   initialReviewArtifactDigest,
   readClosureArtifact,
+  reviewFindingCellIds,
   reviewLineageAuthority,
   removeInitialReviewRuntimeReceipt,
   validateClosureResults,
@@ -53,11 +54,18 @@ import {
   type ReviewEvidenceManifest,
 } from './review-evidence';
 import {
-  closureArtifactResolution,
   resolveReviewContract,
 } from './review-contract-resolution';
 import {
-  assertReviewContractNotWeaker,
+  reviewContractChanges,
+  reviewContractChangesPrompt,
+  reviewContractAssessmentJsonSchema,
+  validateReviewContractAssessment,
+  type ReviewContractChange,
+  type ReviewContractReview,
+} from './review-contract-changes';
+import {
+  assertReviewContractBoundary,
   finalizeClosureReviewLineage,
   finalizeInitialReviewLineage,
   prepareReviewLineage,
@@ -111,11 +119,8 @@ export type UntrackedDiffState = {
   includedBytes: number;
 };
 
-export const MAX_REVIEW_DIFF_BYTES = 256 * 1024;
-export const MAX_REVIEW_PROMPT_OVERHEAD_BYTES = 48 * 1024;
 const MAX_REVIEW_MATRIX_PROMPT_BYTES = 16 * 1024;
 const MAX_REVIEW_EVIDENCE_PROMPT_BYTES = 16 * 1024;
-const MAX_REVIEW_CLOSURE_PROMPT_BYTES = 32 * 1024;
 const REVIEW_GIT_MAX_BUFFER_BYTES = MAX_REVIEW_DIFF_BYTES + (1024 * 1024);
 const REVIEW_FILE_READ_CHUNK_BYTES = 64 * 1024;
 
@@ -147,6 +152,7 @@ type ReviewEvidenceRunState = {
   lineageKey: Buffer;
   verdict?: ReviewVerdict;
   rules: ReturnType<typeof coreReviewRules>;
+  contractReview: ReviewContractReview;
 };
 
 const reviewEvidenceRuns = new Map<string, ReviewEvidenceRunState>();
@@ -276,33 +282,9 @@ function planEvidence(ctx: WorkflowContext) {
     assertWorkMapClosureCausality(closureArtifact, workMapBinding);
   }
   const workspace = resolveReviewWorkspace(ctx.cwd);
-  const defaultManifestExists = existsSync(join(workspace.repositoryRoot, 'goldband.review-evidence.json'));
-  let loaded;
-  try {
-    loaded = resolveReviewContract(
-      closureArtifact && !defaultManifestExists && !ctx.options.evidenceManifestFile
-        ? { ...ctx, options: { ...ctx.options, mode: 'real' } }
-        : ctx,
-      input,
-    );
-  } catch (error) {
-    const missingContract = error instanceof Error &&
-      error.message.startsWith('review/code evidence contract is required before semantic review');
-    if (!closureArtifact || defaultManifestExists || ctx.options.evidenceManifestFile || !missingContract) {
-      throw error;
-    }
-    loaded = {
-      manifest: closureArtifact.evidence.manifest,
-      source: closureArtifact.evidence.manifestSource,
-      resolution: closureArtifact.evidence.contractResolution ?? closureArtifactResolution(
-        ctx.cwd,
-        closureArtifact.evidence.manifest,
-        closureArtifact.evidence.manifestSource,
-      ),
-    };
-  }
+  const loaded = resolveReviewContract(ctx, input, closureArtifact);
   for (const extension of loaded.monotonicExtensions ?? []) {
-    assertReviewContractNotWeaker(extension.baseline, extension.effective);
+    assertReviewContractBoundary(extension.baseline, extension.effective);
   }
   const binding = createCandidateBinding(workspace.repositoryRoot, input, loaded.manifest, ctx.options.base);
   const manifest = loaded.manifest.providers.some((provider) => provider.lifecycle === 'transition')
@@ -349,6 +331,7 @@ function planEvidence(ctx: WorkflowContext) {
     candidateDigest: binding.candidateDigest,
     behaviorContractDigest: binding.behaviorContractDigest,
     manifest,
+    baselineManifest: loaded.monotonicExtensions[0]?.baseline,
     contractResolution: loaded.resolution,
     closureArtifact,
     runId: ctx.runId,
@@ -358,9 +341,6 @@ function planEvidence(ctx: WorkflowContext) {
     closure = closureArtifact
       ? buildClosureInput(closureArtifact, binding, input.diff, manifest)
       : undefined;
-    if (closureArtifact && closure) {
-      claimInitialReviewClosure(ctx, closureArtifact, binding.candidateDigest);
-    }
   } catch (error) {
     releaseReviewLineage(lineage);
     throw error;
@@ -388,6 +368,12 @@ function planEvidence(ctx: WorkflowContext) {
     lineage,
     lineageKey: authority.key,
     rules,
+    contractReview: {
+      changes: reviewContractChanges([
+        lineage.requiredManifest,
+        ...(closureArtifact ? [closureArtifact.evidence.manifest] : []),
+      ], manifest),
+    },
   });
   return input;
 }
@@ -468,15 +454,14 @@ async function runReview(ctx: WorkflowContext): Promise<ReviewFinding[]> {
   const adapter = adapterFor(reviewHost(ctx));
   const coreRules = evidenceState.rules;
   const prompt = evidenceState.closure?.kind === 'semantic-closure'
-    ? buildClosureReviewPrompt(ctx, evidenceState.closure, evidenceState.evidence, coreRules)
-    : buildReviewPrompt(
-      ctx,
-      input.diff,
-      coreRules,
-      input.impact,
-      workMapBinding?.intentBundle,
-      evidenceState.evidence,
-    );
+    ? buildClosureReviewPrompt(evidenceState.closure, evidenceState.evidence, coreRules, evidenceState.contractReview.changes)
+    : buildReviewPrompt(ctx, input.diff, {
+      rules: coreRules,
+      impact: input.impact,
+      workMapIntentBundle: workMapBinding?.intentBundle,
+      evidence: evidenceState.evidence,
+      contractChanges: evidenceState.contractReview.changes,
+    });
   recordReviewPromptTelemetry(
     ctx,
     adapter.name,
@@ -525,17 +510,41 @@ async function runReview(ctx: WorkflowContext): Promise<ReviewFinding[]> {
     throw new Error('review/code host-call budget exceeded');
   }
   assertCandidateFresh(ctx, input, evidenceState);
+  return parseReviewHostResult(result.parsed, evidenceState);
+}
+
+function parseReviewHostResult(parsed: unknown, evidenceState: ReviewEvidenceRunState): ReviewFinding[] {
+  evidenceState.contractReview.assessment = validateReviewContractAssessment(
+    (parsed as { contractReview?: unknown })?.contractReview,
+    evidenceState.contractReview.changes,
+  );
   if (evidenceState.closure?.kind === 'semantic-closure') {
-    const parsed = result.parsed as { results?: unknown };
-    const results = closureResultsSchema.validate(parsed?.results);
+    const results = closureResultsSchema.validate((parsed as { results?: unknown })?.results).map((entry) =>
+      evidenceState.contractReview.assessment?.preserved === false
+        ? { ...entry, status: 'evidence-incomplete' as const, summary: evidenceState.contractReview.assessment.summary }
+        : entry);
     evidenceState.closureResults = validateClosureResults(
       results,
       evidenceState.closure,
       evidenceState.evidence,
+      evidenceState.contractReview.assessment,
     );
     return evidenceState.closure.artifact.findings;
   }
-  const coreFindings = findingsSchema.validate(unwrapFindings(result.parsed));
+  const coreFindings = findingsSchema.validate(unwrapFindings(parsed));
+  if (evidenceState.contractReview.assessment?.preserved === false) {
+    coreFindings.push({
+      file: '<review-contract>',
+      severity: 'high',
+      summary: 'Changed review checks do not establish preservation of the original requirements.',
+      evidence: evidenceState.contractReview.assessment.summary,
+      classification: 'semantic-concern',
+      category: 'review-contract',
+      failureScenario: 'A changed check may accept an invalid candidate or omit required verification.',
+      reproductionStep: 'Review the recorded before/after contract and demonstrate valid and invalid cases.',
+      behaviorCellIds: [...new Set(evidenceState.contractReview.changes.flatMap((change) => change.cellIds))],
+    });
+  }
   return aggregateReviewFindings(coreFindings);
 }
 
@@ -559,7 +568,8 @@ function verifyFindings(ctx: WorkflowContext): ReviewFinding[] {
   const semantic = classifyReviewFindings(
     aggregateReviewFindings(findingsSchema.validate(ctx.input)),
     state.evidence,
-  ).filter((finding) => isRuntimeDiagnostic(finding) || hasConcreteFailurePath(finding));
+  ).filter((finding) => isRuntimeDiagnostic(finding) || hasConcreteFailurePath(finding) ||
+    (finding.category === 'review-contract' && state.contractReview.assessment?.preserved === false));
   return aggregateReviewFindings([
     ...deterministic,
     ...semantic,
@@ -849,48 +859,7 @@ function persistReviewPhaseArtifact(
   workMapBinding?: WorkMapReviewBinding,
 ): { file: string; receiptId?: string; verdict: ReviewVerdict } {
   if (evidenceState.closure?.kind !== 'semantic-closure') {
-    const artifactFile = createReviewArtifactPath(dir, ctx.runId);
-    const predecessor = evidenceRepairPredecessor(evidenceState);
-    const issued = writeInitialReviewArtifact(artifactFile, {
-      schemaVersion: 1,
-      phase: 'initial',
-      runId: ctx.runId,
-      binding: evidenceState.evidence.binding,
-      diff: evidenceState.input.diff,
-      evidence: evidenceState.evidence,
-      findings,
-      hostCallCount: evidenceState.hostCallCount as 0 | 1,
-      ...(predecessor ? { predecessor } : {}),
-      createdAt: new Date().toISOString(),
-    }, ctx, workMapBinding
-      ? {
-        kind: 'work-map',
-        workId: workMapBinding.workId,
-        ticketId: workMapBinding.ticketId,
-        mapRevision: workMapBinding.mapRevision,
-        claimAttempt: workMapBinding.claimAttempt,
-        subjectDigest: workMapBinding.subject.digest,
-      }
-      : { kind: 'standalone' });
-    try {
-      const verdict = finalizeInitialReviewLineage({
-        handle: evidenceState.lineage,
-        key: evidenceState.lineageKey,
-        repository: evidenceState.evidence.binding.repository,
-        baseDigest: evidenceState.evidence.binding.baseDigest,
-        scopeDigest: initialLineageScopeDigest(evidenceState, workMapBinding),
-        artifact: issued,
-        artifactFile,
-        findings,
-        deterministicComplete: evidenceState.evidence.completeness.complete,
-        runtimeIncomplete: evidenceState.evidence.completeness.runtimeIncompleteCellIds.length > 0,
-      });
-      return { file: artifactFile, receiptId: issued.runtimeReceipt.id, verdict };
-    } catch (error) {
-      removeInitialReviewRuntimeReceipt(ctx, issued.runtimeReceipt.id);
-      rmSync(artifactFile, { force: true });
-      throw error;
-    }
+    return persistInitialReviewPhase(ctx, dir, evidenceState, { findings, workMapBinding });
   }
   const closureArtifactFile = join(dir, `${ctx.runId}-review-closure.json`);
   writeFileSync(closureArtifactFile, `${JSON.stringify({
@@ -906,12 +875,14 @@ function persistReviewPhaseArtifact(
     affectedFindingIds: evidenceState.closure.affectedFindingIds,
     affectedCellIds: evidenceState.closure.affectedCellIds,
     evidence: evidenceState.evidence,
+    ...(evidenceState.contractReview.changes.length > 0 ? { contractReview: evidenceState.contractReview } : {}),
     results: evidenceState.closureResults ?? [],
     hostCallCount: evidenceState.hostCallCount,
     createdAt: new Date().toISOString(),
   }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
   try {
     const verdict = finalizeClosureReviewLineage({
+      artifact: evidenceState.closure.artifact,
       handle: evidenceState.lineage,
       key: evidenceState.lineageKey,
       results: evidenceState.closureResults ?? [],
@@ -921,6 +892,57 @@ function persistReviewPhaseArtifact(
     return { file: closureArtifactFile, verdict };
   } catch (error) {
     rmSync(closureArtifactFile, { force: true });
+    throw error;
+  }
+}
+
+function persistInitialReviewPhase(
+  ctx: WorkflowContext,
+  dir: string,
+  evidenceState: ReviewEvidenceRunState,
+  { findings, workMapBinding }: { findings: ReviewFinding[]; workMapBinding?: WorkMapReviewBinding },
+): { file: string; receiptId: string; verdict: ReviewVerdict } {
+  const artifactFile = createReviewArtifactPath(dir, ctx.runId);
+  const predecessor = evidenceRepairPredecessor(evidenceState);
+  const issued = writeInitialReviewArtifact(artifactFile, {
+    schemaVersion: 1,
+    phase: 'initial',
+    runId: ctx.runId,
+    binding: evidenceState.evidence.binding,
+    diff: evidenceState.input.diff,
+    evidence: evidenceState.evidence,
+    findings,
+    ...(evidenceState.contractReview.changes.length > 0 ? { contractReview: evidenceState.contractReview } : {}),
+    hostCallCount: evidenceState.hostCallCount as 0 | 1,
+    ...(predecessor ? { predecessor } : {}),
+    createdAt: new Date().toISOString(),
+  }, ctx, workMapBinding
+    ? {
+      kind: 'work-map',
+      workId: workMapBinding.workId,
+      ticketId: workMapBinding.ticketId,
+      mapRevision: workMapBinding.mapRevision,
+      claimAttempt: workMapBinding.claimAttempt,
+      subjectDigest: workMapBinding.subject.digest,
+    }
+    : { kind: 'standalone' });
+  try {
+    const verdict = finalizeInitialReviewLineage({
+      handle: evidenceState.lineage,
+      key: evidenceState.lineageKey,
+      repository: evidenceState.evidence.binding.repository,
+      baseDigest: evidenceState.evidence.binding.baseDigest,
+      scopeDigest: initialLineageScopeDigest(evidenceState, workMapBinding),
+      artifact: issued,
+      artifactFile,
+      findings,
+      deterministicComplete: evidenceState.evidence.completeness.complete,
+      runtimeIncomplete: evidenceState.evidence.completeness.runtimeIncompleteCellIds.length > 0,
+    });
+    return { file: artifactFile, receiptId: issued.runtimeReceipt.id, verdict };
+  } catch (error) {
+    removeInitialReviewRuntimeReceipt(ctx, issued.runtimeReceipt.id);
+    rmSync(artifactFile, { force: true });
     throw error;
   }
 }
@@ -1309,11 +1331,15 @@ function reviewHost(ctx: WorkflowContext): 'mock' | 'claude' | 'codex' {
 export function buildReviewPrompt(
   ctx: WorkflowContext,
   diff: string,
-  rules = coreReviewRules(ctx.cwd, diff),
-  impact?: ReviewImpactContext,
-  workMapIntentBundle?: string,
-  evidence?: ReviewEvidenceBundle,
+  context: {
+    rules?: ReturnType<typeof coreReviewRules>;
+    impact?: ReviewImpactContext;
+    workMapIntentBundle?: string;
+    evidence?: ReviewEvidenceBundle;
+    contractChanges?: ReviewContractChange[];
+  } = {},
 ): string {
+  const { rules = coreReviewRules(ctx.cwd, diff), impact, workMapIntentBundle, evidence, contractChanges = [] } = context;
   const matrixProjection = evidence ? behaviorMatrixProjection(evidence) : '';
   const evidenceProjection = evidence ? evidenceSummaryProjection(evidence) : '';
   if (Buffer.byteLength(matrixProjection) > MAX_REVIEW_MATRIX_PROMPT_BYTES) {
@@ -1333,6 +1359,7 @@ export function buildReviewPrompt(
     workMapIntentBundle ?? '',
     matrixProjection,
     evidenceProjection,
+    reviewContractChangesPrompt(contractChanges),
     'Inspect applicable AGENTS.md and CLAUDE.md files in the repository root and touched-file ancestors as review policy.',
     'Find omissions in the declared behavior matrix, contracts, tests, ownership, wiring, and failure model. Treat deterministic evidence status as authoritative; do not claim an unbound concern is a verified failure.',
     'Use the diff to define scope. Inspect repository context outside the diff when needed to verify wiring, authoritative ownership, consumers, registrations, and dead code.',
@@ -1350,10 +1377,10 @@ export function buildReviewPrompt(
 }
 
 export function buildClosureReviewPrompt(
-  _ctx: WorkflowContext,
   closure: ClosureReviewInput,
   evidence: ReviewEvidenceBundle,
   rules: ReturnType<typeof coreReviewRules>,
+  contractChanges = reviewContractChanges([closure.artifact.evidence.manifest], evidence.manifest),
 ): string {
   const payload = {
     originalCandidateDigest: closure.artifact.binding.candidateDigest,
@@ -1368,14 +1395,17 @@ export function buildClosureReviewPrompt(
       line: finding.line,
       summary: finding.summary,
       evidenceIds: finding.evidenceIds,
-      behaviorCellIds: finding.behaviorCellIds,
+      behaviorCellIds: reviewFindingCellIds(finding, closure.artifact.evidence, evidence.manifest),
     })),
+    originalContractReview: closure.artifact.contractReview,
     rerunEvidence: evidence.records.map(projectClosureEvidenceRecord),
   };
   const payloadText = JSON.stringify(payload);
   const prompt = [
     '# Scoped Closure Review',
     'Decide only whether each original finding is closed, still-open, a direct repair regression, or evidence-incomplete. Do not rebuild a general findings inventory.',
+    'A semantic finding may use project-declared path applicability when its original record omitted behavior cells. Close only with fresh related evidence and inspection of the actual repair; if no declared coverage applies, return evidence-incomplete. Preserve every original finding ID. Corrected checks require the separate contractReview assessment; do not describe a changed command as an identical rerun.',
+    reviewContractChangesPrompt(contractChanges),
     'APPLICABLE_GOLDBAND_RULES_START',
     rules.text,
     'APPLICABLE_GOLDBAND_RULES_END',
@@ -1389,9 +1419,11 @@ export function buildClosureReviewPrompt(
   if (prompt.includes(`DIFF_START\n${closure.artifact.diff}\nDIFF_END`)) {
     throw new Error('closure prompt must not contain the original full diff');
   }
-  if (Buffer.byteLength(prompt) > MAX_REVIEW_CLOSURE_PROMPT_BYTES) {
+  const overheadBytes = Buffer.byteLength(prompt) - Buffer.byteLength(closure.repairDelta);
+  if (Buffer.byteLength(closure.repairDelta) > MAX_REVIEW_DIFF_BYTES ||
+      overheadBytes > MAX_REVIEW_PROMPT_OVERHEAD_BYTES) {
     throw new Error(
-      `review closure prompt exceeds ${MAX_REVIEW_CLOSURE_PROMPT_BYTES} byte limit: ` +
+      `review closure prompt exceeds shared input budget: ` +
       `actualBytes=${Buffer.byteLength(prompt)} rulesBytes=${Buffer.byteLength(rules.text)} ` +
       `payloadBytes=${Buffer.byteLength(payloadText)} deltaBytes=${Buffer.byteLength(closure.repairDelta)}`,
     );
@@ -2025,6 +2057,7 @@ const findingsJsonSchema = {
 const closureEnvelopeJsonSchema = {
   type: 'object',
   properties: {
+    contractReview: reviewContractAssessmentJsonSchema,
     results: {
       type: 'array',
       items: {
@@ -2045,15 +2078,16 @@ const closureEnvelopeJsonSchema = {
       },
     },
   },
-  required: ['results'],
+  required: ['results', 'contractReview'],
   additionalProperties: false,
 };
 
 const findingsEnvelopeJsonSchema = {
   type: 'object',
   properties: {
+    contractReview: reviewContractAssessmentJsonSchema,
     findings: findingsJsonSchema,
   },
-  required: ['findings'],
+  required: ['findings', 'contractReview'],
   additionalProperties: false,
 };

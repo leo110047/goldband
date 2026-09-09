@@ -1,4 +1,15 @@
+// Initial and closure reviews share bounded input budgets.
+export const MAX_REVIEW_DIFF_BYTES = 256 * 1024;
+export const MAX_REVIEW_PROMPT_OVERHEAD_BYTES = 48 * 1024;
+
+export const REVIEW_HOST_EVIDENCE_POLICY = {
+  reviewHostEvidenceLane: "macos-review-contract-host",
+  reviewLocalEvidenceLane: "goldband-local-review-host",
+} as const;
+
 import { assertValidClaudeReviewMaxBudgetUsd } from '../workflows/review-budgets';
+
+export const REVIEW_CONTRACT_ROOT_ENV = "GOLDBAND_REVIEW_CONTRACT_ROOT";
 
 export const REVIEW_ACTIVE_ENV = "GOLDBAND_REVIEW_ACTIVE";
 const NESTED_REVIEW_ERROR =

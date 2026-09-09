@@ -17,10 +17,14 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
 try {
   const rootManifest = reviewEvidenceManifestSchema.validate(
-    readJson(join(root, 'goldband.review-evidence.json')),
+    readJson(
+      join(root, 'goldband-loop/test/fixtures/review-contracts/goldband.json'),
+    ),
   );
   reviewEvidenceManifestSchema.validate(
-    readJson(join(root, 'goldband-loop', 'goldband.review-evidence.json')),
+    readJson(
+      join(root, 'goldband-loop/test/fixtures/review-contracts/loop.json'),
+    ),
   );
   assert.deepEqual(
     selectedEvidenceProviderIds(rootManifest, [

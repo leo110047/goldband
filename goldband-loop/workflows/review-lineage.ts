@@ -19,8 +19,10 @@ import type {
   ReviewEvidenceManifest,
 } from './review-evidence';
 import { initialReviewArtifactDigest } from './review-evidence';
+import { isReviewLocalMigration } from './review-local-evidence';
 import { isReviewCiMigration } from './review-ci-evidence';
 import type { ReviewContractResolution } from './review-contract-resolution';
+import { preserveReviewContractSemantics, reviewOperationBoundary } from './review-contract-changes';
 import type { ReviewClosureResult, ReviewFinding } from './types';
 
 const LINEAGE_SCHEMA_VERSION = 1;
@@ -119,6 +121,7 @@ export type ReviewLineageHandle = {
   scopeLocks: Array<{ lockFile: string; ownerToken: string }>;
   predecessor?: ReviewLineagePayload;
   manifest: ReviewEvidenceManifest;
+  requiredManifest: ReviewEvidenceManifest;
   contractResolution: ReviewContractResolution;
   policy: ReviewPolicy;
   policyDigest: string;
@@ -157,17 +160,19 @@ export function prepareReviewLineage(options: {
   candidateDigest: string;
   behaviorContractDigest: string;
   manifest: ReviewEvidenceManifest;
+  baselineManifest?: ReviewEvidenceManifest;
   contractResolution: ReviewContractResolution;
   closureArtifact?: InitialReviewArtifact;
   runId: string;
 }): ReviewLineageHandle {
   const policy = readBaseReviewPolicy(options.cwd, options.baseRef);
   const policyDigest = sha256(stableJson({ policy, safetyPolicy: options.policyIdentityDigest }));
-  const id = lineageId(options.repository, options.baseDigest, options.scopeDigest);
+  let id = lineageId(options.repository, options.baseDigest, options.scopeDigest);
+  const requestedId = id;
   const root = join(options.storeRoot, 'review-lineages');
   mkdirSync(root, { recursive: true, mode: 0o700 });
-  const file = join(root, `${id}.json`);
-  const lockFile = join(root, `${id}.lock`);
+  let file = join(root, `${id}.json`);
+  let lockFile = join(root, `${id}.lock`);
   const scopeLocks = acquireScopeLocks({
     root,
     repository: options.repository,
@@ -177,65 +182,20 @@ export function prepareReviewLineage(options: {
     runId: options.runId,
   });
   try {
+    if (options.closureArtifact) {
+      id = findClosureLineageOwner(root, options.key, options.closureArtifact);
+      file = join(root, `${id}.json`);
+      lockFile = join(root, `${id}.lock`);
+    }
     acquireLineageLock(lockFile, options.runId);
   } catch (error) {
     releaseScopeLocks(scopeLocks);
     throw error;
   }
   try {
-    let predecessor = readSignedLineage(file, options.key);
-    let migratedLegacy = false;
-    if (predecessor && repositoryInstanceChanged(predecessor, options.contractResolution)) {
-      if (predecessor.unresolvedFindings.length > 0 || options.closureArtifact) {
-        throw new Error(
-          'review lineage repository identity changed while authoritative findings or closure remain',
-        );
-      }
-      predecessor = undefined;
-    }
-    if (!predecessor && options.legacyScopeDigest && options.legacyScopeDigest !== options.scopeDigest) {
-      const legacyId = lineageId(options.repository, options.baseDigest, options.legacyScopeDigest);
-      const legacyFile = join(root, `${legacyId}.json`);
-      const legacyLock = join(root, `${legacyId}.lock`);
-      acquireLineageLock(legacyLock, `${options.runId}-legacy-read`);
-      try {
-        const legacy = readSignedLineage(legacyFile, options.key);
-        if (legacy?.unresolvedFindings.length) {
-          if (repositoryInstanceChanged(legacy, options.contractResolution)) {
-            throw new Error(
-              'review lineage repository identity changed while authoritative findings remain',
-            );
-          }
-          const verifiedArtifact = legacy.scopeSummary && legacy.authoritativeArtifact?.createdAt
-            ? undefined
-            : closureArtifactScope(legacy, options.closureArtifact) ?? verifiedArtifactScope(legacy);
-          const legacySummary = legacy.scopeSummary ?? verifiedArtifact?.changedFiles;
-          const exactCandidate = legacy.lastCandidateDigest === options.candidateDigest;
-          if ((legacySummary && scopesOverlap(legacySummary, options.scopeSummary)) ||
-              (!legacySummary && exactCandidate)) {
-            predecessor = {
-              ...legacy,
-              id,
-              scopeDigest: options.scopeDigest,
-              scopeSummary: legacySummary ?? [...options.scopeSummary],
-              collectionScopeDigest: options.legacyScopeDigest,
-              acceptanceDigest: options.acceptanceDigest,
-              ...(legacy.authoritativeArtifact ? {
-                authoritativeArtifact: {
-                  ...legacy.authoritativeArtifact,
-                  ...(legacy.authoritativeArtifact.createdAt || !verifiedArtifact?.createdAt
-                    ? {}
-                    : { createdAt: verifiedArtifact.createdAt }),
-                },
-              } : {}),
-            };
-            migratedLegacy = true;
-          }
-        }
-      } finally {
-        releaseReviewLineage({ lockFile: legacyLock, ownerToken: `${options.runId}-legacy-read` });
-      }
-    }
+    let predecessor = currentRepositoryPredecessor(
+      readSignedLineage(file, options.key), options.contractResolution, Boolean(options.closureArtifact),
+    );
     let inheritedOverlap = false;
     if (!predecessor && options.legacyScopeDigest) {
       predecessor = findOverlappingScopedLineage({
@@ -247,28 +207,13 @@ export function prepareReviewLineage(options: {
         collectionScopeDigest: options.legacyScopeDigest,
         scopeSummary: options.scopeSummary,
         contractResolution: options.contractResolution,
+        candidateDigest: options.candidateDigest,
       });
       inheritedOverlap = Boolean(predecessor);
     }
+    if (!predecessor && options.closureArtifact) throw new Error('closure requires its authoritative signed lineage');
     if (predecessor) {
-      if (!migratedLegacy && !inheritedOverlap &&
-          predecessor.acceptanceDigest !== options.acceptanceDigest) {
-        throw new Error('review acceptance lineage changed without a new authoritative scope');
-      }
-      if (predecessor.policyDigest !== policyDigest) {
-        throw new Error('review safety policy identity changed inside an existing lineage');
-      }
-      if (predecessor.unresolvedFindings.length > 0 && !options.closureArtifact) {
-        throw new Error(openFindingsMessage(predecessor));
-      }
-      if (!options.closureArtifact &&
-          predecessor.lastCandidateDigest === options.candidateDigest &&
-          predecessor.lastBehaviorContractDigest === options.behaviorContractDigest) {
-        throw new Error('duplicate initial review identity already has an authoritative result');
-      }
-      if (options.closureArtifact) {
-        assertAuthoritativeClosureArtifact(predecessor, options.closureArtifact);
-      }
+      assertLineageAdmission(predecessor, options, policyDigest, inheritedOverlap || id !== requestedId);
       const appliedWaiverIds = assertMonotonicContract(
         predecessor.requiredManifest,
         options.manifest,
@@ -278,39 +223,10 @@ export function prepareReviewLineage(options: {
       enforceMinimumEvidenceLevels(options.manifest, policy);
       return {
         id, file, lockFile, ownerToken: options.runId, scopeLocks,
-        predecessor, manifest: options.manifest, contractResolution: options.contractResolution, policy,
-        policyDigest, acceptanceDigest: options.acceptanceDigest,
-        scopeSummary: [...options.scopeSummary],
-        collectionScopeDigest: options.legacyScopeDigest,
-        candidateDigest: options.candidateDigest,
-        behaviorContractDigest: options.behaviorContractDigest,
-        appliedWaiverIds,
-      };
-    }
-    if (options.closureArtifact) {
-      const predecessor = bootstrapLineageFromArtifact({
-        id,
-        artifact: options.closureArtifact,
-        scopeDigest: options.scopeDigest,
-        collectionScopeDigest: options.legacyScopeDigest,
-        acceptanceDigest: options.acceptanceDigest,
-        policy,
-        policyDigest,
-      });
-      assertAuthoritativeClosureArtifact(predecessor, options.closureArtifact);
-      const appliedWaiverIds = assertMonotonicContract(
-        predecessor.requiredManifest,
-        options.manifest,
-        predecessor.unresolvedFindings,
-        policy,
-      );
-      enforceMinimumEvidenceLevels(options.manifest, policy);
-      return {
-        id, file, lockFile, ownerToken: options.runId, scopeLocks,
-        predecessor, manifest: options.manifest, contractResolution: options.contractResolution, policy,
-        policyDigest, acceptanceDigest: options.acceptanceDigest,
-        scopeSummary: [...options.scopeSummary],
-        collectionScopeDigest: options.legacyScopeDigest,
+        predecessor, manifest: options.manifest, requiredManifest: predecessor.requiredManifest, contractResolution: options.contractResolution, policy,
+        policyDigest, acceptanceDigest: predecessor.acceptanceDigest,
+        scopeSummary: [...(predecessor.scopeSummary ?? options.scopeSummary)],
+        collectionScopeDigest: predecessor.collectionScopeDigest ?? options.legacyScopeDigest,
         candidateDigest: options.candidateDigest,
         behaviorContractDigest: options.behaviorContractDigest,
         appliedWaiverIds,
@@ -319,7 +235,7 @@ export function prepareReviewLineage(options: {
     enforceMinimumEvidenceLevels(options.manifest, policy);
     return {
       id, file, lockFile, ownerToken: options.runId, scopeLocks,
-      manifest: options.manifest, contractResolution: options.contractResolution, policy,
+      manifest: options.manifest, requiredManifest: options.baselineManifest ?? options.manifest, contractResolution: options.contractResolution, policy,
       policyDigest, acceptanceDigest: options.acceptanceDigest,
       scopeSummary: [...options.scopeSummary],
       collectionScopeDigest: options.legacyScopeDigest,
@@ -333,61 +249,41 @@ export function prepareReviewLineage(options: {
   }
 }
 
-function bootstrapLineageFromArtifact(options: {
-  id: string;
-  artifact: InitialReviewArtifact;
-  scopeDigest: string;
-  collectionScopeDigest?: string;
-  acceptanceDigest: string;
-  policy: ReviewPolicy;
-  policyDigest: string;
-}): ReviewLineagePayload {
-  const unresolvedFindings = options.artifact.findings.map((finding) => ({
-    findingId: finding.id!,
-    behaviorCellIds: [...new Set(finding.behaviorCellIds ?? [])].sort(),
-    artifactRunId: options.artifact.runId,
-    artifactReceiptId: options.artifact.runtimeReceipt.id,
-    blocking: Boolean(finding.blocking),
-  }));
-  return {
-    schemaVersion: 1,
-    id: options.id,
-    revision: 0,
-    repository: options.artifact.binding.repository,
-    baseDigest: options.artifact.binding.baseDigest,
-    scopeDigest: options.scopeDigest,
-    scopeSummary: [...options.artifact.binding.changedFiles].sort(),
-    collectionScopeDigest: options.collectionScopeDigest,
-    acceptanceDigest: options.acceptanceDigest,
-    policyDigest: options.policyDigest,
-    policy: options.policy,
-    requiredManifest: options.artifact.evidence.manifest,
-    ...(options.artifact.evidence.contractResolution
-      ? { contractResolution: options.artifact.evidence.contractResolution }
-      : {}),
-    unresolvedFindings,
-    authoritativeArtifact: {
-      file: '<migrated-runtime-receipt>',
-      digest: initialReviewArtifactDigest(options.artifact),
-      runId: options.artifact.runId,
-      receiptId: options.artifact.runtimeReceipt.id,
-      createdAt: options.artifact.createdAt,
-      hostCallCount: options.artifact.hostCallCount,
-    },
-    verdict: verdictFor({
-      noNewFindings: options.artifact.findings.length === 0,
-      unresolvedCount: unresolvedFindings.length,
-      blockerCount: unresolvedFindings.filter((finding) => finding.blocking).length,
-      deterministicComplete: options.artifact.evidence.completeness.complete,
-      runtimeIncomplete: options.artifact.evidence.completeness.runtimeIncompleteCellIds.length > 0,
-      closureComplete: false,
-      initialReview: true,
-    }),
-    appliedWaiverIds: [],
-    updatedAt: options.artifact.createdAt,
-    lastCandidateDigest: options.artifact.binding.candidateDigest,
-    lastBehaviorContractDigest: options.artifact.binding.behaviorContractDigest,
-  };
+function assertLineageAdmission(
+  predecessor: ReviewLineagePayload,
+  options: Parameters<typeof prepareReviewLineage>[0],
+  policyDigest: string,
+  inheritedScope: boolean,
+): void {
+  if (!inheritedScope &&
+      predecessor.acceptanceDigest !== options.acceptanceDigest) {
+    throw new Error('review acceptance lineage changed without a new authoritative scope');
+  }
+  if (predecessor.policyDigest !== policyDigest) {
+    throw new Error('review safety policy identity changed inside an existing lineage');
+  }
+  if (predecessor.unresolvedFindings.length > 0 && !options.closureArtifact) {
+    throw new Error(openFindingsMessage(predecessor));
+  }
+  if (!options.closureArtifact &&
+      predecessor.lastCandidateDigest === options.candidateDigest &&
+      predecessor.lastBehaviorContractDigest === options.behaviorContractDigest) {
+    throw new Error('duplicate initial review identity already has an authoritative result');
+  }
+  if (options.closureArtifact) {
+    assertAuthoritativeClosureArtifact(predecessor, options.closureArtifact);
+  }
+}
+
+function findClosureLineageOwner(root: string, key: Buffer, artifact: InitialReviewArtifact): string {
+  const digest = initialReviewArtifactDigest(artifact);
+  const owners = readdirSync(root).filter((name) => name.endsWith('.json')).flatMap((name) => {
+    const lineage = readSignedLineage(join(root, name), key);
+    return lineage?.authoritativeArtifact?.receiptId === artifact.runtimeReceipt.id &&
+      lineage.authoritativeArtifact.digest === digest ? [lineage.id] : [];
+  });
+  if (owners.length !== 1) throw new Error('closure requires one authoritative signed lineage; missing or ambiguous owner');
+  return owners[0]!;
 }
 
 export function finalizeInitialReviewLineage(options: {
@@ -402,13 +298,7 @@ export function finalizeInitialReviewLineage(options: {
   deterministicComplete: boolean;
   runtimeIncomplete: boolean;
 }): ReviewVerdict {
-  const unresolvedFindings = options.findings.map((finding) => ({
-      findingId: finding.id!,
-      behaviorCellIds: [...new Set(finding.behaviorCellIds ?? [])].sort(),
-      artifactRunId: options.artifact.runId,
-      artifactReceiptId: options.artifact.runtimeReceipt.id,
-      blocking: Boolean(finding.blocking),
-    }));
+  const unresolvedFindings = lineageFindings(options.artifact, options.findings);
   const verdict = verdictFor({
     noNewFindings: options.findings.length === 0,
     unresolvedCount: unresolvedFindings.length,
@@ -430,10 +320,7 @@ export function finalizeInitialReviewLineage(options: {
     acceptanceDigest: options.handle.acceptanceDigest,
     policyDigest: options.handle.policyDigest,
     policy: options.handle.policy,
-    requiredManifest: mergedRequiredManifest(
-      options.handle.predecessor?.requiredManifest,
-      options.handle.manifest,
-    ),
+    requiredManifest: initialRequiredManifest(options.handle, options.artifact),
     contractResolution: options.handle.contractResolution,
     unresolvedFindings,
     ...(options.findings.length > 0 ? {
@@ -455,21 +342,30 @@ export function finalizeInitialReviewLineage(options: {
   return verdict;
 }
 
+function lineageFindings(artifact: InitialReviewArtifact, findings: ReviewFinding[]): UnresolvedFinding[] {
+  return findings.map((finding) => ({
+    findingId: finding.id!, behaviorCellIds: [...new Set(finding.behaviorCellIds ?? [])].sort(),
+    artifactRunId: artifact.runId, artifactReceiptId: artifact.runtimeReceipt.id,
+    blocking: Boolean(finding.blocking),
+  }));
+}
+
 export function finalizeClosureReviewLineage(options: {
   handle: ReviewLineageHandle;
   key: Buffer;
+  artifact: InitialReviewArtifact;
   results: ReviewClosureResult[];
   deterministicComplete: boolean;
   runtimeIncomplete: boolean;
 }): ReviewVerdict {
   const predecessor = options.handle.predecessor;
   if (!predecessor) throw new Error('closure lineage predecessor is missing');
+  assertAuthoritativeClosureArtifact(predecessor, options.artifact);
   const resultById = new Map(options.results.map((result) => [result.findingId, result]));
-  const unresolvedFindings = predecessor.unresolvedFindings.filter(
-    (finding) => resultById.get(finding.findingId)?.status !== 'closed',
-  );
+  const unresolvedFindings = lineageFindings(options.artifact, options.artifact.findings
+    .filter((finding) => resultById.get(finding.id!)?.status !== 'closed'));
   const closureComplete =
-    options.results.length === predecessor.unresolvedFindings.length &&
+    unresolvedFindings.length === 0 &&
     options.results.every((result) => result.status === 'closed');
   const verdict = verdictFor({
     noNewFindings: false,
@@ -483,8 +379,10 @@ export function finalizeClosureReviewLineage(options: {
   writeSignedLineage(options.handle.file, {
     ...predecessor,
     revision: predecessor.revision + 1,
-    requiredManifest: mergedRequiredManifest(predecessor.requiredManifest, options.handle.manifest),
+    requiredManifest: closureComplete ? options.handle.manifest : preserveReviewContractSemantics(predecessor.requiredManifest, options.handle.manifest),
     contractResolution: options.handle.contractResolution,
+    scopeSummary: predecessor.scopeSummary ?? options.handle.scopeSummary,
+    collectionScopeDigest: predecessor.collectionScopeDigest ?? options.handle.collectionScopeDigest,
     unresolvedFindings,
     ...(unresolvedFindings.length > 0 && predecessor.authoritativeArtifact
       ? { authoritativeArtifact: predecessor.authoritativeArtifact }
@@ -565,19 +463,8 @@ function assertBehaviorCellNotWeaker(
   policy: ReviewPolicy,
   applied: Set<string>,
 ): void {
-  const semantics = (cell: typeof before) => stableJson({
-    ...cell,
-    risk: undefined,
-    disposition: undefined,
-    providerIds: undefined,
-    reason: undefined,
-  });
-  if (semantics(before) !== semantics(after)) {
-    authorizeOrThrow(policy, before.id, 'cell-contract', applied, 'required behavior semantics changed');
-  }
-  if (!isDispositionStrengthening(before.disposition, after.disposition) &&
-      before.reason !== after.reason) {
-    authorizeOrThrow(policy, before.id, 'cell-contract', applied, 'required behavior reason changed');
+  if (before.kind !== after.kind) {
+    authorizeOrThrow(policy, before.id, 'cell-contract', applied, 'required behavior kind changed');
   }
   if (riskRank(after.risk) < riskRank(before.risk)) {
     authorizeOrThrow(policy, before.id, 'risk', applied, 'required behavior risk was downgraded');
@@ -595,6 +482,7 @@ function providerContractWeakened(
   after: ReviewEvidenceManifest['providers'][number] | undefined,
 ): boolean {
   if (!before || !after) return true;
+  if (isReviewLocalMigration(before, after)) return false;
   return before.owner !== after.owner ||
     before.kind !== after.kind ||
     before.lifecycle !== after.lifecycle ||
@@ -603,7 +491,7 @@ function providerContractWeakened(
     before.cellIds.some((cellId) => !after.cellIds.includes(cellId)) ||
     before.operations.some((operation) => {
       const successor = after.operations.find((item) => item.id === operation.id);
-      return !successor || stableJson(normalizeOperation(operation)) !== stableJson(normalizeOperation(successor));
+      return !successor || stableJson(reviewOperationBoundary(operation)) !== stableJson(reviewOperationBoundary(successor));
     });
 }
 
@@ -630,7 +518,8 @@ function applicabilityPreservedOrStrengthened(
       beforePrefix === afterPrefix || beforePrefix.startsWith(`${afterPrefix}/`)));
 }
 
-export function assertReviewContractNotWeaker(
+/** Hard coverage/execution invariants; changed descriptions and argv require semantic review. */
+export function assertReviewContractBoundary(
   baseline: ReviewEvidenceManifest,
   effective: ReviewEvidenceManifest,
 ): void {
@@ -743,13 +632,12 @@ function emptyPolicy(): ReviewPolicy {
   };
 }
 
-function mergedRequiredManifest(
-  _predecessor: ReviewEvidenceManifest | undefined,
-  current: ReviewEvidenceManifest,
+function initialRequiredManifest(
+  handle: ReviewLineageHandle,
+  artifact: InitialReviewArtifact,
 ): ReviewEvidenceManifest {
-  // Monotonic comparison (and any typed waiver) has already authorized this
-  // successor. It becomes the next authoritative predecessor.
-  return current;
+  if (artifact.hostCallCount === 1 && artifact.contractReview?.assessment?.preserved) return handle.manifest;
+  return preserveReviewContractSemantics(handle.requiredManifest, handle.manifest);
 }
 
 function assertAuthoritativeClosureArtifact(
@@ -805,6 +693,7 @@ function findOverlappingScopedLineage(options: {
   collectionScopeDigest: string;
   scopeSummary: string[];
   contractResolution: ReviewContractResolution;
+  candidateDigest: string;
 }): ReviewLineagePayload | undefined {
   const candidates = readdirSync(options.root)
     .filter((name) => name.endsWith('.json'))
@@ -813,19 +702,29 @@ function findOverlappingScopedLineage(options: {
     const file = join(options.root, name);
     if (file === options.currentFile) continue;
     const lineage = readSignedLineage(file, options.key);
-    if (!lineage || lineage.repository !== options.repository ||
-        lineage.baseDigest !== options.baseDigest ||
-        lineage.collectionScopeDigest !== options.collectionScopeDigest ||
-        lineage.unresolvedFindings.length === 0 ||
-        !lineage.scopeSummary || !scopesOverlap(lineage.scopeSummary, options.scopeSummary)) {
-      continue;
-    }
-    if (repositoryInstanceChanged(lineage, options.contractResolution)) {
-      throw new Error(
-        'review lineage repository identity changed while overlapping authoritative findings remain',
-      );
-    }
-    return lineage;
+    const matching = lineage && overlappingReviewLineage(lineage, options);
+    if (matching) return matching;
+  }
+  return undefined;
+}
+
+function overlappingReviewLineage(lineage: ReviewLineagePayload, options: Parameters<typeof findOverlappingScopedLineage>[0]): ReviewLineagePayload | undefined {
+  if (lineage.repository !== options.repository || lineage.baseDigest !== options.baseDigest ||
+      (lineage.collectionScopeDigest ?? lineage.scopeDigest) !== options.collectionScopeDigest) return undefined;
+  const exactCandidate = lineage.lastCandidateDigest === options.candidateDigest;
+  if (lineage.unresolvedFindings.length === 0 && !exactCandidate) return undefined;
+  const summary = lineage.scopeSummary ?? verifiedArtifactScope(lineage)?.changedFiles;
+  if (summary ? !scopesOverlap(summary, options.scopeSummary) : !exactCandidate) return undefined;
+  if (repositoryInstanceChanged(lineage, options.contractResolution)) {
+    throw new Error('review lineage repository identity changed while overlapping authoritative findings remain');
+  }
+  return { ...lineage, ...(summary ? { scopeSummary: summary } : {}) };
+}
+
+function currentRepositoryPredecessor(lineage: ReviewLineagePayload | undefined, current: ReviewContractResolution, closure: boolean): ReviewLineagePayload | undefined {
+  if (!lineage || !repositoryInstanceChanged(lineage, current)) return lineage;
+  if (lineage.unresolvedFindings.length > 0 || closure) {
+    throw new Error('review lineage repository identity changed while authoritative findings or closure remain');
   }
   return undefined;
 }
@@ -840,19 +739,6 @@ function repositoryInstanceChanged(
     predecessorDigest &&
     predecessorDigest !== current.repositoryIdentity.commonDirectoryInstanceDigest,
   );
-}
-
-function closureArtifactScope(
-  lineage: ReviewLineagePayload,
-  artifact?: InitialReviewArtifact,
-): { changedFiles: string[]; createdAt: string } | undefined {
-  if (!artifact || initialReviewArtifactDigest(artifact) !== lineage.authoritativeArtifact?.digest) {
-    return undefined;
-  }
-  return {
-    changedFiles: [...new Set(artifact.binding.changedFiles)].sort(),
-    createdAt: artifact.createdAt,
-  };
 }
 
 function openFindingsMessage(lineage: ReviewLineagePayload): string {
@@ -916,13 +802,6 @@ function verdictFor(input: {
       !input.runtimeIncomplete &&
       input.blockerCount === 0 &&
       (input.initialReview || input.closureComplete),
-  };
-}
-
-function normalizeOperation<T extends { requiredSystemTools?: string[] }>(operation: T): T & { requiredSystemTools: string[] } {
-  return {
-    ...(JSON.parse(JSON.stringify(operation)) as T),
-    requiredSystemTools: operation.requiredSystemTools ?? [],
   };
 }
 

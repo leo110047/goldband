@@ -115,6 +115,9 @@ class MockHostAdapter implements HostAdapter {
     _cwd?: string,
     _options?: HostRunOptions,
   ): Promise<HostResult> {
+    const contractReview = prompt.includes('REVIEW_CONTRACT_CHANGES_START')
+      ? { preserved: true, summary: 'Mock-only contract assessment; this is not live review evidence.' }
+      : null;
     if (prompt.includes('# Scoped Closure Review')) {
       const payloadText = prompt
         .split('CLOSURE_INPUT_START\n')[1]
@@ -129,6 +132,7 @@ class MockHostAdapter implements HostAdapter {
         .map((finding) => finding.id)
         .filter((id): id is string => Boolean(id));
       const parsed = {
+        contractReview,
         results: [...new Set(ids)].map((findingId) => {
           const cells = new Set(
             payload.originalFindings?.find((finding) => finding.id === findingId)?.behaviorCellIds ?? [],
@@ -148,7 +152,7 @@ class MockHostAdapter implements HostAdapter {
       return { text: JSON.stringify(parsed), parsed };
     }
     const findings = mockFindingsForPrompt(prompt);
-    const parsed = { findings };
+    const parsed = { findings, contractReview };
     return { text: JSON.stringify(parsed), parsed };
   }
 }

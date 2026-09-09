@@ -654,7 +654,7 @@ describe("goldband review code launcher", () => {
 			mkdirSync(temporaryRoot, { recursive: true });
 			const probed: string[] = [];
 			const result = prepareReviewProcessEnvironment(
-				{},
+				{ GOLDBAND_REVIEW_CONTRACT_ROOT: "/caller-controlled" },
 				{
 					home: join(fixture, "blocked-home"),
 					coordinationRoot: join(fixture, "review-coordination"),
@@ -676,6 +676,7 @@ describe("goldband review code launcher", () => {
 				realpathSync(join(fixture, "review-coordination")),
 			);
 			expect(result.env.GOLDBAND_HOME).toBe(temporaryRoot);
+			expect(result.env.GOLDBAND_REVIEW_CONTRACT_ROOT).toBe(join(fixture, "blocked-home", ".goldband"));
 			expect(result.env.GOLDBAND_REVIEW_EVIDENCE_DURABILITY).toBe(
 				"ephemeral",
 			);

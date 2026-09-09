@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { REVIEW_HOST_EVIDENCE_POLICY } from "../lib/review-runtime-contract";
 
 import { randomBytes } from "node:crypto";
 import {
@@ -61,7 +62,7 @@ const config = {
 	...existing,
 	schemaVersion: 2,
 	runtimeHost: "claude",
-	reviewHostEvidenceLane: "macos-review-contract-host",
+	...REVIEW_HOST_EVIDENCE_POLICY,
 	reviewReceiptAuthorityRoot: authorityRoot,
 	reviewReceiptKeyFile: keyFile,
 	reviewReceiptStore: receiptStore,

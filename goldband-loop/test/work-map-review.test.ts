@@ -418,12 +418,15 @@ describe("Work Map review readback", () => {
 		store.create(analysisInput(), "codex");
 		const manifest = writeNoopEvidenceManifest(state);
 		fs.mkdirSync(path.join(repo, "reports"));
-		fs.writeFileSync(path.join(repo, "reports", "ticket-a.md"), "before-repair\n");
+		fs.writeFileSync(path.join(repo, "reports", "ticket-a.md"), "GOLDBAND_HIGH_SEMANTIC_FIXTURE\n");
 		recordAnalysisArtifact({ cwd: repo, env: { ...process.env, GOLDBAND_HOME: state }, workId: "work-a", ticketId: "ticket-a", artifactPath: "reports/ticket-a.md" });
-		const initialArtifact = issueMockWorkMapInitialReview({
-			store, repo, state, manifestFile: manifest, runId: "review-before-incomplete-closure",
-			injectRevisionRace: true,
+		const initial = await runWorkflow(getWorkflow("review/code"), {
+			mode: "mock", host: "mock", workId: "work-a", ticketId: "ticket-a",
+			cwd: repo, goldbandHome: state, evidenceManifestFile: manifest,
 		});
+		const initialArtifact = initial.artifacts.find((file) => file.endsWith("-review-evidence.json"));
+		expect(initialArtifact).toBeDefined();
+		expect(store.read("work-a").tickets[0]?.status).toBe("claimed");
 		fs.writeFileSync(path.join(repo, "reports", "ticket-a.md"), "after-repair\n");
 		recordAnalysisArtifact({ cwd: repo, env: { ...process.env, GOLDBAND_HOME: state }, workId: "work-a", ticketId: "ticket-a", artifactPath: "reports/ticket-a.md" });
 		writeNoopEvidenceManifest(state, "unsupported");

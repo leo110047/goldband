@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { REVIEW_HOST_EVIDENCE_POLICY } from "../lib/review-runtime-contract";
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
@@ -301,7 +302,7 @@ export function installCodexReviewLauncher(
 				{
 					schemaVersion: 2,
 					runtimeHost: "codex",
-					reviewHostEvidenceLane: "macos-review-contract-host",
+					...REVIEW_HOST_EVIDENCE_POLICY,
 					codexExecutable: codexPath,
 					browserExecutable: join(runtimeRoot, "browse", "browse"),
 					browserServerScript: join(

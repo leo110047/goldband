@@ -1,3 +1,4 @@
+import { MAX_REVIEW_DIFF_BYTES, MAX_REVIEW_PROMPT_OVERHEAD_BYTES } from '../lib/review-runtime-contract';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
@@ -33,8 +34,6 @@ import type { EvaluationSignalSnapshot } from '../workflows/types';
 import {
   buildReviewPrompt,
   changedFilesFromPatch,
-  MAX_REVIEW_DIFF_BYTES,
-  MAX_REVIEW_PROMPT_OVERHEAD_BYTES,
   reviewSignalFromOutput,
   reviewSteps,
   untrackedFileDiff,
@@ -109,7 +108,7 @@ describe('workflow runtime', () => {
   test('core compatibility workflows emit evidence in mock mode', async () => {
     for (const workflow of integratedWorkflows()) {
       const options = workflow.name === 'review/code'
-        ? { diffFile: 'test/fixtures/workflows/review.diff' }
+        ? { diffFile: resolve(ROOT, 'test/fixtures/workflows/review.diff') }
         : workflow.name === 'ios/qa'
           ? { inputFile: writeInput('core-ios-qa.json', iosQaInput()) }
             : workflow.name === 'system/upgrade'
@@ -124,7 +123,7 @@ describe('workflow runtime', () => {
       const result = await runWorkflow(workflow, {
         ...options,
         mode: 'mock',
-        cwd: ROOT,
+        cwd: workflow.name === 'review/code' ? reviewTargetRepository(tmpHome) : ROOT,
         goldbandHome: tmpHome,
       });
       expect(result.workflow).toBe(workflow.name);
@@ -1231,9 +1230,9 @@ describe('workflow runtime', () => {
   test('review/code typed flow renders validated report', async () => {
     const result = await runWorkflow(getWorkflow('review/code'), {
       mode: 'mock',
-      cwd: ROOT,
+      cwd: reviewTargetRepository(tmpHome),
       goldbandHome: tmpHome,
-      diffFile: 'test/fixtures/workflows/review.diff',
+      diffFile: resolve(ROOT, 'test/fixtures/workflows/review.diff'),
     });
     expect(String(result.output)).toContain('Mock review finding');
     expect(String(result.output)).toContain('Evidence: + riskyChange();');
@@ -1498,8 +1497,8 @@ describe('workflow runtime', () => {
       '--max-iterations',
       '1',
       '--diff-file',
-      'test/fixtures/workflows/review.diff',
-    ], { GOLDBAND_HOME: tmpHome });
+      resolve(ROOT, 'test/fixtures/workflows/review.diff'),
+    ], { GOLDBAND_HOME: tmpHome }, reviewTargetRepository(tmpHome));
 
     expect(result.status).toBe(0);
     expect(result.stderr).toContain('--max-iterations is ignored without --loop');
@@ -2019,8 +2018,7 @@ describe('workflow runtime', () => {
     expect(core).not.toContain('Return only JSON');
 
     const judgmentOnly = buildReviewPrompt(ctx, '', {
-      ...coreReviewRules(PROJECT_ROOT, ''),
-      text: '',
+      rules: { ...coreReviewRules(PROJECT_ROOT, ''), text: '' },
     });
     expect(Buffer.byteLength(judgmentOnly)).toBeLessThanOrEqual(8 * 1024);
     expect(Buffer.byteLength(core) - Buffer.byteLength(diff))
@@ -2054,9 +2052,7 @@ describe('workflow runtime', () => {
     const prompt = buildReviewPrompt(
       ctx,
       'diff --git a/a.ts b/a.ts',
-      undefined,
-      undefined,
-      intent,
+      { workMapIntentBundle: intent },
     );
     expect(prompt).toContain(intent);
     expect(prompt.indexOf('WORK_MAP_INTENT_DATA_END')).toBeLessThan(
@@ -2965,11 +2961,12 @@ describe('workflow runtime', () => {
 function runCli(
   args: string[],
   env: Record<string, string | undefined> = {},
+  cwd = ROOT,
 ): { status: number | null; stderr: string } {
   const [first, ...rest] = args;
   const canonicalArgs = first?.includes('/') ? [...first.split('/'), ...rest] : args;
-  const result = spawnSync('bun', ['run', 'workflows/run.ts', ...canonicalArgs], {
-    cwd: ROOT,
+  const result = spawnSync('bun', ['run', resolve(ROOT, 'workflows/run.ts'), ...canonicalArgs], {
+    cwd,
     encoding: 'utf8',
     env: { ...process.env, ...env },
   });
@@ -3128,8 +3125,8 @@ function commitAll(repo: string, message: string): void {
   if (result.status !== 0) throw new Error(result.stderr || result.stdout);
 }
 
-function reviewTargetRepository(): string {
-  const repo = mkdtempSync(join(tmpdir(), 'goldband-review-target-'));
+function reviewTargetRepository(parent = tmpdir()): string {
+  const repo = mkdtempSync(join(parent, 'goldband-review-target-'));
   const initialized = spawnSync('git', ['init'], { cwd: repo, encoding: 'utf8' });
   if (initialized.status !== 0) throw new Error(initialized.stderr || initialized.stdout);
   writeFileSync(join(repo, 'fixture.txt'), 'base\n');

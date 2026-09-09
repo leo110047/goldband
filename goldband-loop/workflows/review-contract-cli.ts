@@ -19,7 +19,9 @@ import {
   removeReviewContract,
   type ReviewContractStoreInspection,
 } from './review-contract-store';
-import { assertReviewContractNotWeaker } from './review-lineage';
+import { isRegisteredReviewContractExtension } from './review-contract-resolution';
+import { assertReviewContractBoundary } from './review-lineage';
+import { reviewContractChanges } from './review-contract-changes';
 import { resolveReviewWorkspace } from './review-workspace';
 
 type Command = 'help' | 'init' | 'inspect' | 'import' | 'remove' | 'validate';
@@ -226,25 +228,12 @@ function renderInspection(store: ReviewContractStoreInspection) {
     : undefined;
   const base = readBaseRepositoryManifest(store.workspace.repositoryRoot, candidateManifest);
   const baseManifest = base?.manifest;
-  const baseline = baseManifest
-    ? {
-      kind: 'repository' as const,
-      identity: `git:${store.workspace.repositoryRoot}@HEAD:goldband.review-evidence.json`,
-      digest: digestManifest(baseManifest),
-    }
-    : store.entry
-      ? {
-        kind: 'runtime-store' as const,
-        identity: store.entryFile,
-        digest: store.entry.manifestDigest,
-      }
-      : undefined;
-  const baselineManifest = baseManifest ?? store.entry?.manifest;
-  let candidateCompatibility: { valid: boolean; reason?: string } | null = null;
+  const { baseline, baselineManifest, storeShadowed } = inspectionAuthority(store, baseManifest, candidateManifest);
+  let candidateCompatibility: { valid: boolean; requiresSemanticReview?: boolean; reason?: string } | null = null;
   if (candidateManifest && baselineManifest) {
     try {
-      assertReviewContractNotWeaker(baselineManifest, candidateManifest);
-      candidateCompatibility = { valid: true };
+      assertReviewContractBoundary(baselineManifest, candidateManifest);
+      candidateCompatibility = { valid: true, requiresSemanticReview: reviewContractChanges([baselineManifest], candidateManifest).length > 0 };
     } catch (error) {
       candidateCompatibility = {
         valid: false,
@@ -278,7 +267,7 @@ function renderInspection(store: ReviewContractStoreInspection) {
     runtimeStore: store.entry
       ? {
         present: true,
-        shadowed: Boolean(baseManifest),
+        shadowed: storeShadowed,
         identity: store.entryFile,
         digest: store.entry.manifestDigest,
         importedFrom: store.entry.importedFrom,
@@ -287,12 +276,32 @@ function renderInspection(store: ReviewContractStoreInspection) {
       : store.invalidReason
         ? {
           present: true,
-          shadowed: Boolean(baseManifest),
+          shadowed: storeShadowed,
           identity: store.entryFile,
           invalidReason: store.invalidReason,
         }
-        : { present: false, shadowed: false },
+        : { present: false, shadowed: false, identity: store.entryFile },
   };
+}
+
+function inspectionAuthority(store: ReviewContractStoreInspection, baseManifest?: ReviewEvidenceManifest, candidateManifest?: ReviewEvidenceManifest) {
+  const registryMigration = baseManifest && !candidateManifest && store.entry &&
+    isRegisteredReviewContractExtension(baseManifest, store.entry.manifest);
+  const baseline = baseManifest && !registryMigration
+    ? {
+      kind: 'repository' as const,
+      identity: `git:${store.workspace.repositoryRoot}@HEAD:goldband.review-evidence.json`,
+      digest: digestManifest(baseManifest),
+    }
+    : store.entry
+      ? {
+        kind: 'runtime-store' as const,
+        identity: store.entryFile,
+        digest: store.entry.manifestDigest,
+      }
+      : undefined;
+  const baselineManifest = registryMigration ? store.entry?.manifest : baseManifest ?? store.entry?.manifest;
+  return { baseline, baselineManifest, storeShadowed: Boolean(baseManifest) && !registryMigration };
 }
 
 function readRepositoryManifest(file: string): ReviewEvidenceManifest {

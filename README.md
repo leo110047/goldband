@@ -105,3 +105,28 @@ claude plugin uninstall goldband@goldband    # 移除 Claude plugin
 ## 授權
 
 [MIT License](LICENSE)。
+
+### Project review evidence
+
+`goldband review code --host codex` (or `--host claude`) discovers the current
+Git project's registered contract automatically in `~/.goldband/review-contracts`.
+Agents do not need to supply a manifest path. Use `goldband review contract inspect`
+to read the exact project identity, registry entry, and configuration status;
+inspection does not require write access to the state directory. Sandbox-local
+review output does not change the durable contract lookup location.
+
+Goldband's local authoring file is `~/.goldband/review-contracts/goldband/review-evidence.json`.
+Register a deliberate setup/update with `goldband review contract import --manifest <path>`.
+The files under `goldband-loop/test/fixtures/review-contracts` are versioned regression
+fixtures, not active project configuration; CI does not read a developer's home directory.
+
+Goldband's pre-push review runs its three macOS self-test recipes locally on the
+current candidate. It does not require committing or pushing that candidate to
+obtain CI evidence. CI still runs after push. The fixed local self-test runner
+uses native host permissions (not the general sealed evidence runner).
+
+Review check corrections are reviewed with their before/after definitions in
+the same independent review. Required coverage, execution permissions, fresh
+evidence, and unresolved finding history remain enforced. Legacy semantic
+findings can resolve their evidence through declared file coverage; unrelated
+passing tests cannot close them.

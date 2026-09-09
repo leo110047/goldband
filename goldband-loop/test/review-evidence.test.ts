@@ -19,7 +19,6 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import {
   buildClosureInput,
-  claimInitialReviewClosure,
   classifyReviewFindings,
   createCandidateBinding,
   evaluateEvidenceCompleteness,
@@ -28,6 +27,7 @@ import {
   isEvidenceSandboxRuntimeFailure,
   loadReviewEvidenceManifest,
   readClosureArtifact,
+  reviewFindingCellIds,
   reviewEvidenceManifestSchema,
   runtimeImageContentDigest,
   runtimeLibraryLiteralPaths,
@@ -46,7 +46,8 @@ import {
 import { getWorkflow } from '../workflows/registry';
 import { createCompilerOutputDiagnosticCapture } from '../workflows/review-evidence-sandbox';
 import { readReviewCiResult, reviewCandidateTree, collectReviewCiEvidence, validateReviewCiProvenance } from '../workflows/review-ci-evidence';
-import { assertReviewContractNotWeaker } from '../workflows/review-lineage';
+import { assertReviewContractBoundary } from '../workflows/review-lineage';
+import { reviewContractChanges, validateReviewContractAssessment } from '../workflows/review-contract-changes';
 import { runWorkflow } from '../workflows/runtime';
 import {
   buildClosureReviewPrompt,
@@ -74,15 +75,15 @@ afterEach(() => {
 });
 
 describe('review evidence contracts', () => {
-  test('manifest schema, repository manifests, and runtime validator share version 2', () => {
+  test('manifest schema, contract fixtures, and runtime validator share version 2', () => {
     const jsonSchema = JSON.parse(readFileSync(
       join(import.meta.dir, '../../schemas/review-evidence-manifest.schema.json'),
       'utf8',
     ));
     expect(jsonSchema.properties.schemaVersion.const).toBe(2);
     for (const file of [
-      join(import.meta.dir, '../../goldband.review-evidence.json'),
-      join(import.meta.dir, '../goldband.review-evidence.json'),
+      join(import.meta.dir, 'fixtures/review-contracts/goldband.json'),
+      join(import.meta.dir, 'fixtures/review-contracts/loop.json'),
       join(import.meta.dir, 'fixtures/workflows/review-evidence-pass.json'),
     ]) {
       const value = JSON.parse(readFileSync(file, 'utf8'));
@@ -1336,10 +1337,7 @@ describe('review evidence contracts', () => {
     const prompt = buildReviewPrompt(
       context('/repo'),
       'diff --git a/a.ts b/a.ts\n+changed();',
-      { bundle: { selected: [], snapshot: [] }, text: '' },
-      undefined,
-      undefined,
-      evidence,
+      { rules: { bundle: { selected: [], snapshot: [] }, text: '' }, evidence },
     );
     expect(prompt).toContain('BEHAVIOR_MATRIX_START');
     expect(prompt).toContain('TYPED_EVIDENCE_SUMMARY_START');
@@ -1660,7 +1658,7 @@ describe('review evidence contracts', () => {
     writeFileSync(join(fixtureRoot, 'probe.txt'), 'candidate\n');
 
     const rootManifest = JSON.parse(readFileSync(
-      join(import.meta.dir, '..', '..', 'goldband.review-evidence.json'),
+      join(import.meta.dir, 'fixtures/review-contracts/goldband.json'),
       'utf8',
     ));
     const value = {
@@ -2303,7 +2301,7 @@ describe('review evidence contracts', () => {
   test('root external-runner enforcement does not apply to a local-only dependency candidate', async () => {
     const repo = gitFixture();
     const rootManifest = reviewEvidenceManifestSchema.validate(
-      JSON.parse(readFileSync(join(import.meta.dir, '../../goldband.review-evidence.json'), 'utf8')),
+      JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/review-contracts/goldband.json'), 'utf8')),
     );
     const input = {
       source: 'git diff',
@@ -2338,7 +2336,7 @@ describe('review evidence contracts', () => {
     git(repo, ['add', '.']); git(repo, ['commit', '-m', 'provider scope']);
     writeFileSync(join(repo, 'goldband-loop/workflows/review-evidence.ts'), 'fixed();\n');
     const rootManifest = reviewEvidenceManifestSchema.validate(
-      JSON.parse(readFileSync(join(import.meta.dir, '../../goldband.review-evidence.json'), 'utf8')),
+      JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/review-contracts/goldband.json'), 'utf8')),
     );
     const input = {
       source: 'git diff',
@@ -2672,6 +2670,101 @@ describe('review evidence contracts', () => {
     }], closure, original.evidence)).toThrow('requires fresh rerun evidence');
   });
 
+  test('legacy unbound semantic findings use declared path coverage throughout closure', () => {
+    const original = initialArtifact();
+    original.findings[0] = {
+      ...original.findings[0]!, severity: 'medium', evidenceIds: [], behaviorCellIds: [],
+    };
+    original.evidence.manifest.providers[0]!.applicability = { kind: 'paths', pathPrefixes: ['a.ts'] };
+    const stored = JSON.stringify(original);
+    expect(classifyReviewFindings(original.findings, original.evidence)[0]!.behaviorCellIds)
+      .toEqual(['behavior-a']);
+    const closure = buildClosureInput(original, { ...original.binding, candidateDigest: 'd'.repeat(64) },
+      'diff --git a/a.ts b/a.ts\n+fixed();', original.evidence.manifest);
+    expect(closure.affectedCellIds).toEqual(['behavior-a']);
+    const result = { findingId: 'F-001', status: 'closed' as const, summary: 'Repaired and checked.', evidenceIds: ['gate:pass'] };
+    expect(validateClosureResults([result], closure, original.evidence)).toEqual([result]);
+    expect(JSON.stringify(original)).toBe(stored);
+    const addedGlobal = structuredClone(original.evidence);
+    addedGlobal.manifest.providers.push({
+      ...addedGlobal.manifest.providers[0]!, id: 'new-global', cellIds: ['other-behavior'],
+      applicability: { kind: 'global', reason: 'Candidate-added broad check.' },
+    });
+    addedGlobal.records.push({ ...record(), id: 'new-global:pass', providerId: 'new-global', cellIds: ['other-behavior'] });
+    expect(() => validateClosureResults([{ ...result, evidenceIds: ['new-global:pass'] }], closure, addedGlobal))
+      .toThrow('unrelated to finding behavior cells');
+
+    const uncovered = structuredClone(original);
+    uncovered.evidence.manifest.providers[0]!.applicability = { kind: 'paths', pathPrefixes: ['other.ts'] };
+    for (const severity of ['medium', 'high'] as const) {
+      uncovered.findings[0]!.severity = severity;
+      expect(classifyReviewFindings(uncovered.findings, uncovered.evidence)[0]!.behaviorCellIds).toEqual([]);
+    }
+    const noCoverage = { ...closure, artifact: uncovered };
+    expect(() => validateClosureResults([result], noCoverage, uncovered.evidence))
+      .toThrow('no behavior-cell evidence binding');
+    expect(validateClosureResults([{ ...result, status: 'still-open', evidenceIds: [] }], noCoverage, uncovered.evidence))
+      .toHaveLength(1);
+    uncovered.findings[0]!.classification = 'verified-failure';
+    expect(reviewFindingCellIds(uncovered.findings[0]!, original.evidence)).toEqual([]);
+  });
+
+  test('a check correction requires explicit semantic assessment and fresh matching evidence', () => {
+    const original = initialArtifact();
+    original.evidence.contractResolution = {
+      workspace: { invocationOffset: '' },
+    } as ReviewEvidenceBundle['contractResolution'];
+    original.findings[0]!.classification = 'verified-failure';
+    original.evidence.records[0]!.status = 'verified-failure';
+    original.evidence.records[0]!.exitStatus = 1;
+    const rerun = structuredClone(original.evidence);
+    rerun.manifest.behaviorMatrix[0]!.expected = 'Valid input passes; invalid input still fails.';
+    rerun.manifest.providers[0]!.operations[0]!.argv = ['node', 'corrected-check.js'];
+    rerun.records[0] = { ...rerun.records[0]!, status: 'verified-pass', exitStatus: 0, commandDigest: '9'.repeat(64) };
+    const closure = buildClosureInput(original, { ...original.binding, candidateDigest: 'd'.repeat(64) },
+      'diff --git a/a.ts b/a.ts\n+fixed();', rerun.manifest);
+    const changes = reviewContractChanges([original.evidence.manifest, original.evidence.manifest], rerun.manifest);
+    expect(changes.map((change) => change.kind)).toEqual(['behavior', 'command']);
+    expect(() => assertReviewContractBoundary(original.evidence.manifest, rerun.manifest)).not.toThrow();
+    expect(() => validateReviewContractAssessment(undefined, changes)).toThrow('explicit semantic contract assessment');
+    const result = { findingId: 'F-001', status: 'closed' as const, summary: 'Check corrected.', evidenceIds: ['gate:pass'] };
+    expect(() => validateClosureResults([result], closure, rerun)).toThrow('preserving contract assessment');
+    expect(() => validateClosureResults([result], closure, rerun, { preserved: false, summary: 'Invalid cases no longer fail.' }))
+      .toThrow('preserving contract assessment');
+    const assessment = { preserved: true, summary: 'Fixture assessment: valid and invalid cases remain covered.' };
+    expect(validateClosureResults([result], closure, rerun, assessment)).toEqual([result]);
+    rerun.contractResolution!.workspace.invocationOffset = 'other';
+    expect(() => validateClosureResults([result], closure, rerun, assessment)).toThrow('original failed operation');
+    rerun.contractResolution!.workspace.invocationOffset = '';
+    rerun.records[0]!.fresh = false;
+    expect(() => validateClosureResults([result], closure, rerun, assessment)).toThrow('passing fresh rerun evidence');
+    rerun.records[0]!.fresh = true;
+    rerun.manifest.providers[0]!.operations[0]!.expectedExit = 'nonzero';
+    rerun.manifest.providers[0]!.operations[0]!.expectedExitCode = 1;
+    expect(() => assertReviewContractBoundary(original.evidence.manifest, rerun.manifest)).toThrow('provider contract changed');
+    expect(() => validateClosureResults([result], closure, rerun, assessment)).toThrow('original failed operation');
+  });
+
+  test('Git no-index check correction preserves rejection of invalid input', () => {
+    const root = mkdtempSync(join(tmpdir(), 'review-check-correction-'));
+    roots.push(root);
+    const clean = join(root, 'clean.py');
+    const invalid = join(root, 'invalid.py');
+    writeFileSync(clean, 'x = 1\n');
+    writeFileSync(invalid, 'x = 1  \n');
+    const old = (file: string) => spawnSync('git', ['diff', '--no-index', '--check', '--', '/dev/null', file], { encoding: 'utf8' });
+    expect(old(clean).status).toBe(1);
+    expect(old(clean).stdout).toBe('');
+    expect(old(invalid).status).toBe(3);
+    const corrected = (files: string[]) => spawnSync('bash', ['-c',
+      'status=0; for file in "$@"; do if [ ! -f "$file" ]; then status=1; continue; fi; git diff --no-index --check -- /dev/null "$file"; result=$?; if [ "$result" -ne 0 ] && [ "$result" -ne 1 ]; then status=1; fi; done; exit "$status"',
+      'check', ...files], { encoding: 'utf8' });
+    expect(corrected([clean]).status).toBe(0);
+    expect(corrected([clean, invalid]).status).toBe(1);
+    expect(corrected([invalid, clean]).status).toBe(1);
+    expect(corrected([join(root, 'missing.py')]).status).not.toBe(0);
+  });
+
   test('closure cannot use a passing record from an unrelated behavior cell', () => {
     const original = initialArtifact();
     const repairedManifest = structuredClone(original.evidence.manifest);
@@ -2793,21 +2886,6 @@ describe('review evidence contracts', () => {
         closureArtifactFile: file,
       },
     })).toEqual(issued);
-    const closureContext = {
-      ...context(repo),
-      runId: 'closure-run-a',
-      options: {
-        mode: 'mock' as const,
-        goldbandHome: state,
-        closureArtifactFile: file,
-      },
-    };
-    expect(claimInitialReviewClosure(closureContext, issued, 'f'.repeat(64)))
-      .toContain('closure-claims');
-    expect(() => claimInitialReviewClosure({
-      ...closureContext,
-      runId: 'closure-run-b',
-    }, issued, 'e'.repeat(64))).toThrow('already been claimed');
     expect(() => readClosureArtifact({
       ...context(repo),
       options: {
@@ -3118,7 +3196,7 @@ describe('review evidence contracts', () => {
       status: 'closed',
       summary: 'command was weakened',
       evidenceIds: ['gate:pass'],
-    }], closure, rerun)).toThrow('unchanged original failed operation');
+    }], closure, rerun)).toThrow('preserving contract assessment');
   });
 
   test('verified-failure closure permits a fresh execution identity for the same operation contract', () => {
@@ -3186,7 +3264,10 @@ describe('review evidence contracts', () => {
       status: 'closed',
       summary: 'same argv passed from a different invocation directory',
       evidenceIds: ['gate:pass'],
-    }], closure, rerun)).toThrow('unchanged original failed operation');
+    }], closure, rerun)).toThrow('original failed operation');
+    expect(() => validateClosureResults([{
+      findingId: 'F-001', status: 'closed', summary: 'Assessment cannot change invocation identity.', evidenceIds: ['gate:pass'],
+    }], closure, rerun, { preserved: true, summary: 'Only prose was corrected.' })).toThrow('original failed operation');
   });
 
   test('closure is forbidden after an initial zero-finding review', () => {
@@ -3206,7 +3287,6 @@ describe('review evidence contracts', () => {
     const rerun = bundle([{ ...record(), candidateDigest: repairedBinding.candidateDigest }]);
     rerun.binding = repairedBinding;
     const prompt = buildClosureReviewPrompt(
-      context('/repo'),
       {
         artifact,
         repairedBinding,
@@ -3223,6 +3303,21 @@ describe('review evidence contracts', () => {
     expect(prompt).not.toContain('verbose-initial-scenario');
     expect(prompt).toContain('F-001');
     expect(prompt).toContain('gate:pass');
+  });
+
+  test('closure shares the initial input budget and rejects oversized delta or metadata', () => {
+    const artifact = initialArtifact();
+    const repairedBinding = { ...artifact.binding, candidateDigest: '9'.repeat(64) };
+    const repairedDiff = `${artifact.diff}\n${'+repair();\n'.repeat(9000)}`;
+    const closure = buildClosureInput(artifact, repairedBinding, repairedDiff, artifact.evidence.manifest);
+    const rules = { bundle: { selected: [], snapshot: [] }, text: 'closure rule' };
+    expect(Buffer.byteLength(closure.repairDelta)).toBeGreaterThan(64 * 1024);
+    expect(buildClosureReviewPrompt(closure, bundle([record()]), rules)).toContain('repair();');
+    expect(() => buildClosureInput(artifact, repairedBinding,
+      `${artifact.diff}\n${'+repair();\n'.repeat(30000)}`, artifact.evidence.manifest))
+      .toThrow('repair delta exceeds');
+    expect(() => buildClosureReviewPrompt(closure, bundle([record()]),
+      { ...rules, text: 'x'.repeat(49 * 1024) })).toThrow('shared input budget');
   });
 
   test('mock runtime performs one initial host call and one separately scoped closure call', async () => {
@@ -3648,13 +3743,13 @@ describe('candidate-bound GitHub review evidence', () => {
     expect(reviewCandidateTree(snapshot)).not.toBe(git(repo, ['rev-parse', 'HEAD^{tree}']).trim());
   });
   test('only permits the three named one-way runner migrations while preserving the operation contract', () => {
-    const after = reviewEvidenceManifestSchema.validate(JSON.parse(readFileSync(join(import.meta.dir, '../../goldband.review-evidence.json'), 'utf8')));
+    const after = reviewEvidenceManifestSchema.validate(JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/review-contracts/goldband.json'), 'utf8')));
     const before = structuredClone(after);
     const providers = before.providers.filter((provider) => provider.executionContext.runner === 'github-actions');
     expect(providers).toHaveLength(3);
     for (const provider of providers) provider.executionContext = { sandboxOwner: 'provider', runner: 'host-seatbelt', lane: 'macos-review-contract-host' };
-    expect(() => assertReviewContractNotWeaker(before, after)).not.toThrow();
-    expect(() => assertReviewContractNotWeaker(after, before)).toThrow('contract laundering blocked');
+    expect(() => assertReviewContractBoundary(before, after)).not.toThrow();
+    expect(() => assertReviewContractBoundary(after, before)).toThrow('contract laundering blocked');
     for (const mutate of [
       (p: any) => { p.executionContext.lane = 'other'; },
       (p: any) => { p.operations[0].argv = ['true']; },
@@ -3663,7 +3758,7 @@ describe('candidate-bound GitHub review evidence', () => {
       (p: any) => { p.operations[0].network = 'authorized'; },
     ]) {
       const changed = structuredClone(after); mutate(changed.providers.find((p) => p.id === providerId));
-      expect(() => assertReviewContractNotWeaker(before, changed)).toThrow('contract laundering blocked');
+      expect(() => assertReviewContractBoundary(before, changed)).toThrow('contract laundering blocked');
     }
   });
   test('same candidate refreshes pending CI through signed evidence repair without dispatching early', async () => {
@@ -3676,7 +3771,7 @@ describe('candidate-bound GitHub review evidence', () => {
     writeFileSync(join(repo, 'a.ts'), 'candidate();\n');
     git(repo, ['add', '.']); git(repo, ['commit', '-m', 'candidate']);
     const value = manifest();
-    const rootManifest = JSON.parse(readFileSync(join(import.meta.dir, '../../goldband.review-evidence.json'), 'utf8'));
+    const rootManifest = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/review-contracts/goldband.json'), 'utf8'));
     const provider = rootManifest.providers.find((p: any) => p.id === providerId);
     provider.cellIds = ['behavior-a']; provider.applicability = { kind: 'global', reason: 'CI refresh fixture' };
     value.providers = [provider]; value.behaviorMatrix[0]!.providerIds = [providerId];
@@ -3720,7 +3815,7 @@ describe('candidate-bound GitHub review evidence', () => {
     copyFileSync(join(import.meta.dir, '../../.github/workflows/validate.yml'), join(repo, '.github/workflows/validate.yml'));
     git(repo, ['add', '.']); git(repo, ['commit', '-m', 'CI recipe']);
     let value = manifest();
-    const rootManifest = JSON.parse(readFileSync(join(import.meta.dir, '../../goldband.review-evidence.json'), 'utf8'));
+    const rootManifest = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/review-contracts/goldband.json'), 'utf8'));
     const provider = rootManifest.providers.find((p: any) => p.id === providerId);
     provider.cellIds = ['behavior-a']; provider.applicability = { kind: 'global', reason: 'CI producer fixture' };
     value.providers = [provider]; value.behaviorMatrix[0]!.providerIds = [providerId];
@@ -3771,7 +3866,7 @@ describe('candidate-bound GitHub review evidence', () => {
       const missing = structuredClone(evidence); missing.records[0]!.status = 'runtime-incomplete'; missing.records[0]!.fresh = false;
       expect(() => validateClosureResults(result, closure, missing)).toThrow();
       const weaker = structuredClone(evidence); weaker.manifest.providers[0]!.operations[0]!.argv = ['true'];
-      expect(() => validateClosureResults(result, closure, weaker)).toThrow('unchanged original failed operation');
+      expect(() => validateClosureResults(result, closure, weaker)).toThrow('preserving contract assessment');
     } finally { globalThis.fetch = originalFetch; }
   });
   test('subdirectory CI incomplete evidence survives signed artifact readback', async () => {
@@ -3779,7 +3874,7 @@ describe('candidate-bound GitHub review evidence', () => {
     mkdirSync(cwd); writeFileSync(join(cwd, 'tracked.ts'), 'tracked();');
     git(repo, ['add', '.']); git(repo, ['commit', '-m', 'subdirectory']);
     const value = manifest();
-    const rootManifest = JSON.parse(readFileSync(join(import.meta.dir, '../../goldband.review-evidence.json'), 'utf8'));
+    const rootManifest = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/review-contracts/goldband.json'), 'utf8'));
     const provider = rootManifest.providers.find((p: any) => p.id === providerId);
     provider.cellIds = ['behavior-a']; provider.applicability = { kind: 'global', reason: 'CI producer fixture' };
     value.providers = [provider]; value.behaviorMatrix[0]!.providerIds = [providerId];
@@ -3804,7 +3899,7 @@ describe('candidate-bound GitHub review evidence', () => {
   test('producer reports absent candidate CI as incomplete, without a nested sandbox or fabricated exit', async () => {
     const repo = gitFixture();
     let value = manifest();
-    const rootManifest = JSON.parse(readFileSync(join(import.meta.dir, '../../goldband.review-evidence.json'), 'utf8'));
+    const rootManifest = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/review-contracts/goldband.json'), 'utf8'));
     const provider = rootManifest.providers.find((p: any) => p.id === providerId);
     provider.cellIds = ['behavior-a']; provider.applicability = { kind: 'global', reason: 'CI producer fixture' };
     value.providers = [provider]; value.behaviorMatrix[0]!.providerIds = [providerId];

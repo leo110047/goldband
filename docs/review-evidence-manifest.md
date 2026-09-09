@@ -4,6 +4,28 @@
 
 Manifest 合法不代表測試已通過、review 已完成或可以部署。真正的 evidence 仍必須由同一個 candidate-bound runtime 執行並讀回。
 
+## Automatic project lookup
+
+日常審查直接執行 `goldband review code --host codex` 或 `--host claude`，
+不需要 Agent 提供設定檔路徑。Goldband 以目前 Git common directory 識別專案，
+自動讀取 `~/.goldband/review-contracts/<repository-hash>.json` 的登記內容。
+若設定了 Goldband state root，registry 也使用該位置。沙箱改用暫存目錄存放
+執行結果時，設定仍從原本的 durable registry 讀取。
+
+`goldband review contract inspect` 是唯讀操作，不要求 state root 可寫；
+即使尚未登記，也會回報預期的 registry 路徑。先檢查這個結果與實際權限錯誤，
+不能只因專案根目錄沒有檔案就判斷未設定。
+
+Goldband 本機的 authoring 檔統一放在
+`~/.goldband/review-contracts/goldband/review-evidence.json`，修改後以 `import`
+明確更新登記。舊的 loop 子目錄設定保留為同目錄的
+`legacy-loop-review-evidence.json`；loop 與根目錄屬於同一 Git 專案，使用同一份
+根目錄 contract。Repository 內的 `test/fixtures/review-contracts` 只供回歸測試。
+
+既有 committed manifest 仍作為相容性 baseline。搬移期間只有已登記內容與
+reviewed base 的 digest 完全相同，才允許 candidate 移除舊 manifest；
+未登記、內容不同或登記無效仍會阻擋，避免搬移降低驗證要求。
+
 ## Quick start
 
 先查看目前安裝所附的 guide、example 與 schema 路徑：
@@ -34,7 +56,7 @@ goldband review contract validate --manifest goldband.review-evidence.json
 
 - 專案共同擁有：將 repo-root `goldband.review-evidence.json` 納入 Git。Reviewed base 中的檔案是 authoritative baseline。
 - 僅本機持有：repository 沒有 committed manifest 時，執行 `goldband review contract import --manifest <path>`，把完整 contract 註冊到 runtime-owned per-repository store。
-- 單次 candidate extension：以 `review code --evidence-manifest <path>` 傳入完整 manifest；它只能 monotonic 增加 baseline coverage，不能縮小或取代 baseline。
+- 單次 candidate extension：以 `review code --evidence-manifest <path>` 傳入完整 manifest；必要 coverage 與執行邊界不能縮小。檢查指令與行為描述的修正須經同一次獨立審查確認。
 
 用下列命令讀回實際 resolution、tracking state、source 與 digest：
 
@@ -190,10 +212,34 @@ Global provider 每次都適用，必須說明原因。不要為了省下 path d
 
 如果正式 producer／consumer handoff 不存在，runtime 會回報 `runtime-incomplete`，不會把 nested sandbox failure 當成 candidate failure。
 
-### Goldband 自身的 macOS CI 自測
+### Goldband 推送前的本機自測
+
+Goldband 的三組 sandbox 自測在推送前使用固定本機 lane：
+
+```json
+{ "sandboxOwner": "provider", "runner": "local-host", "lane": "goldband-local-review-host" }
+```
+
+只接受 `review-evidence-tests`、`work-map-review-tests`、`installed-runtime-tests`
+既有的完整測試指令。每組測試在這次未提交變更的獨立副本執行，使用暫時的
+HOME 與 Goldband state，不繼承登入憑證或審查簽章設定；結果仍綁定專案、
+base、candidate、scope、manifest、指令與依賴 digest，並由既有 receipt 簽署。
+
+這些測試需要自行啟動 Seatbelt，故外層是原生本機程序，不再包另一層 sandbox。
+它使用主機權限與可寫候選副本，operation 必須明寫 `network: host`，
+不宣稱 OS network deny 或敵對程式隔離。一般 providers 仍走 sealed runner。
+本機 lane 必須由已安裝的 Claude/Codex runtime 授權，無法以任意 argv 使用。
+真正的測試失敗會阻擋審查；缺少必要工具、外層沙箱限制、逾時或副本遭修改則回報 runtime-incomplete。
+
+專案 registry 可將三個固定 CI recipes 遷移到本機，僅允許上述 runner/network
+變更與增加逾時上限；所有測試、cells 與其他驗證要求須完全保留。舊 receipt
+仍透過 evidence-repair/closure 重新驗證，遷移本身不代表通過。
+CI 繼續在 push 後執行，不再是 Goldband 本機審查的前置條件。
+
+### 既有 CI 證據 adapter（非推送前預設）
 
 Goldband 的 `review-evidence-tests`、`work-map-review-tests` 與
-`installed-runtime-tests` 使用固定 CI lane：
+`installed-runtime-tests` 既有設定可使用固定 CI lane：
 
 ```json
 { "sandboxOwner": "provider", "runner": "github-actions", "lane": "goldband-macos-review-host" }
@@ -337,14 +383,14 @@ uv cache 後重跑；Linux container 已安裝的套件不能替代它，gate �
 
 `expiresAt` 必須晚於 `approvedAt`。每個 `authorizationId` 必須找到同 ID、且 `operation` 相符的 authorization；每個 authorization 也必須被恰好一個 operation 引用。
 
-目前 local review runner 仍是 deny-only。即使 manifest 與 authorization 格式合法，network operation 也需要 operation-specific external runner；缺少 runner 時會 fail closed。不要把 fixture 或 local green 結果描述成 live／device／production proof。
+一般 sealed review runner 仍是 deny-only；上述固定本機自測 lane 另以 `network: host` 明示主機執行。即使 manifest 與 authorization 格式合法，network operation 也需要 operation-specific external runner；缺少 runner 時會 fail closed。不要把 fixture 或 local green 結果描述成 live／device／production proof。
 
 ## Contract resolution
 
 Runtime 在 evidence execution、lineage admission 與 semantic dispatch 前先解析：
 
 ```text
-authoritative baseline + optional monotonic extension = effective contract
+authoritative baseline + boundary-preserving candidate changes = effective contract
 ```
 
 Resolution order：
@@ -353,7 +399,25 @@ Resolution order：
 2. Base 沒有 manifest 時，明確 import 的 runtime-owned per-repository contract。
 3. 都沒有時 fail closed。
 
-Working-tree、index 與 `--evidence-manifest` 內容是 candidate-controlled extension。它們可以增加 required coverage，但不能刪除、反轉、降風險或降低 evidence level。
+Working-tree、index 與 `--evidence-manifest` 內容是 candidate-controlled extension。
+Runtime 直接阻擋刪除必要 cell／provider／operation、縮小 applicability、降低風險或
+evidence level，以及改變既有 target、expected exit 或執行權限。
+
+`argv` 與行為描述不再以字串完全相同作為安全證明。Runtime 會將既有與修正後的內容
+完整交給同一次 semantic review，要求明確的 `contractReview` 判斷。審查須確認原本
+驗收目的仍被涵蓋，包括正常案例能通過、錯誤案例仍被拒絕；新指令跑綠本身不足以證明。
+缺少判斷會明確失敗；審查不接受時，初審保留 blocking finding，closure 保留未結案狀態。
+`inspect` 的 `candidateCompatibility.valid` 只代表結構邊界合法，
+`requiresSemanticReview` 會指出仍待審查的指令／描述修正。
+
+修正前的命令、digest 與問題紀錄仍保留。不同命令不宣稱是相同命令重跑；只有經審查
+接受的修正、相同操作識別與執行座標、以及 fresh passing evidence 才能結案。
+未執行審查或尚未接受的修正，不會提前覆蓋 lineage 中的既有標準。
+
+Semantic finding 的驗證關聯由同一個 runtime resolver 處理：優先保留明確的 cell／evidence
+關聯；舊紀錄未提供時，依 finding 的檔案與 project-declared provider applicability 選擇。
+不會因 severity 高就綁定所有測試，也不會替 deterministic failure 猜關聯。
+找不到宣告的涵蓋範圍時仍是 evidence-incomplete；無關測試通過不能結案。
 
 ## Platform boundary
 
