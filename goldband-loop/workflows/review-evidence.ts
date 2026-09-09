@@ -3485,12 +3485,9 @@ export function evidenceRuntimeReadAccess(executable: string): EvidenceRuntimeRe
     const visitImage = (image: string, inheritedRpaths: string[]): void => {
       if (visited.has(image)) return;
       visited.add(image);
-      const rpaths = uniqueInOrder([
-        ...machORpaths(image, executableFile),
-        ...inheritedRpaths,
-      ]);
+      const { rpaths, dylibs } = machOLoadCommands(image, executableFile, inheritedRpaths);
       const dependencies: Array<{ image: string; inheritedRpaths: string[] }> = [];
-      for (const edge of machOLoadedDylibs(image)) {
+      for (const edge of dylibs) {
         const { installName } = edge;
         if (isAbsolute(installName) && systemRoots.some((root) =>
           installName === root || installName.startsWith(`${root}${sep}`))) continue;
@@ -3643,8 +3640,15 @@ function otool(image: string, mode: '-L' | '-l'): string {
   return result.stdout;
 }
 
-function machORpaths(image: string, executable: string): string[] {
+function machOLoadCommands(image: string, executable: string, inheritedRpaths: string[]) {
   const loadCommands = otool(image, '-l').split('\n');
+  return {
+    rpaths: uniqueInOrder([...machORpaths(image, executable, loadCommands), ...inheritedRpaths]),
+    dylibs: machOLoadedDylibs(loadCommands),
+  };
+}
+
+function machORpaths(image: string, executable: string, loadCommands: string[]): string[] {
   const rpaths: string[] = [];
   for (let index = 0; index < loadCommands.length; index += 1) {
     if (loadCommands[index]?.trim() !== 'cmd LC_RPATH') continue;
@@ -3659,8 +3663,7 @@ function machORpaths(image: string, executable: string): string[] {
   return uniqueInOrder(rpaths);
 }
 
-function machOLoadedDylibs(image: string): Array<{ installName: string; weak: boolean }> {
-  const loadCommands = otool(image, '-l').split('\n');
+function machOLoadedDylibs(loadCommands: string[]): Array<{ installName: string; weak: boolean }> {
   const installNames: Array<{ installName: string; weak: boolean }> = [];
   const dependencyCommands = new Set([
     'LC_LOAD_DYLIB',

@@ -700,13 +700,12 @@
         14
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
-        94,
+        91,
         87,
         78,
         72,
         67,
-        56,
-        52
+        56
       ],
       "lint/complexity/useMaxParams": [
         7,
