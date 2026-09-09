@@ -72,7 +72,11 @@ const MAX_REVIEW_EVIDENCE_TOTAL_BYTES = 1024 * 1024;
 const MAX_REVIEW_EVIDENCE_OPERATIONS = 64;
 const MAX_EVIDENCE_RUNTIME_DIAGNOSTIC_CHARS = 16 * 1024;
 const DEFAULT_REVIEW_EVIDENCE_MANIFEST = 'goldband.review-evidence.json';
-const EVIDENCE_RUNNER_POLICY = 'per-operation-sealed-runtime-readonly-snapshot-default-deny-read-write-network-v55';
+const EVIDENCE_RUNNER_POLICY = 'per-operation-sealed-runtime-readonly-snapshot-default-deny-read-write-network-v56';
+// coverage.py 7.15.4's conditional process_startup(slug="pth") hook. Review
+// changed hook bytes before extending support; package ownership alone cannot
+// authorize arbitrary startup code. Keep the hook for subprocess measurement.
+const COVERAGE_STARTUP_PTH_SHA256 = 'ef2ed06d19867ec669c09a804060666a9cd5e383af0a9d11aa2de79b77d448e8';
 const MAX_REDACTED_UNTRACKED_BYTES = 256 * 1024;
 const REVIEW_RECEIPT_TRUSTED_CONFIG_ENV = 'GOLDBAND_REVIEW_RECEIPT_TRUSTED_CONFIG';
 const SUPPORTED_REVIEW_HOST_EVIDENCE_LANE = REVIEW_HOST_EVIDENCE_POLICY.reviewHostEvidenceLane;
@@ -2531,6 +2535,7 @@ function pythonRuntimeReadAccess(
   const prefixDigest = directoryContentDigest(prefix, 'Python interpreter runtime');
   return mergeEvidenceRuntimeReadAccess([
     base,
+    ...pythonStdlibExtensionAccess(stdlib),
     {
       roots: [prefix],
       literals: [],
@@ -2548,6 +2553,24 @@ function pythonRuntimeReadAccess(
       })),
     },
   ]);
+}
+
+function pythonStdlibExtensionAccess(stdlib: string): EvidenceRuntimeReadAccess[] {
+  const extensions = join(stdlib, 'lib-dynload');
+  if (!existsSync(extensions)) return [];
+  if (!realpathSync(extensions).startsWith(`${stdlib}${sep}`)) {
+    throw new Error('Python native stdlib directory resolves outside the declared stdlib');
+  }
+  // dlopen dependencies (for example _sqlite3 -> libsqlite3) are not edges of
+  // the interpreter executable. Reuse exact Mach-O attestation for the native
+  // stdlib modules instead of granting reads to their package directories.
+  return readdirSync(extensions).filter((name) => name.endsWith('.so')).sort().map((name) => {
+    const extension = join(extensions, name);
+    if (!realpathSync(extension).startsWith(`${stdlib}${sep}`)) {
+      throw new Error('Python native stdlib module resolves outside the declared stdlib');
+    }
+    return evidenceRuntimeReadAccess(extension);
+  });
 }
 
 function uvCacheRoot(
@@ -2707,14 +2730,13 @@ export function validateMaterializedPythonEnvironment(
   if (!existsSync(environmentPython) || executableContentDigest(environmentPython) !== executableContentDigest(sourceCommand)) {
     throw new Error('materialized Python environment does not use the declared interpreter');
   }
+  let coverageStartupHook: string | undefined;
   visitDirectory(environmentRoot, 'materialized Python environment', (absolute, relativePath, entry) => {
     if (entry.isSymbolicLink()) {
       throw new Error(`materialized Python environment contains a symlink escape: ${relativePath}`);
     }
     const lower = relativePath.toLowerCase();
-    if (lower.endsWith('.pth') || lower.endsWith('.egg-link') || /(^|\/)(sitecustomize|usercustomize)\.py$/.test(lower)) {
-      throw new Error(`materialized Python environment contains forbidden site customization: ${relativePath}`);
-    }
+    if (validatePythonSiteCustomization(absolute, relativePath, entry)) coverageStartupHook = absolute;
     if (!entry.isFile()) return;
     if (lower.endsWith('direct_url.json')) {
       validatePythonDirectUrl(absolute, [environmentRoot, candidateRoot]);
@@ -2724,7 +2746,43 @@ export function validateMaterializedPythonEnvironment(
       throw new Error(`materialized Python environment refers to the source checkout: ${relativePath}`);
     }
   });
+  // Inspect ownership only after the entire tree has passed the symlink and
+  // file-type checks. The existing lock/artifact identity checks still run
+  // before bootstrap or project code can execute.
+  if (coverageStartupHook) validateCoverageStartupOwnership(coverageStartupHook);
   return environmentPython;
+}
+
+function validatePythonSiteCustomization(absolute: string, relativePath: string, entry: Dirent): boolean {
+  const lower = relativePath.toLowerCase();
+  if (!lower.endsWith('.pth') && !lower.endsWith('.egg-link') &&
+    !/(^|\/)(sitecustomize|usercustomize)\.py$/.test(lower)) return false;
+  if (entry.isFile() && relativePath === 'lib/python3.14/site-packages/a1_coverage.pth' &&
+    sha256(readFileSync(absolute)) === COVERAGE_STARTUP_PTH_SHA256) return true;
+  throw new Error(`materialized Python environment contains forbidden site customization: ${relativePath}`);
+}
+
+function validateCoverageStartupOwnership(pth: string): void {
+  const sitePackages = dirname(pth);
+  const distributions = readdirSync(sitePackages, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^coverage-[^/]+\.dist-info$/.test(entry.name));
+  if (distributions.length !== 1) {
+    throw new Error('coverage startup hook must belong to exactly one installed coverage distribution');
+  }
+  const distInfo = join(sitePackages, distributions[0]!.name);
+  const metadata = readFileSync(join(distInfo, 'METADATA'), 'utf8');
+  const version = pythonMetadataField(metadata, 'Version');
+  if (pythonMetadataField(metadata, 'Name') !== 'coverage' ||
+    distributions[0]!.name !== `coverage-${version}.dist-info`) {
+    throw new Error('coverage startup hook distribution metadata does not match its owner');
+  }
+  const content = readFileSync(pth);
+  const recordHash = createHash('sha256').update(content).digest('base64url');
+  const records = readFileSync(join(distInfo, 'RECORD'), 'utf8').split(/\r?\n/)
+    .filter((row) => row.startsWith('a1_coverage.pth,'));
+  if (records.length !== 1 || records[0] !== `a1_coverage.pth,sha256=${recordHash},${content.length}`) {
+    throw new Error('coverage startup hook does not match its distribution RECORD');
+  }
 }
 
 function validatePythonDirectUrl(file: string, allowedRoots: string[]): void {
@@ -3530,7 +3588,11 @@ function pathSymlinkLiterals(file: string): string[] {
   for (const part of parts) {
     current = join(current, part);
     const stat = lstatSync(current, { throwIfNoEntry: false });
-    if (stat?.isSymbolicLink()) symlinks.push(current);
+    if (stat?.isSymbolicLink()) {
+      // Seatbelt also checks the link's actual location after resolving parent
+      // directory aliases (Homebrew opt/package -> Cellar/package/version).
+      symlinks.push(current, join(realpathSync(dirname(current)), basename(current)));
+    }
   }
   return symlinks;
 }
