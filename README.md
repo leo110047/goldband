@@ -68,6 +68,8 @@ Codex:       $goldband system health
 
 其他用途與指令見[工作流程清單](docs/generated/capabilities.md)。
 
+一般實作涉及大量處理、資料實體化、快取、平行執行或效能改善宣稱時，Claude／Codex 的指引會導向共用 `performance-optimization` skill，檢查有研究案例支持的 agent 陷阱，不需先跑 planning。Review 會檢查改善證據與實際路徑；這些指引不代表自動量測 CPU／RAM，也不要求所有修改都跑 benchmark。
+
 程式碼審查需要先為目標專案設定驗證契約；請從[審查入門](docs/review-evidence-manifest.md#quick-start)開始。需要本機隔離執行測試的正式審查目前僅支援 macOS；Linux／Windows 缺少這類證據時會回報未完成。測試或安裝成功也不代表審查、部署已完成。
 
 Claude／Codex 的 Python 審查 gate 必須宣告 `pythonRuntime`：目前只支援 macOS Python 3.14 + uv，且 candidate 需有 `pyproject.toml`、`uv.lock` 與完整離線依賴；缺少條件會阻擋執行。

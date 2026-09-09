@@ -48,3 +48,7 @@ Keep durable workflow policy in skills, commands, hooks, rules, or project-level
 - Prefer installed portable skills when the task matches them, especially
   `evidence-based-coding`, `file-search`, `implementation-contracts`,
   `testing-strategy`, and `performance-optimization`.
+- Use `performance-optimization` during ordinary implementation when changes
+  affect bulk processing, materialization, caching, or parallel execution with
+  workload/resource implications, or claim a performance improvement; no
+  planning workflow is required.

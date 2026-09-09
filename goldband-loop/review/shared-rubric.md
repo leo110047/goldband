@@ -23,6 +23,17 @@ behavior belong to their runtimes.
 - `ux-design`: user-facing layout, accessibility, interaction, copy, and visual
   regressions when the diff touches UI.
 
+## Performance Claims
+
+- Check that before/after measurements exercise the changed path at relevant
+  scale, with comparable environments, cold/warm state, and timing variation.
+  Elapsed time does not prove CPU or memory savings.
+- Distinguish evaluator-only shortcuts from contract-preserving input
+  specialization or caching; repeated cached inputs only support that workload.
+- Missing measurements are an evidence gap, not proof of regression. Block only
+  for a concrete defect or unmet explicit acceptance requirement; unrelated
+  edits need no benchmark.
+
 ## Severity
 
 Use the lowest severity supported by concrete evidence.

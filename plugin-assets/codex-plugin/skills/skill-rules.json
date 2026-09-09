@@ -123,8 +123,7 @@
     },
     "performance-optimization": {
       "requires_evidence": true,
-      "must_use": ["profiling", "measurement", "baseline establishment"],
-      "reason": "Never optimize without measuring first (Measure First, Optimize Second)"
+      "reason": "Apply relevant workload/resource traps during implementation; measured improvement claims need a comparable baseline and measurement. Unrelated edits need no benchmark."
     },
     "ci-cd-integration": {
       "focus": "pipeline design, deployment strategies, automation",

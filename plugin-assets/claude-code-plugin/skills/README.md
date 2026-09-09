@@ -42,7 +42,7 @@ goldband 的 `skills/global/` 是可攜式 skill 集合，提供 Claude Code 與
 | Skill | 作用 |
 |------|------|
 | `testing-strategy` | coverage、TDD、integration / E2E test strategy |
-| `performance-optimization` | profiling、bottleneck、latency / throughput |
+| `performance-optimization` | 一般實作的工作量／資源陷阱、效能改善證據；按相關情境使用，不依賴 planning |
 | `security-checklist` | auth、input validation、secret handling 的防守檢查；深度審查 defer Goldband cso workflow |
 | `frontend-design` | 高品質前端畫面設計與避免 generic AI aesthetics |
 | `prompt-hygiene` | 撰寫 prompt / system prompt / agent handoff 時，只保留必要目標、背景、硬邊界與成果標準 |
