@@ -1939,6 +1939,122 @@ describe('review evidence contracts', () => {
       .toThrow('symlink escape');
   });
 
+  test('preserves the recognized distribution-owned coverage startup hook', () => {
+    const { environment, python, pth } = coverageStartupFixture();
+    const before = readFileSync(pth);
+    expect(validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout'))
+      .toBe(join(environment, 'bin', 'python3.14'));
+    expect(readFileSync(pth)).toEqual(before);
+  });
+
+  test('attests a dylib symlink at its actual location behind a directory alias', () => {
+    const root = mkdtempSync(join(tmpdir(), 'runtime-library-alias-'));
+    roots.push(root);
+    const installed = join(root, 'installed');
+    mkdirSync(installed);
+    const image = join(installed, 'libfixture.1.dylib');
+    writeFileSync(image, 'library fixture');
+    symlinkSync('libfixture.1.dylib', join(installed, 'libfixture.dylib'));
+    symlinkSync(installed, join(root, 'alias'));
+    const requested = join(root, 'alias', 'libfixture.dylib');
+    const paths = runtimeLibraryLiteralPaths(requested, realpathSync(image), []);
+    expect(paths).toContain(join(realpathSync(installed), 'libfixture.dylib'));
+    expect(paths).toContain(realpathSync(image));
+    expect(paths).toContain(requested);
+    expect(paths).not.toContain(installed);
+  });
+
+  test.each([
+    'changed hook', 'changed hook with matching RECORD', 'renamed hook', 'nested hook',
+    'missing owner', 'duplicate owner', 'wrong metadata', 'wrong version',
+    'missing RECORD entry', 'wrong RECORD hash', 'duplicate RECORD entry',
+    'symlink hook', 'symlink metadata', 'additional unknown hook',
+  ])('rejects unsupported coverage startup customization: %s', (scenario) => {
+    const { environment, python, pth, distInfo } = coverageStartupFixture();
+    const record = join(distInfo, 'RECORD');
+    if (scenario.startsWith('changed hook')) {
+      writeFileSync(pth, 'import arbitrary_startup_code\n');
+      if (scenario.endsWith('matching RECORD')) writeFileSync(record, coverageStartupRecord(readFileSync(pth)));
+    } else if (scenario === 'renamed hook') {
+      renameSync(pth, join(dirname(pth), 'other.pth'));
+    } else if (scenario === 'nested hook') {
+      mkdirSync(join(dirname(pth), 'nested'));
+      renameSync(pth, join(dirname(pth), 'nested', 'a1_coverage.pth'));
+    } else if (scenario === 'missing owner') {
+      rmSync(distInfo, { recursive: true });
+    } else if (scenario === 'duplicate owner') {
+      mkdirSync(join(dirname(pth), 'coverage-0.0.0.dist-info'));
+    } else if (scenario === 'wrong metadata' || scenario === 'wrong version') {
+      writeFileSync(join(distInfo, 'METADATA'), scenario === 'wrong metadata'
+        ? 'Name: other\nVersion: 7.15.4\n' : 'Name: coverage\nVersion: 0.0.0\n');
+    } else if (scenario === 'missing RECORD entry') {
+      writeFileSync(record, '');
+    } else if (scenario === 'wrong RECORD hash') {
+      writeFileSync(record, 'a1_coverage.pth,sha256=wrong,205\n');
+    } else if (scenario === 'duplicate RECORD entry') {
+      writeFileSync(record, readFileSync(record, 'utf8').repeat(2));
+    } else if (scenario.startsWith('symlink')) {
+      const target = scenario === 'symlink hook' ? pth : join(distInfo, 'METADATA');
+      renameSync(target, `${target}.original`);
+      symlinkSync(`${target}.original`, target);
+    } else {
+      writeFileSync(join(dirname(pth), 'unknown.pth'), 'import arbitrary_startup_code\n');
+    }
+    expect(() => validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout'))
+      .toThrow();
+  });
+
+  test('runs a coverage startup hook from an offline wheel through the sealed Python gate', async () => {
+    if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
+    const python = spawnSync('/usr/bin/which', ['python3.14'], { encoding: 'utf8' }).stdout.trim();
+    const uv = spawnSync('/usr/bin/which', ['uv'], { encoding: 'utf8' }).stdout.trim();
+    if (!hostBoundaryPrerequisite(Boolean(python) && Boolean(uv), 'Python 3.14 and uv executables')) return;
+    const repo = gitFixture();
+    const wheel = join(repo, 'vendor', 'coverage-7.15.4-py3-none-any.whl');
+    mkdirSync(dirname(wheel), { recursive: true });
+    writeCoverageStartupWheel(python, wheel);
+    writeFileSync(join(repo, 'pyproject.toml'), [
+      '[project]', 'name="coverage-startup-fixture"', 'version="0.1.0"',
+      'requires-python=">=3.14,<3.15"', 'dependencies=["coverage"]',
+      '[tool.uv.sources]', 'coverage={path="vendor/coverage-7.15.4-py3-none-any.whl"}', '',
+    ].join('\n'));
+    // The fixture module records startup calls; the real upstream .pth bytes
+    // must remain active in child interpreters, and inert without either flag.
+    writeFileSync(join(repo, 'probe.py'), [
+      'import os, sqlite3, ssl, subprocess, sys',
+      'assert sqlite3.connect(":memory:").execute("select 42").fetchone() == (42,)',
+      'assert ssl.OPENSSL_VERSION',
+      'assert "coverage" not in sys.modules',
+      'for flag in ("COVERAGE_PROCESS_START", "COVERAGE_PROCESS_CONFIG"):',
+      '    env = {**os.environ, flag: "fixture"}',
+      '    subprocess.run([sys.executable, "-c", "import coverage; assert coverage.STARTED == \'pth\'"], env=env, check=True)',
+      'print("coverage startup preserved")', '',
+    ].join('\n'));
+    const locked = spawnSync(uv, ['lock', '--project', repo, '--python', python, '--offline', '--no-cache'], { encoding: 'utf8' });
+    if (locked.status !== 0) throw new Error(locked.stderr);
+    git(repo, ['add', '.']);
+    git(repo, ['commit', '-m', 'add coverage startup fixture']);
+    const value = manifest();
+    value.providers[0]!.operations[0] = {
+      ...operation('coverage-startup', ['python3.14', 'probe.py'], 'candidate', 'zero'),
+      pythonRuntime: { interpreter: 'python3.14', resolver: 'uv', projectFile: 'pyproject.toml', lockFile: 'uv.lock' },
+    };
+    const validated = reviewEvidenceManifestSchema.validate(value);
+    const input = { source: 'git diff', diff: '', changedFiles: [] };
+    const cache = mkdtempSync(join(tmpdir(), 'coverage-startup-cache-'));
+    roots.push(cache);
+    const previousCache = process.env.UV_CACHE_DIR;
+    process.env.UV_CACHE_DIR = cache;
+    try {
+      const evidence = await executeEvidencePlan(context(repo), input, validated, createCandidateBinding(repo, input, validated));
+      expect(evidence.records[0]!.outputSummary).toContain('coverage startup preserved');
+      expect(evidence.records[0]).toMatchObject({ status: 'verified-pass', fresh: true, exitStatus: 0 });
+    } finally {
+      if (previousCache === undefined) delete process.env.UV_CACHE_DIR;
+      else process.env.UV_CACHE_DIR = previousCache;
+    }
+  });
+
   test('sealed Bun runtime can resolve the candidate cwd and a declared --cwd', async () => {
     if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
     const repo = gitFixture();
@@ -3473,6 +3589,42 @@ function writeFixtureWheel(python: string, output: string): void {
     'z.close()',
   ].join(';');
   const result = spawnSync(python, ['-I', '-S', '-c', script, output], { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(result.stderr);
+}
+
+function coverageStartupRecord(content: Buffer): string {
+  const digest = createHash('sha256').update(content).digest('base64url');
+  return `a1_coverage.pth,sha256=${digest},${content.length}\n`;
+}
+
+function coverageStartupFixture() {
+  const environment = mkdtempSync(join(tmpdir(), 'coverage-startup-validation-'));
+  roots.push(environment);
+  const python = join(environment, 'bin', 'python3.14');
+  const sitePackages = join(environment, 'lib', 'python3.14', 'site-packages');
+  const distInfo = join(sitePackages, 'coverage-7.15.4.dist-info');
+  mkdirSync(dirname(python), { recursive: true });
+  mkdirSync(distInfo, { recursive: true });
+  // Structural validation only; the sealed gate test uses a real interpreter.
+  writeFileSync(python, 'fixture interpreter identity');
+  const pth = join(sitePackages, 'a1_coverage.pth');
+  copyFileSync(join(import.meta.dir, 'fixtures/python-runtime/a1_coverage.pth'), pth);
+  writeFileSync(join(distInfo, 'METADATA'), 'Name: coverage\nVersion: 7.15.4\n');
+  writeFileSync(join(distInfo, 'RECORD'), coverageStartupRecord(readFileSync(pth)));
+  return { environment, python, pth, distInfo };
+}
+
+function writeCoverageStartupWheel(python: string, output: string): void {
+  const pth = readFileSync(join(import.meta.dir, 'fixtures/python-runtime/a1_coverage.pth'));
+  const files = {
+    'a1_coverage.pth': pth.toString('utf8'),
+    'coverage/__init__.py': 'STARTED = None\ndef process_startup(*, slug):\n    global STARTED\n    STARTED = slug\n',
+    'coverage-7.15.4.dist-info/METADATA': 'Metadata-Version: 2.1\nName: coverage\nVersion: 7.15.4\n',
+    'coverage-7.15.4.dist-info/WHEEL': 'Wheel-Version: 1.0\nGenerator: goldband-test\nRoot-Is-Purelib: true\nTag: py3-none-any\n',
+    'coverage-7.15.4.dist-info/RECORD': coverageStartupRecord(pth),
+  };
+  const script = 'import json,sys,zipfile\nwith zipfile.ZipFile(sys.argv[1], "w") as z:\n for name, text in json.loads(sys.argv[2]).items(): z.writestr(name, text)';
+  const result = spawnSync(python, ['-I', '-S', '-c', script, output, JSON.stringify(files)], { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(result.stderr);
 }
 

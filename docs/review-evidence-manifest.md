@@ -358,14 +358,27 @@ installed tree，以及 candidate-local direct source digest。Registry package 
 未被選用的 ambient cache entry 不作為 identity 或 failure condition。Project 自身不安裝進 environment；gate 從 materialized
 candidate working directory import source。
 
+Interpreter 的原生 stdlib modules（`lib-dynload/*.so`）也會沿用 Mach-O
+dependency attestation，逐檔授權其 transitive dylibs 並綁定 execution identity。
+這涵蓋 coverage 所需的 `_sqlite3`／SQLite 等依賴，不授權整個 Homebrew
+package directory；native module 本身不得逃出已宣告的 stdlib。
+
 在 project gate 前，runtime 會用 materialized interpreter 執行 isolated
 bootstrap／stdlib preflight，並拒絕 source checkout 的 `.venv` 或 tool、跨
-repository symlink、editable/local external install、`.pth`、`.egg-link`、
+repository symlink、editable/local external install、未知的 `.pth`、`.egg-link`、
 `sitecustomize`、`usercustomize` 與 ambient `PYTHONPATH`。缺 interpreter、`uv`、
 lockfile、offline artifact，或 environment/bootstrap 完整性失敗，都會產生
 typed `runtime-incomplete`，不執行 project gate，也不啟動 semantic host。只有
 preflight 通過後，gate 的 declared exit mismatch 才是 fresh
 `verified-failure`。
+
+`.pth` 只支援已核對內容的 coverage conditional startup hook（coverage 7.15.4
+的 `a1_coverage.pth`）：必須位於 environment 的 `site-packages` 根目錄、內容
+符合 runtime 固定的 SHA-256，且唯一的 coverage distribution metadata 與
+`RECORD` 必須吻合。檔案會保留，讓 coverage 的子程序收集功能正常運作；
+這項內容檢查不取代既有的 lock/artifact identity 與 sandbox 邊界。變更過的
+hook 仍會拒絕，不能只靠同名檔案或 package metadata 放行。uv 自帶且內容為
+`import _virtualenv` 的 `_virtualenv.pth` 則沿用既有移除處理。
 
 缺 offline wheel 時，在審查外依 candidate 的 `uv.lock` 備齊 macOS／Python 相容的
 uv cache 後重跑；Linux container 已安裝的套件不能替代它，gate 仍維持 network deny。
