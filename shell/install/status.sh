@@ -1,8 +1,6 @@
 # This file must be sourced by bash, not executed directly.
-
 profile_skill_count() {
-    local profile_file="$1"
-    local skills_line skills_csv
+    local profile_file="$1" skills_line skills_csv
     skills_line=$(grep '^skills=' "$profile_file" 2>/dev/null || true)
     skills_csv="${skills_line#skills=}"
     if [ -z "$skills_csv" ]; then printf '0\n'; return; fi
@@ -12,11 +10,8 @@ profile_skill_count() {
 show_status() {
     GOLDBAND_STATUS_EXIT_CODE=0
     echo -e "${BLUE}安裝狀態檢查${NC}"
-    echo ""
     show_claude_install_status
-    echo ""
     show_claude_plugin_status
-    echo ""
     show_claude_settings_status
     echo ""
     echo -e "${BLUE}Codex 狀態${NC}"
@@ -41,7 +36,11 @@ show_claude_install_status() {
     show_claude_goldband_entrypoint_status
     show_repo_path_status "claude CLAUDE.md" "$CLAUDE_GLOBAL_INSTRUCTIONS_FILE" "$REPO_DIR/claude/CLAUDE.md" "claude-guidance"
     show_repo_path_status "commands" "$CLAUDE_DIR/commands" "$REPO_DIR/commands" "commands"
-    show_repo_path_status "rules" "$CLAUDE_DIR/rules" "$REPO_DIR/rules" "rules"
+    show_repo_path_status "on-demand policies" "$CLAUDE_DIR/goldband-rules" "$REPO_DIR/rules" "rules"
+    if repo_link_points_to "$CLAUDE_DIR/rules" "$REPO_DIR/rules"; then
+        echo "  [過時] Claude still autoloads full Goldband rules; run ./install.sh rules"
+        GOLDBAND_STATUS_EXIT_CODE=2
+    fi
     show_repo_path_status "hooks" "$CLAUDE_DIR/hooks/scripts" "$REPO_DIR/hooks/scripts" "hooks"
     show_repo_path_status "statusline" "$CLAUDE_DIR/statusline-command.sh" "$REPO_DIR/hooks/statusline-command.sh" "hooks"
     show_shell_launcher_status
@@ -238,7 +237,8 @@ show_claude_plugin_duplicate_status() {
     if repo_path_installed_from "$REPO_DIR/commands" "$CLAUDE_DIR/commands"; then
         duplicates+=("commands")
     fi
-    if repo_path_installed_from "$REPO_DIR/rules" "$CLAUDE_DIR/rules"; then
+    if repo_path_installed_from "$REPO_DIR/rules" "$CLAUDE_DIR/goldband-rules" ||
+        repo_path_installed_from "$REPO_DIR/rules" "$CLAUDE_DIR/rules"; then
         duplicates+=("rules")
     fi
     if repo_path_installed_from "$REPO_DIR/hooks/scripts" "$CLAUDE_DIR/hooks/scripts"; then
@@ -268,6 +268,7 @@ show_codex_install_status() {
     show_codex_profiles_status
     show_codex_requirements_status
     show_repo_path_status "codex AGENTS.md" "$CODEX_AGENTS_FILE" "$REPO_DIR/codex/AGENTS.md" "codex-agents"
+    show_repo_path_status "codex on-demand policies" "$CODEX_DIR/goldband-rules" "$REPO_DIR/rules" "codex-agents"
     show_repo_path_status "codex custom agents" "$CODEX_CUSTOM_AGENTS_DIR" "$REPO_DIR/codex/agents" "codex-agents"
     show_codex_prompts_status
     show_repo_path_status "codex hooks.json" "$CODEX_HOOKS_FILE" "$REPO_DIR/codex/hooks.json" "codex-hooks"

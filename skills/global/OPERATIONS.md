@@ -8,7 +8,7 @@
 
 - 先用 `systematic-debugging`
 - 再視需要補 `testing-strategy`
-- 不要先進 code review 或 architecture 討論
+- 若任務只要求 review，查證並回報問題；不要自行切換成修復
 
 ### 架構 / 方向 / 設計決策
 
@@ -27,7 +27,7 @@
 - 這是產出前的 authoring skill；重點是先用正確工作模式寫出 prompt
 - prompt 應優先寫正向目標、可見背景、硬邊界與成果標準；不要補沒有根據的 negative rules 或固定 SOP
 
-## On-Demand Modes
+## On-Demand Modes（僅 Claude Code hooks 安裝）
 
 ### `careful-mode`
 

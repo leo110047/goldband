@@ -1767,11 +1767,9 @@ Implementation contract:
   closure requires authoritative requested-changes readback from the immediately
   following repair attempt. Caller-authored, edited, copied-across-scope,
   prior-attempt, or receipt-less JSON has no closure authority.
-- Closure receipt consumption is an atomic, runtime-owned at-most-once claim made
-  only after repaired candidate binding and Work Map causality validation. Once
-  claimed, a crash, evidence failure, or host failure leaves the receipt spent;
-  retry requires a new initial review. This deliberately favors fail-closed
-  single-use authority over ambiguous crash recovery or concurrent replay.
+- Superseded by the 2026-09-09 single-lineage recovery decision below: receipt
+  integrity remains mandatory, but failed attempts no longer consume a separate
+  permanent claim. The signed lineage and exclusive lock own closure authority.
 - The receipt authority protects against reviewed candidate code, model output,
   and caller-provided artifact JSON. As elsewhere in the managed-worktree threat
   model, the same-permission host user and installed Goldband runtime are trusted;
@@ -1946,7 +1944,7 @@ Decision:
 - Route an authoritative `hostCallCount=0` artifact containing only deterministic
   findings through a typed pre-semantic evidence-repair transition. Reuse the
   existing artifact flag, receipt authority, lineage owner, monotonic contract
-  comparison, and at-most-once claim rather than adding another mode or receipt.
+  comparison, and signed lineage authority rather than adding another mode or receipt.
   The repair reruns affected and newly strengthened cells; an eligible result may
   make the lineage's first initial semantic call, while an ineligible result
   persists a successor deterministic-only artifact and keeps completion false.
@@ -2486,3 +2484,74 @@ Consequences: uncommitted candidates cannot obtain CI evidence, and a changed
 workflow requires a reviewed runtime recipe update. Local unit and installed
 fixture tests validate the adapter but cannot substitute for a live candidate
 CI run. Both existing installers bundle the shared consumer and guide.
+
+## 2026-09-09: Preserve project registry discovery across sandbox fallback
+
+Project review contracts are managed in the durable Goldband registry and selected
+by Git identity, without an Agent-supplied path on ordinary review runs. Temporary
+evidence output must not redirect contract lookup. `inspect` is read-only and
+reports the expected entry path even when no registration exists.
+
+Legacy repository-baseline enforcement remains intact. Removal during migration
+requires an identical registered digest; a missing or changed registration cannot
+authorize removal. Goldband's old manifests are retained as regression fixtures
+for portable CI, while active local configuration lives under `~/.goldband`.
+
+## 2026-09-09: Local self-test evidence before push
+
+Required order: local candidate, independent review, then push and CI. The three
+Goldband macOS self-test recipes cannot require an already-pushed CI candidate.
+Use a fixed installed local-host lane on exact candidate copies, with temporary
+HOME/state, no credential forwarding, bounded execution, and existing signed
+candidate-bound evidence. The self-tests start their own Seatbelt processes;
+the parent therefore uses native host permissions and explicitly declares host
+networking, rather than claiming another enclosing sandbox.
+
+Only the three existing full recipes can migrate from CI, preserving behavior
+cells and operation contracts except runner/network context and longer timeouts.
+General project evidence remains sealed. The historical CI adapter is retained
+for post-push evidence; no push or test omission is needed to start local review.
+
+## 2026-09-09: Separate review safety boundaries from check semantics
+
+Initial and closure review share the existing 256 KiB patch and 48 KiB metadata
+budgets. The prior separate 64 KiB delta and 32 KiB total closure limits rejected
+this architecture repair before review despite it fitting the initial budget.
+One shared budget replaces those conflicting limits; complete deltas, oversize
+rejection, original-finding scope, and receipt authority remain required.
+
+An initial semantic finding could omit evidence bindings that closure later
+required. A legitimate Git no-index exit-code correction was also rejected by
+exact description/command equality. Keep structured coverage, risk, evidence
+levels, execution authority, fresh evidence, and unresolved finding identity
+strict; assess changed check semantics in the existing independent review.
+
+The shared runtime records before/after definitions and one explicit
+preservation assessment in its existing artifact. Passing a replacement command
+alone does not establish preservation. Unreviewed or rejected corrections retain
+the prior required semantics across initial, evidence-repair, and closure runs;
+additive coverage remains required. No new approval command, waiver file, or
+parallel contract authority is introduced. Execution coordinates and operation
+boundaries cannot change under a semantic assessment.
+
+One resolver binds semantic findings through explicit references or declared
+path applicability, including legacy records. It does not guess deterministic
+bindings or treat severity as coverage. Unknown coverage remains incomplete.
+
+The earlier permanent receipt-attempt claim duplicated the signed lineage lock
+and left host failures unrecoverable: reusing the receipt was forbidden while a
+new initial review was also forbidden. Remove that claim, retain receipt payload
+and scope validation, and use the existing signed lineage as the sole authority.
+Failed attempts preserve unresolved findings; successful closure removes the
+authoritative predecessor, so completed and concurrent replays remain rejected.
+Closure resolves one signed owner by receipt ID and artifact digest and updates
+that same file. Copying an overlapping owner produced an invalid path/ID pair
+and left the original copy replayable; the copy and receipt-only bootstrap paths
+are removed. Evidence repair also retains owner acceptance and scope coordinates.
+Missing or ambiguous owners remain explicit failures, not guessed recovery.
+The local evidence recipe adds `test/review-lineage.test.ts` after its complete
+original CI test list, so these retry and ownership regressions are included in
+candidate-bound evidence. Arbitrary extra commands remain rejected.
+Registry relocation uses the same hard-boundary comparison and explicit semantic
+assessment as other contract edits; the repository baseline remains recorded
+until reviewed. It does not silently accept changed descriptions during relocation.

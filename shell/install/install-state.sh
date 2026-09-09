@@ -293,6 +293,7 @@ detect_installed_refresh_targets() {
     repo_path_installed_from "$REPO_DIR/claude/CLAUDE.md" "$CLAUDE_GLOBAL_INSTRUCTIONS_FILE" && targets+=("claude-guidance")
     repo_path_installed_from "$REPO_DIR/commands" "$CLAUDE_DIR/commands" && targets+=("commands")
     repo_path_installed_from "$REPO_DIR/rules" "$CLAUDE_DIR/rules" && targets+=("rules")
+    repo_path_installed_from "$REPO_DIR/rules" "$CLAUDE_DIR/goldband-rules" && targets+=("rules")
     repo_path_installed_from "$REPO_DIR/hooks/scripts" "$CLAUDE_DIR/hooks/scripts" && targets+=("hooks")
     shell_launchers_installed && targets+=("launchers")
 

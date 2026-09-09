@@ -40,7 +40,7 @@
 
 目標：
 - recommendation 不是只講 tradeoff
-- 要能交代 assumptions、failure modes、switch criteria、best alternative；深度安全審查走 Goldband cso workflow
+- 要能交代 assumptions、failure modes、switch criteria、best alternative；深度安全審查走 `$goldband review code`，並明確指定安全審查範圍
 
 ## 第 4 階段：維護 skill 與流程本身
 

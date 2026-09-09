@@ -35,7 +35,7 @@ function invalidInvocations(file, root, validActions) {
   const content = fs.readFileSync(file, 'utf8');
   const pattern =
     /(?:\$|\/)goldband(?:[ \t]+([a-z][a-z0-9-]*))?(?:[ \t]+([a-z][a-z0-9-]*))?/gi;
-  return [...content.matchAll(pattern)]
+  const invalid = [...content.matchAll(pattern)]
     .filter((match) => match[1])
     .filter((match) => {
       if (!match[2]) return true;
@@ -47,6 +47,15 @@ function invalidInvocations(file, root, validActions) {
       const line = content.slice(0, match.index).split('\n').length;
       return `${path.relative(root, file)}:${line}: ${JSON.stringify(match[0])}`;
     });
+  const retired =
+    /\bGoldband\s+(?:cso|skillify|plan-eng-review)\s+workflow\b|\/(?:craft|why|next)\b/g;
+  for (const match of content.matchAll(retired)) {
+    const line = content.slice(0, match.index).split('\n').length;
+    invalid.push(
+      `${path.relative(root, file)}:${line}: retired guidance ${JSON.stringify(match[0])}`,
+    );
+  }
+  return invalid;
 }
 
 function invocationFiles(entry) {

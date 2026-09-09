@@ -10,7 +10,8 @@ Evidence-first code review.
 - Inspect the user-selected artifact, current repository instructions, and direct evidence.
 - Claude: bin/goldband review code --host claude. Codex: read ~/.codex/skills/goldband/.workflow-launcher.json and execute its exact argvPrefix plus review code --host codex.
 - Pass scope/Work Map IDs to runtime lineage.
-- Python requires pythonRuntime (3.14+uv), candidate pyproject.toml/uv.lock, offline dependencies. Help: goldband review contract help/init/validate.
+- Evidence: auto-discovered in ~/.goldband/review-contracts. Diagnose with review contract inspect.
+- Python setup: review contract help.
 
 ## Hard boundaries
 

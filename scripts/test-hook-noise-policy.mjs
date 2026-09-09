@@ -122,6 +122,77 @@ function testPromptHookDoesNotInjectGenericPolicy() {
   assert.doesNotMatch(genericCheck.stdout, /goldband review code/);
 }
 
+function testCodexPromptSuggestionsAreScopedAndDeduplicated() {
+  const input = {
+    hook_event_name: 'UserPromptSubmit',
+    session_id: 'noise-repeat',
+    cwd: repoDir,
+    prompt: 'Please review this code',
+  };
+  const context = (value) =>
+    JSON.parse(runNode(codexRouter, value).stdout).hookSpecificOutput
+      ?.additionalContext ?? '';
+  assert.match(context(input), /\$goldband review code/);
+  assert.equal(
+    context(input),
+    '',
+    'same session and scope must not repeat the hint',
+  );
+  assert.match(context({ ...input, cwd: tmpDir }), /\$goldband review code/);
+  assert.match(
+    context({ ...input, session_id: 'noise-new-session' }),
+    /\$goldband review code/,
+  );
+  assert.match(
+    context({ ...input, prompt: 'Find the root cause of this failing test' }),
+    /\$goldband investigate code/,
+  );
+  assert.equal(context({ ...input, prompt: '$goldband review code' }), '');
+  const anonymous = { ...input, session_id: undefined };
+  assert.match(context(anonymous), /\$goldband review code/);
+  assert.match(context(anonymous), /\$goldband review code/);
+}
+
+function testPerformanceSuggestionsNeedCodeContext() {
+  const { matchPrompt } = require(
+    path.join(
+      repoDir,
+      'hooks/scripts/lib/skill-activation/activation-rules.js',
+    ),
+  );
+  for (const prompt of [
+    'Please optimize the wording of this paragraph',
+    'Optimize this prompt',
+    'Review the performance of our marketing campaign',
+  ]) {
+    assert.equal(
+      matchPrompt(prompt).some(
+        (match) => match.skill === 'performance-optimization',
+      ),
+      false,
+      `not a code performance task: ${prompt}`,
+    );
+  }
+  for (const prompt of [
+    'Optimize the database query latency',
+    'Profile memory allocations in this function',
+    'Fix the N+1 query',
+    '這個 API 很慢，請分析效能',
+    'Reduce bundle size',
+  ]) {
+    assert.equal(
+      matchPrompt(prompt).some(
+        (match) => match.skill === 'performance-optimization',
+      ),
+      true,
+      `code performance task: ${prompt}`,
+    );
+  }
+}
+
+testCodexPromptSuggestionsAreScopedAndDeduplicated();
+testPerformanceSuggestionsNeedCodeContext();
+
 function testContextMonitorOnlyEmitsOnSeverityChanges() {
   const { evaluatePostToolUse } = require(
     path.join(repoDir, 'hooks/scripts/lib/hook-router/posttool-policy.js'),

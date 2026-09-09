@@ -1,12 +1,11 @@
 ---
 name: performance-optimization
 description: |
-  Use when something is slow: page load, render lag, query latency, throughput,
-  bundle size, Core Web Vitals, memory pressure, or any measured bottleneck.
-
-  PRIORITY: takes precedence when the request is about slowness, lag, bottlenecks, or optimization.
-  Prefer the Goldband benchmark workflow for repeatable benchmark workflow and regression tracking.
-  EXCLUDE: architectural design without a measured performance problem.
+  Use for slowness or memory pressure, performance claims, and changes
+  to bulk processing, materialization, caching, or parallel execution where
+  workload growth or resource cost affects the implementation. Catch coding-agent
+  optimization traps before editing and during verification; no planning command
+  is required. Skip unrelated small edits and speculative architecture tuning.
 allowed-tools:
   - Read
   - Grep
@@ -14,107 +13,55 @@ allowed-tools:
   - Bash
 ---
 
-# Performance Optimization - Making Software Fast
+# Performance and Resource Traps
 
-## When to Use This Skill
+Apply only the traps relevant to the changed execution path. These are
+research-informed failure patterns, not a universal optimization checklist.
 
-- Improving slow page load times and performance
-- Reducing JavaScript bundle sizes
-- Optimizing React component rendering with memoization
-- Implementing code splitting and lazy loading
-- Configuring browser and server-side caching
-- Optimizing images with next/image or similar
-- Profiling performance bottlenecks with DevTools
-- Implementing virtual scrolling for large datasets
-- Optimizing database queries and N+1 problems
-- Improving Core Web Vitals (LCP, FID, CLS)
-- Implementing progressive image loading
-- Reducing Time to Interactive (TTI)
+## Before Editing
 
-## Core Principles
+- A short loop or familiar API can hide the actual cost in a callee, conversion,
+  or native implementation. Trace the workload to that owner before choosing
+  an optimization; check effective build settings before adding tuning flags.
+- For new bulk or parallel work, establish the expected input scale and resource
+  constraint from the task or current usage. Unknown scale is an assumption,
+  not permission to invent a budget or build a caching/queueing subsystem.
+- A correctness test passing on small inputs does not establish scalability.
+  Decide what would expose the relevant growth or allocation cost; unrelated
+  edits need no benchmark. Investigate existing bugs with systematic-debugging.
 
-1. **Measure First, Optimize Second** - Never guess at bottlenecks
-2. **80/20 Rule** - 20% of code causes 80% of performance issues
-3. **Premature Optimization is Evil** - Make it work, make it right, then make it fast
-4. **Profile, Don't Assume** - Surprises await; your intuition is often wrong
-5. **Set Performance Budgets** - Define acceptable limits before optimizing
+## During Implementation
 
-## Priority and Conflict Rules
+- Parallel execution can lose to serial work through startup, serialization,
+  synchronization, or runtime constraints. Compare total workload cost, not just
+  the worker body. More workers are a hypothesis, not proof of speedup.
+- Compact collection code can allocate full intermediate results or repeat
+  conversions. Trace producer and consumer: a generator followed by full
+  materialization can retain the same memory cost. Preserve required ordering,
+  repeatability, and error behavior when changing evaluation strategy.
+- Input-specific fast paths must preserve the public contract, including the
+  fallback. Timing-tool detection or caller-name checks that only accelerate
+  the evaluator are not product optimizations. Legitimate input specialization
+  and caches need evidence for their actual use, not a blanket prohibition.
 
-- **Scope**: Solving existing performance problems through measurement
-- **Separate from**: Architecture discussions without measured slowness
-- **Defers to**: `systematic-debugging` when bugs are present
-- Always measure before optimizing -- evidence over intuition
+For source cases and limits of these patterns, read
+[optimization-patterns.md](reference/optimization-patterns.md) when relevant.
 
-## Gotchas
+## Before Claiming Improvement
 
-- Do not optimize before establishing a baseline and identifying the actual bottleneck.
-- Do not turn a design discussion into a performance project without measurements.
-- Do not apply `useMemo`, caching, indexes, or queueing as default fixes without profiling evidence.
-- Do not celebrate benchmark-only wins that make correctness, operability, or complexity worse.
-- Do not measure on toy inputs when the complaint is production-scale latency or throughput.
+- Fewer operations, a cache, or a better complexity argument supports a
+  hypothesis; it does not prove elapsed-time or peak-memory improvement.
+  Measure the metric being claimed against a comparable baseline and preserve
+  correctness. A faster run alone says nothing about memory consumption.
+- An agent-written benchmark can miss the changed path. Check that it exercises
+  the target implementation and workload, then separate cold and warmed state
+  where they affect the claim. Repeating the same cached input can hide the
+  underlying cost; a small timing delta can be measurement noise.
+- If execution is unavailable, report the inspected structural change and the
+  unmeasured effect separately. Do not invent results or quietly replace a
+  workload that fails with an easier one.
 
-## Performance Measurement
-
-Establish baselines and use profiling tools to identify real bottlenecks before making changes. Covers Web Vitals targets (FCP, LCP, FID, CLS, TTFB), backend metrics (API response time, query time, throughput), and monitoring with `performance.now()` instrumentation.
-
-See [reference/profiling-techniques.md](reference/profiling-techniques.md) for baseline targets, profiling tool lists (frontend, backend, system), and a full monitoring/alerting code example.
-
-## Frontend Performance
-
-Five key optimization areas: reduce bundle size with tree-shaking and code splitting, optimize images with responsive formats and lazy loading, lazy load routes and components, memoize expensive computations with `useMemo`/`useCallback`/`memo`, and virtualize long lists with `react-window`.
-
-See [reference/optimization-patterns.md](reference/optimization-patterns.md) for all 5 frontend patterns with complete before/after code examples.
-
-## Backend Performance
-
-Five key optimization areas: eliminate N+1 queries with joins and indexes, implement caching strategies (in-memory, Redis, HTTP headers), use connection pooling instead of per-query connections, add cursor-based or offset pagination, and offload heavy work to async job queues with BullMQ.
-
-See [reference/optimization-patterns.md](reference/optimization-patterns.md) for all 5 backend patterns with complete before/after code examples.
-
-## Algorithm Optimization
-
-Choose the right data structure (Set for O(1) lookups, proper Queue implementations) and reduce computational complexity (O(n^2) to O(n) with hash-based approaches).
-
-See [reference/optimization-patterns.md](reference/optimization-patterns.md) for data structure and complexity reduction examples.
-
-## Performance Checklist
-
-```
-Frontend:
-- [ ] Bundle size < 200KB (gzipped)
-- [ ] Images optimized (WebP/AVIF)
-- [ ] Lazy loading for below-fold content
-- [ ] Code splitting for routes
-- [ ] Long lists virtualized
-- [ ] Expensive computations memoized
-- [ ] HTTP caching headers set
-- [ ] Critical CSS inlined
-
-Backend:
-- [ ] Database queries indexed
-- [ ] N+1 queries eliminated
-- [ ] Connection pooling configured
-- [ ] Responses paginated
-- [ ] Heavy operations queued
-- [ ] Response caching implemented
-- [ ] Gzip compression enabled
-- [ ] CDN for static assets
-
-General:
-- [ ] Performance budgets defined
-- [ ] Monitoring & alerting configured
-- [ ] Regular performance testing in CI
-- [ ] Profiling done on realistic data
-```
-
-## Resources
-
-- [Web Vitals](https://web.dev/vitals/)
-- [High Performance Browser Networking](https://hpbn.co/)
-- [Database Indexing Explained](https://use-the-index-luke.com/)
-- [React Performance Optimization](https://react.dev/learn/render-and-commit)
-
----
-
-**Remember**: Fast software delights users. Measure, optimize bottlenecks, and monitor continuously.
+Read [profiling-techniques.md](reference/profiling-techniques.md) for these
+measurement failure cases. Reuse the project's measurement tools. Goldband's
+benchmark workflow aggregates supplied samples; it does not collect CPU or
+memory profiles for the application.

@@ -12,7 +12,7 @@
     "check:review-contracts": "bun run scripts/check-review-contracts.ts",
     "test:capability-invocations": "node scripts/test-capability-invocations.mjs",
     "test:workflow-contracts": "node scripts/test-workflow-contracts.mjs",
-    "test:decision-guidance": "bash scripts/verify-decision-guidance.sh",
+    "test:decision-guidance": "bash scripts/verify-decision-guidance.sh && node scripts/test-guidance-migration.mjs",
     "lint:style": "node scripts/check-code-style.mjs",
     "lint:style:staged": "node scripts/check-code-style.mjs --staged",
     "test:hook-router": "node hooks/scripts/tools/replay-hook-router.js && node scripts/test-claude-hook-router-review-readonly.mjs && node scripts/test-codex-high-risk-policy.mjs && node scripts/test-codex-hook-router.mjs && node scripts/test-workflow-trigger-routing.mjs && node scripts/test-hook-noise-policy.mjs && node scripts/test-review-launch-advisory.mjs && node scripts/test-claude-config-verification-runtime.mjs",

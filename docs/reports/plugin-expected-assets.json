@@ -112,7 +112,8 @@
       "codex/hooks/module-loader.js",
       "codex/hooks/telemetry.js",
       "codex/hooks/telemetry-schema.cjs",
-      "codex/hooks/review-launch-advisory.js"
+      "codex/hooks/review-launch-advisory.js",
+      "codex/hooks/session-state.js"
     ],
     "reason": "Codex plugins exist but package Codex skills/apps/MCP, not Claude Code settings. Root Codex install remains install.sh."
   },

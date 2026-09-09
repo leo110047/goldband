@@ -73,6 +73,7 @@ async function main() {
     knowledgeAdvisory,
     matches,
     sessionId,
+    cwd: input.cwd || process.cwd(),
   });
 
   if (!promptContext.shouldEmit) {
@@ -99,14 +100,18 @@ function buildPromptContext({
   knowledgeAdvisory,
   matches,
   sessionId,
+  cwd,
 }) {
   const suggestedSkills = matches.slice(0, 3).map((match) => match.skill);
   const shouldEmitSuggestionsForPrompt =
     suggestedSkills.length > 0 &&
-    shouldEmitSuggestions(sessionId, suggestedSkills);
+    shouldEmitSuggestions(sessionId, suggestedSkills, { host: 'claude', cwd });
   const shouldEmitKnowledgeForPrompt = Boolean(
     knowledgeAdvisory &&
-      shouldEmitKnowledgeAdvisory(sessionId, knowledgeAdvisory.key),
+      shouldEmitKnowledgeAdvisory(sessionId, knowledgeAdvisory.key, {
+        host: 'claude',
+        cwd,
+      }),
   );
   const crossReviewMessage = crossReviewContract
     ? formatCrossReviewArmMessage(crossReviewContract)

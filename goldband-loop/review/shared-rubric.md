@@ -1,8 +1,7 @@
 # Shared Review Rubric
 
-This is the canonical semantic judgment standard for normal `/review` and
-`cross-review`. Execution, permissions, output shape, aggregation, and gate
-behavior belong to their runtimes.
+Canonical judgment standard for `/review` and `cross-review`. Their runtimes
+own execution, permissions, output, aggregation, and gates.
 
 ## Taxonomy
 
@@ -23,6 +22,17 @@ behavior belong to their runtimes.
 - `ux-design`: user-facing layout, accessibility, interaction, copy, and visual
   regressions when the diff touches UI.
 
+## Performance Claims
+
+- Check that before/after measurements exercise the changed path at relevant
+  scale, with comparable environments, cold/warm state, and timing variation.
+  Elapsed time does not prove CPU or memory savings.
+- Distinguish evaluator-only shortcuts from contract-preserving input
+  specialization or caching; repeated cached inputs only support that workload.
+- Missing measurements are an evidence gap, not proof of regression. Block only
+  for a concrete defect or unmet explicit acceptance requirement; unrelated
+  edits need no benchmark.
+
 ## Severity
 
 Use the lowest severity supported by concrete evidence.
@@ -38,10 +48,9 @@ Use the lowest severity supported by concrete evidence.
 - `info`: skipped/degraded coverage, useful context, or an unverified issue that
   is not supported enough to stay high severity.
 
-High or critical findings without concrete evidence must be downgraded to
-`info`. Findings that need human judgment because the supplied evidence is
-insufficient should be reported as `info` in normal `/review` and as `ESCALATE`
-in `cross-review`.
+Without concrete evidence, downgrade high/critical findings to `info`.
+Insufficient evidence requiring human judgment is `info` in `/review` and
+`ESCALATE` in `cross-review`.
 
 ## Finding validity
 
@@ -51,11 +60,9 @@ Every code finding must prove:
 - a concrete input or runtime state with a reachable execution path;
 - the incorrect result, expected result, and practical impact.
 
-The machine-readable record may also carry category, policy, recommendation,
-verification, and specialist metadata. Those fields do not make an unsupported
-finding valid. Suppress speculative findings instead of displaying confidence
+Category, policy, recommendation, verification, and specialist metadata do not
+validate unsupported findings. Suppress speculation; do not display confidence
 scores.
 
-`blocking` means "must be fixed before landing" in normal `/review`. It does
-not sign or block the session by itself. `cross-review` maps blocking findings
-into its own verdict rules.
+In `/review`, `blocking` means "must fix before landing", not session signing or
+blocking. `cross-review` applies its own verdict rules.

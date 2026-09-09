@@ -24,6 +24,19 @@ withFixture('$goldband review missing\n', (root) => {
   );
 });
 
+for (const retired of [
+  'Goldband cso workflow',
+  'Goldband skillify workflow',
+  'Goldband plan-eng-review workflow',
+  '/craft',
+  '/why',
+  '/next',
+]) {
+  withFixture(retired, (root) => {
+    assert.throws(() => validate(root, ['docs']), /retired guidance/);
+  });
+}
+
 withFixture('$goldband review code\n', (root) => {
   assert.throws(
     () => validate(root, ['docs', 'missing.md']),

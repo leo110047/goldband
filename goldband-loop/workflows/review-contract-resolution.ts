@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { REVIEW_CONTRACT_ROOT_ENV } from "../lib/review-runtime-contract";
+import { assertReviewContractBoundary } from "./review-lineage";
 import { stateRoot } from "./evidence";
 import {
 	digestManifest,
@@ -10,6 +12,7 @@ import {
 } from "./review-contract-store";
 import {
 	loadReviewEvidenceManifest,
+	type InitialReviewArtifact,
 	type ReviewEvidenceManifest,
 	reviewEvidenceManifestSchema,
 } from "./review-evidence";
@@ -98,6 +101,7 @@ export type ResolvedReviewContract = {
 export function resolveReviewContract(
 	ctx: WorkflowContext,
 	input: ReviewDiffInput,
+	closureArtifact?: InitialReviewArtifact,
 ): ResolvedReviewContract {
 	const workspace = resolveReviewWorkspace(ctx.cwd);
 	const repositoryIdentity = resolveReviewContractRepositoryIdentity(
@@ -128,21 +132,7 @@ export function resolveReviewContract(
 			schemaMigration = { observedVersion: 1, supportedVersion: 2, source: identity };
 		}
 		baseline = source("repository", identity, baselineManifest);
-		shadowedRuntimeStore = store.entry
-			? {
-					present: true,
-					identity: store.entryFile,
-					digest: store.entry.manifestDigest,
-					importedFrom: store.entry.importedFrom,
-					importedAt: store.entry.importedAt,
-				}
-			: store.invalidReason
-				? {
-						present: true,
-						identity: store.entryFile,
-						invalidReason: store.invalidReason,
-					}
-				: { present: false };
+		shadowedRuntimeStore = shadowedStoreProvenance(store);
 	} else if (store.entry) {
 		baselineManifest = store.entry.manifest;
 		baseline = {
@@ -153,19 +143,20 @@ export function resolveReviewContract(
 	} else if (store.invalidReason) {
 		throw new Error(store.invalidReason);
 	}
-	if (baseValue !== undefined && candidateValue === undefined) {
+	const monotonicExtensions: ResolvedReviewContract["monotonicExtensions"] = [];
+	if (candidateValue === undefined && store.entry && baselineManifest &&
+		isRegisteredReviewContractExtension(baselineManifest, store.entry.manifest)) {
+		monotonicExtensions.push({ baseline: baselineManifest, effective: store.entry.manifest });
+		baselineManifest = store.entry.manifest;
+		baseline = { ...source("runtime-store", store.entryFile, baselineManifest), importedFrom: store.entry.importedFrom, importedAt: store.entry.importedAt };
+		shadowedRuntimeStore = undefined;
+	}
+	if (baseValue !== undefined && candidateValue === undefined && store.entry?.manifestDigest !== digestManifest(baselineManifest!)) {
 		throw new Error(
 			`review contract laundering blocked: candidate ${candidateRead.identity} removes the authoritative repository manifest from ${baseRef}`,
 		);
 	}
-	const candidateProvenance = inspectCandidateProvenance(
-		workspace.repositoryRoot,
-		baseRef,
-		candidateRead,
-		baselineManifest,
-	);
 
-	const monotonicExtensions: ResolvedReviewContract["monotonicExtensions"] = [];
 	let manifest = baselineManifest;
 	let candidate: ReviewContractSource | undefined;
 	if (candidateValue !== undefined) {
@@ -192,33 +183,22 @@ export function resolveReviewContract(
 		}
 	}
 
-	if (!manifest && !explicitFile && ctx.options.mode === "mock") {
+	const missingContract = !manifest && !explicitFile;
+	if (missingContract && closureArtifact) return resolveArtifactContract(ctx.cwd, closureArtifact);
+	if (missingContract && ctx.options.mode === "mock") {
 		const loaded = loadReviewEvidenceManifest(ctx);
 		manifest = loaded.manifest;
 		baseline = source("explicit-primary", loaded.source, loaded.manifest);
 	}
 	if (!manifest && !explicitFile) {
 		throw new Error(
-			"review/code evidence contract is required before semantic review; commit a repo-root goldband.review-evidence.json or run review contract import --manifest <path>",
+			`review/code evidence contract is required before semantic review; repository: ${workspace.repositoryRoot}; registry entry: ${store.entryFile}; run goldband review contract inspect to diagnose project registration`,
 		);
 	}
 
 	let explicit: ReviewContractSource | undefined;
 	if (explicitFile) {
-		const loaded = manifest
-			? loadReviewEvidenceManifest(ctx, input)
-			: {
-					manifest: validateManifest(
-						JSON.parse(readFileSync(explicitFile, "utf8")),
-						explicitFile,
-					),
-					source: explicitFile,
-				};
-		if (!manifest && ctx.options.mode !== "mock") {
-			throw new Error(
-				"review/code explicit manifest is an extension, not an authority; import it before semantic review when no repository base exists",
-			);
-		}
+		const loaded = readExplicitContract(ctx, input, explicitFile, manifest);
 		if (manifest)
 			monotonicExtensions.push({
 				baseline: manifest,
@@ -245,7 +225,7 @@ export function resolveReviewContract(
 			compatibilityIdentity: COMPATIBILITY_IDENTITY,
 			baseline: baseline!,
 			...(candidate ? { candidate } : {}),
-			candidateProvenance,
+			candidateProvenance: inspectCandidateProvenance(workspace.repositoryRoot, baseRef, candidateRead, baselineManifest),
 			...(explicit ? { explicit } : {}),
 			effectiveDigest: digestManifest(effective),
 			...(shadowedRuntimeStore ? { shadowedRuntimeStore } : {}),
@@ -254,7 +234,28 @@ export function resolveReviewContract(
 	};
 }
 
-export function closureArtifactResolution(
+function readExplicitContract(
+	ctx: WorkflowContext,
+	input: ReviewDiffInput,
+	file: string,
+	baseline?: ReviewEvidenceManifest,
+) {
+	if (baseline) return loadReviewEvidenceManifest(ctx, input);
+	if (ctx.options.mode !== "mock") throw new Error(
+		"review/code explicit manifest is an extension, not an authority; import it before semantic review when no repository base exists",
+	);
+	return { manifest: validateManifest(JSON.parse(readFileSync(file, "utf8")), file), source: file };
+}
+
+function resolveArtifactContract(cwd: string, artifact: InitialReviewArtifact): ResolvedReviewContract {
+	const { manifest, manifestSource, contractResolution } = artifact.evidence;
+	return {
+		manifest, source: manifestSource, monotonicExtensions: [],
+		resolution: contractResolution ?? closureArtifactResolution(cwd, manifest, manifestSource),
+	};
+}
+
+function closureArtifactResolution(
 	cwd: string,
 	manifest: ReviewEvidenceManifest,
 	sourceIdentity: string,
@@ -463,5 +464,20 @@ function readStoreInspection(
 	ReviewContractStoreInspection,
 	"entryFile" | "entry" | "invalidReason"
 > {
-	return inspectReviewContractStore(ctx.cwd, stateRoot(ctx.options));
+	return inspectReviewContractStore(
+		ctx.cwd, process.env[REVIEW_CONTRACT_ROOT_ENV] ?? stateRoot(ctx.options),
+	);
+}
+
+function shadowedStoreProvenance(store: Pick<ReviewContractStoreInspection, "entryFile" | "entry" | "invalidReason">): ReviewContractResolution["shadowedRuntimeStore"] {
+  if (store.entry) return {
+    present: true, identity: store.entryFile, digest: store.entry.manifestDigest,
+    importedFrom: store.entry.importedFrom, importedAt: store.entry.importedAt,
+  };
+  if (store.invalidReason) return { present: true, identity: store.entryFile, invalidReason: store.invalidReason };
+  return { present: false };
+}
+
+export function isRegisteredReviewContractExtension(before: ReviewEvidenceManifest, after: ReviewEvidenceManifest): boolean {
+  try { assertReviewContractBoundary(before, after); return true; } catch { return false; }
 }

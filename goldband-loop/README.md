@@ -31,14 +31,25 @@ not aliases.
 The generated [capability catalog](../docs/generated/capabilities.md) is the
 authoritative list of supported capability/action pairs and runtime status.
 
+Daily `review/code` needs no manifest argument: Goldband discovers the registered
+project contract in `~/.goldband/review-contracts` using Git identity. Read-only
+`review contract inspect` reports the expected registry entry even when missing.
+Sandbox evidence-output fallback preserves this durable lookup location.
+
 Real `review/code` runs resolve one canonical Git workspace. The repo root owns
 diff, snapshot, scope, and default manifest coordinates; an invocation
 subdirectory is retained only as the operation execution offset. The reviewed
 base's repo-root `goldband.review-evidence.json` is authoritative. If the base
 has none, use `goldband review contract import --manifest <path>` to register a
 runtime-owned contract for that Git common directory. Working-tree, index, and
-`--evidence-manifest` inputs are complete monotonic candidate extensions, never
-primary authorities. `inspect` reads back repo root, invocation offset,
+`--evidence-manifest` inputs are complete candidate extensions, never primary
+authorities. Required coverage and execution boundaries remain enforced;
+command and descriptive corrections need an explicit preservation assessment
+in the same independent review. `inspect` distinguishes boundary compatibility
+from changes still requiring semantic review. Unaccepted checks do not replace
+the prior lineage requirements, and old findings remain open until verified.
+A candidate may remove a repository manifest during migration
+only if the registered contract has exactly the reviewed baseline digest. `inspect` reads back repo root, invocation offset,
 base/candidate provenance, tracking state, sources, shadowing, and digests;
 `remove` deletes only the runtime-store entry. Manifest schema v2 is required.
 The only v1 transition is a committed v1 base paired with a v2 candidate, and
@@ -62,8 +73,8 @@ repair-delta-only closure call. Closure also accepts a repaired manifest and
 reruns newly added or modified affected cells; `closed` requires fresh passing
 evidence. Installed-runtime receipt plus Work Map requested-changes readback rejects
 caller-edited, cross-scope, or prior-attempt initial artifacts. The same OS user remains
-inside the trusted host boundary. Receipt claims are atomic and at-most-once; crash or later
-failure requires a new initial review. Prompt-redacted untracked files remain digest-bound and executable
+inside the trusted host boundary. The signed lineage and exclusive owner lock permit retries after failures while preserving
+original findings; completed closure cannot replay its old artifact. Prompt-redacted untracked files remain digest-bound and executable
 through a separate snapshot-only channel. Missing resolvable contracts, unsupported isolation,
 candidate drift, and provenance mismatch fail closed before semantic review.
 When the authoritative artifact has `hostCallCount=0` and deterministic-only
@@ -279,3 +290,8 @@ Run the runtime test suite:
 cd goldband-loop
 bun run test:free
 ```
+
+Goldband's pre-push review runs its three macOS self-test recipes locally on the
+current candidate. It does not require committing or pushing that candidate to
+obtain CI evidence. CI still runs after push. The fixed local self-test runner
+uses native host permissions (not the general sealed evidence runner).

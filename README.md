@@ -68,6 +68,8 @@ Codex:       $goldband system health
 
 其他用途與指令見[工作流程清單](docs/generated/capabilities.md)。
 
+一般實作涉及大量處理、資料實體化、快取、平行執行或效能改善宣稱時，Claude／Codex 的指引會導向共用 `performance-optimization` skill，檢查有研究案例支持的 agent 陷阱，不需先跑 planning。Review 會檢查改善證據與實際路徑；這些指引不代表自動量測 CPU／RAM，也不要求所有修改都跑 benchmark。
+
 程式碼審查需要先為目標專案設定驗證契約；請從[審查入門](docs/review-evidence-manifest.md#quick-start)開始。需要本機隔離執行測試的正式審查目前僅支援 macOS；Linux／Windows 缺少這類證據時會回報未完成。測試或安裝成功也不代表審查、部署已完成。
 
 Claude／Codex 的 Python 審查 gate 必須宣告 `pythonRuntime`：目前只支援 macOS Python 3.14 + uv，且 candidate 需有 `pyproject.toml`、`uv.lock` 與完整離線依賴；缺少條件會阻擋執行。
@@ -105,3 +107,30 @@ claude plugin uninstall goldband@goldband    # 移除 Claude plugin
 ## 授權
 
 [MIT License](LICENSE)。
+
+### Project review evidence
+
+`goldband review code --host codex` (or `--host claude`) discovers the current
+Git project's registered contract automatically in `~/.goldband/review-contracts`.
+Agents do not need to supply a manifest path. Use `goldband review contract inspect`
+to read the exact project identity, registry entry, and configuration status;
+inspection does not require write access to the state directory. Sandbox-local
+review output does not change the durable contract lookup location.
+
+Goldband's local authoring file is `~/.goldband/review-contracts/goldband/review-evidence.json`.
+Register a deliberate setup/update with `goldband review contract import --manifest <path>`.
+The files under `goldband-loop/test/fixtures/review-contracts` are versioned regression
+fixtures, not active project configuration; CI does not read a developer's home directory.
+
+Goldband's pre-push review runs its three macOS self-test recipes locally on the
+current candidate. It does not require committing or pushing that candidate to
+obtain CI evidence. CI still runs after push. The fixed local self-test runner
+uses native host permissions (not the general sealed evidence runner).
+
+Review check corrections are reviewed with their before/after definitions in
+the same independent review. Required coverage, execution permissions, fresh
+evidence, and unresolved finding history remain enforced. Legacy semantic
+findings can resolve their evidence through declared file coverage; unrelated
+passing tests cannot close them.
+
+Claude 與 Codex 的全域指引由同一份精簡政策產生；完整政策存放在各自的 `goldband-rules/`，依任務讀取。升級會移除 Goldband 舊版 Claude 自動載入連結，保留自訂規則。Codex plugin 依 installer catalog 提供 13 個相容 skills；Claude 提供 17 個。已安裝 Goldband Loop 時，也請重跑原本的 workflow 安裝指令，更新複製的執行環境與審查規準。

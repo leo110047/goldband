@@ -113,6 +113,22 @@ function assertCodexPluginSkills(expectedSkills) {
     .map((entry) => entry.name)
     .sort();
   assert.deepEqual(actualSkills, [...expectedSkills].sort());
+  const catalog = fs.readFileSync(
+    path.join(ROOT_DIR, 'shell/install/skill-catalog.txt'),
+    'utf8',
+  );
+  const supported = catalog
+    .trim()
+    .split('\n')
+    .map((line) => line.split('|'))
+    .filter(([, , codexProfile]) => codexProfile)
+    .map(([name]) => name)
+    .sort();
+  assert.deepEqual(
+    actualSkills,
+    supported,
+    'Codex plugin must use the installer compatibility catalog',
+  );
 }
 
 function assertCodexPluginMcpConfig() {

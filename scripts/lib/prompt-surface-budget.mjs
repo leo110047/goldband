@@ -7,6 +7,7 @@ export const PROMPT_SURFACE_BUDGETS = Object.freeze({
   rootRouterSkillBytes: 6 * 1024,
   runtimeReferenceBytes: 12 * 1024,
   installedRuntimeMarkdownTotalBytes: 80 * 1024,
+  globalInstructionsBytes: 6 * 1024,
   portableSkillBytes: 16 * 1024,
 });
 

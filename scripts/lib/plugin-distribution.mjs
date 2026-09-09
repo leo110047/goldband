@@ -59,6 +59,7 @@ const MANAGED_COMMANDS = [
   'codex/hooks/module-loader.js',
   'codex/hooks/telemetry-schema.cjs',
   'codex/hooks/review-launch-advisory.js',
+  'codex/hooks/session-state.js',
 ];
 
 export function buildPluginArtifacts() {
@@ -114,6 +115,11 @@ export function buildPluginArtifacts() {
 }
 
 function addSharedAdapterArtifacts(artifacts) {
+  addFileArtifact(
+    artifacts,
+    'hooks/scripts/lib/skill-activation/session-state.js',
+    path.join(ROOT_DIR, 'codex', 'hooks', 'session-state.js'),
+  );
   addFileArtifact(
     artifacts,
     'hooks/scripts/lib/hook-router/review-launch-advisory.js',
@@ -220,6 +226,7 @@ function buildExpectedAssets({ commands, hookConfig, rules, sourceSkills }) {
         'codex/hooks/telemetry.js',
         'codex/hooks/telemetry-schema.cjs',
         'codex/hooks/review-launch-advisory.js',
+        'codex/hooks/session-state.js',
       ],
       reason:
         'Codex plugins exist but package Codex skills/apps/MCP, not Claude Code settings. Root Codex install remains install.sh.',

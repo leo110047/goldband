@@ -13,6 +13,10 @@ import {
   discoverRuntimeBinaries,
 } from './lib/goldband-source-inventory.mjs';
 import {
+  assertPromptSurfaceBudget,
+  PROMPT_SURFACE_BUDGETS,
+} from './lib/prompt-surface-budget.mjs';
+import {
   buildWorkflowContracts,
   validatePromptArchitecture,
   workflowContractPath,
@@ -38,6 +42,7 @@ const CAPABILITY_INVOCATION_ROOTS = [
   'README.en.md',
   'examples/CLAUDE.md',
   'commands',
+  'skills/global',
   'plugin-assets/claude-code-plugin/commands',
   'codex/agents',
   'codex/hooks/hook-router.js',
@@ -88,6 +93,8 @@ const capabilityActions = manifest.capabilities.flatMap((capability) =>
 );
 
 const outputs = new Map([
+  ['claude/CLAUDE.md', globalInstructions('Claude', 'claude', '/goldband')],
+  ['codex/AGENTS.md', globalInstructions('Codex', 'codex', '$goldband')],
   [
     'goldband-loop/generated/capability-actions.json',
     json({
@@ -170,6 +177,20 @@ const outputs = new Map([
   ],
   ['docs/generated/capabilities.md', generatedDocs(manifest)],
 ]);
+
+function globalInstructions(hostName, hostDir, selector) {
+  const content = fs
+    .readFileSync(path.join(root, 'rules/global-instructions.md.tmpl'), 'utf8')
+    .replaceAll('{{HOST_NAME}}', hostName)
+    .replaceAll('{{HOST_DIR}}', hostDir)
+    .replaceAll('{{SELECTOR}}', selector);
+  assertPromptSurfaceBudget(
+    `${hostName} global guidance`,
+    content,
+    PROMPT_SURFACE_BUDGETS.globalInstructionsBytes,
+  );
+  return content;
+}
 
 for (const host of ALL_HOSTS) {
   outputs.set(

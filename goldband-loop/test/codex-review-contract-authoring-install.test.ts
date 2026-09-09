@@ -61,6 +61,14 @@ describe("Codex review contract authoring install", () => {
 				schema: join(installedRoot, "review", "schemas", "review-evidence-manifest.schema.json"),
 			});
 
+			const inspected = run(nested, ["inspect"]);
+			expect(inspected.status, inspected.stderr).toBe(0);
+			expect(JSON.parse(inspected.stdout)).toMatchObject({
+				configured: false,
+				runtimeStore: { present: false, identity: expect.stringContaining("review-contracts/") },
+			});
+			expect(existsSync(stateRoot)).toBe(false);
+
 			const initialized = run(nested, ["init"]);
 			expect(initialized.status, initialized.stderr).toBe(0);
 			const manifestFile = join(realpathSync(repo), "goldband.review-evidence.json");

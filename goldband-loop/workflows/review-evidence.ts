@@ -38,6 +38,7 @@ import type {
   SchemaValidator,
   WorkflowContext,
 } from './types';
+import { MAX_REVIEW_DIFF_BYTES, REVIEW_HOST_EVIDENCE_POLICY } from '../lib/review-runtime-contract';
 import { SECRET_CONTENT_RULES } from '../lib/secret-content';
 import {
   EVIDENCE_SANDBOX_ACTIVE_ENV,
@@ -47,12 +48,19 @@ import { superviseCommand } from '../scripts/process-supervisor.mjs';
 import { stateRoot } from './evidence';
 import type { ReviewContractResolution } from './review-contract-resolution';
 import {
+  reviewContractChanges,
+  reviewOperationBoundary,
+  type ReviewContractAssessment,
+  type ReviewContractReview,
+} from './review-contract-changes';
+import {
   evidenceSandboxCommand,
   isEvidenceSandboxRuntimeFailure,
   createCompilerOutputDiagnosticCapture,
   sealedEvidenceExecutionUnavailable,
 } from './review-evidence-sandbox';
 import { resolveReviewWorkspace, workspacePath } from './review-workspace';
+import { assertLocalReviewProvider, isReviewLocalMigration, isReviewLocalProvider, REVIEW_LOCAL_LANE, runLocalReviewEvidence } from './review-local-evidence';
 import { collectReviewCiEvidence, isReviewCiMigration, isReviewCiProvider, REVIEW_CI_LANE, validateReviewCiProvenance, type ReviewCiProvenance } from './review-ci-evidence';
 
 export { isEvidenceSandboxRuntimeFailure } from './review-evidence-sandbox';
@@ -62,13 +70,12 @@ const REVIEW_EVIDENCE_MANIFEST_SCHEMA_VERSION = 2;
 const MAX_REVIEW_EVIDENCE_OUTPUT_BYTES = 64 * 1024;
 const MAX_REVIEW_EVIDENCE_TOTAL_BYTES = 1024 * 1024;
 const MAX_REVIEW_EVIDENCE_OPERATIONS = 64;
-const MAX_REVIEW_CLOSURE_DELTA_BYTES = 64 * 1024;
 const MAX_EVIDENCE_RUNTIME_DIAGNOSTIC_CHARS = 16 * 1024;
 const DEFAULT_REVIEW_EVIDENCE_MANIFEST = 'goldband.review-evidence.json';
 const EVIDENCE_RUNNER_POLICY = 'per-operation-sealed-runtime-readonly-snapshot-default-deny-read-write-network-v55';
 const MAX_REDACTED_UNTRACKED_BYTES = 256 * 1024;
 const REVIEW_RECEIPT_TRUSTED_CONFIG_ENV = 'GOLDBAND_REVIEW_RECEIPT_TRUSTED_CONFIG';
-const SUPPORTED_REVIEW_HOST_EVIDENCE_LANE = 'macos-review-contract-host';
+const SUPPORTED_REVIEW_HOST_EVIDENCE_LANE = REVIEW_HOST_EVIDENCE_POLICY.reviewHostEvidenceLane;
 const executableDigestCache = new Map<string, string>();
 const mockReviewReceiptAuthorityKey = randomBytes(32);
 
@@ -158,7 +165,7 @@ type EvidenceOperation = {
   expectedExitCode?: number;
   timeoutMs: number;
   maxOutputBytes: number;
-  network: 'deny' | 'authorized';
+  network: 'deny' | 'authorized' | 'host';
   authorizationId?: string;
   evidenceLevel: EvidenceLevel;
   requiredSystemTools: string[];
@@ -178,7 +185,7 @@ type EvidenceApplicability = { kind: 'paths'; pathPrefixes: string[] } | { kind:
 
 type EvidenceExecutionContext =
   | { sandboxOwner: 'review-runtime'; runner: 'sealed' }
-  | { sandboxOwner: 'provider'; runner: 'host-seatbelt' | 'github-actions'; lane: string };
+  | { sandboxOwner: 'provider'; runner: 'host-seatbelt' | 'github-actions' | 'local-host'; lane: string };
 
 type TransitionEvidenceBinding = {
   repository: string;
@@ -291,6 +298,7 @@ export type InitialReviewArtifact = {
   diff: string;
   evidence: ReviewEvidenceBundle;
   findings: ReviewFinding[];
+  contractReview?: ReviewContractReview;
   hostCallCount: 0 | 1;
   predecessor?: {
     transition: 'evidence-repair';
@@ -592,11 +600,12 @@ export function classifyReviewFindings(
       ...(finding.behaviorCellIds ?? []).filter((id) => validCellIds.has(id)),
       ...bound.flatMap((record) => record.cellIds),
     ]);
-    const closureCellIds =
-      (finding.severity === 'critical' || finding.severity === 'high') &&
-      normalizedCellIds.length === 0
-        ? uniqueSorted([...validCellIds])
-        : normalizedCellIds;
+    const closureCellIds = reviewFindingCellIds({
+      ...finding,
+      classification: 'semantic-concern',
+      behaviorCellIds: normalizedCellIds,
+      evidenceIds: bound.map((record) => record.id),
+    }, evidence);
     // Only deterministicEvidenceFindings may mint verified-failure. Semantic
     // output can reference relevant records, but cannot promote itself by
     // selecting an unrelated failed command.
@@ -1084,9 +1093,9 @@ export function buildClosureInput(
     repairedBinding.redactedUntrackedFiles,
   );
   const repairDelta = [patchDelta, redactedDelta].filter(Boolean).join('\n');
-  if (Buffer.byteLength(repairDelta) > MAX_REVIEW_CLOSURE_DELTA_BYTES) {
+  if (Buffer.byteLength(repairDelta) > MAX_REVIEW_DIFF_BYTES) {
     throw new Error(
-      `review closure repair delta exceeds ${MAX_REVIEW_CLOSURE_DELTA_BYTES} byte limit; narrow the repair scope`,
+      `review closure repair delta exceeds ${MAX_REVIEW_DIFF_BYTES} byte limit; narrow the repair scope`,
     );
   }
   const changedFiles = uniqueSorted([
@@ -1097,10 +1106,7 @@ export function buildClosureInput(
     ),
   ]);
   const findingCellIds = artifact.findings.flatMap((finding) =>
-    uniqueSorted([
-      ...(finding.behaviorCellIds ?? []),
-      ...evidenceCellsForFinding(finding, artifact.evidence),
-    ])
+    reviewFindingCellIds(finding, artifact.evidence, repairedManifest)
       .filter((cellId) => evidenceRefresh || cellAffectedByPaths(cellId, repairedManifest, changedFiles)));
   const contractChangedCellIds = repairedManifest.behaviorMatrix
     .map((cell) => cell.id)
@@ -1154,12 +1160,15 @@ export function validateClosureResults(
   results: ReviewClosureResult[],
   input: ClosureReviewInput,
   evidence: ReviewEvidenceBundle,
+  contractAssessment?: ReviewContractAssessment,
 ): ReviewClosureResult[] {
+  const changedChecks = reviewContractChanges([input.artifact.evidence.manifest], evidence.manifest);
+  if (changedChecks.length > 0 && results.some((result) => result.status === 'closed') &&
+      !contractAssessment?.preserved) {
+    throw new Error('closure of changed review checks requires a preserving contract assessment');
+  }
   const allowed = new Set(input.affectedFindingIds);
   const evidenceById = new Map(evidence.records.map((record) => [record.id, record]));
-  const originalEvidenceById = new Map(
-    input.artifact.evidence.records.map((record) => [record.id, record]),
-  );
   const originalFindingsById = new Map(
     input.artifact.findings.map((finding) => [finding.id!, finding]),
   );
@@ -1179,15 +1188,14 @@ export function validateClosureResults(
         !rerunRecords.some((record) => record?.status === 'verified-failure')) {
       throw new Error(`closure direct-regression requires verified rerun evidence: ${result.findingId}`);
     }
-    if (result.status === 'evidence-incomplete') continue;
+    if (result.status === 'evidence-incomplete' || result.status === 'still-open') continue;
     if (rerunRecords.length === 0) {
       throw new Error(`closure ${result.status} requires fresh rerun evidence: ${result.findingId}`);
     }
     const finding = originalFindingsById.get(result.findingId)!;
-    const findingCellIds = new Set([
-      ...(finding.behaviorCellIds ?? []),
-      ...evidenceCellsForFinding(finding, input.artifact.evidence),
-    ]);
+    const findingCellIds = new Set(reviewFindingCellIds(
+      finding, input.artifact.evidence, evidence.manifest,
+    ));
     if (findingCellIds.size === 0) {
       throw new Error(`closure ${result.status} has no behavior-cell evidence binding: ${result.findingId}`);
     }
@@ -1199,30 +1207,7 @@ export function validateClosureResults(
       if (!rerunRecords.every((record) => record?.status === 'verified-pass' && record.fresh)) {
         throw new Error(`closure closed requires passing fresh rerun evidence: ${result.findingId}`);
       }
-      if (finding.classification === 'verified-failure') {
-        const failedIds = (finding.evidenceIds ?? []).filter(
-          (id) => originalEvidenceById.get(id)?.status === 'verified-failure',
-        );
-        if (
-          failedIds.length === 0 ||
-          !failedIds.every((id) => {
-            const original = originalEvidenceById.get(id);
-            const rerun = evidenceById.get(id);
-            return rerun?.status === 'verified-pass' &&
-              Boolean(original?.commandDigest) &&
-              sameEvidenceOperationContract(
-                original!,
-                input.artifact.evidence.manifest,
-                rerun,
-                evidence.manifest,
-              );
-          })
-        ) {
-          throw new Error(
-            `closure verified failure requires the unchanged original failed operation to pass: ${result.findingId}`,
-          );
-        }
-      }
+      assertVerifiedFailureRepair(finding, input.artifact.evidence, evidence, Boolean(contractAssessment?.preserved));
     }
   }
   for (const findingId of input.affectedFindingIds) {
@@ -1231,17 +1216,50 @@ export function validateClosureResults(
   return results;
 }
 
-function sameEvidenceOperationContract(
-  original: ReviewEvidenceRecord,
-  originalManifest: ReviewEvidenceManifest,
-  rerun: ReviewEvidenceRecord,
-  rerunManifest: ReviewEvidenceManifest,
-): boolean {
+function assertVerifiedFailureRepair(
+  finding: ReviewFinding,
+  originalEvidence: ReviewEvidenceBundle,
+  evidence: ReviewEvidenceBundle,
+  reviewedCorrection: boolean,
+): void {
+  if (finding.classification !== 'verified-failure') return;
+  const failedRecords = originalEvidence.records.filter((record) =>
+    finding.evidenceIds?.includes(record.id) && record.status === 'verified-failure');
+  const repaired = failedRecords.length > 0 && failedRecords.every((original) => {
+    const rerun = evidence.records.find((record) => record.id === original.id);
+    return rerun?.status === 'verified-pass' && rerun.fresh && sameEvidenceOperationContract({
+      original, originalManifest: originalEvidence.manifest,
+      rerun, rerunManifest: evidence.manifest,
+      reviewedCorrection: reviewedCorrection && sameReviewExecutionOffset(originalEvidence, evidence),
+    });
+  });
+  if (!repaired) throw new Error(
+    `closure verified failure requires the original failed operation boundary and fresh passing evidence: ${finding.id}`,
+  );
+}
+
+function sameReviewExecutionOffset(original: ReviewEvidenceBundle, rerun: ReviewEvidenceBundle): boolean {
+  const before = original.contractResolution?.workspace.invocationOffset;
+  const after = rerun.contractResolution?.workspace.invocationOffset;
+  return before !== undefined && before === after;
+}
+
+function sameEvidenceOperationContract({ original, originalManifest, rerun, rerunManifest, reviewedCorrection }: {
+  original: ReviewEvidenceRecord;
+  originalManifest: ReviewEvidenceManifest;
+  rerun: ReviewEvidenceRecord;
+  rerunManifest: ReviewEvidenceManifest;
+  reviewedCorrection: boolean;
+}): boolean {
   if (!original.providerId || !original.operationId ||
-      original.providerId !== rerun.providerId || original.operationId !== rerun.operationId ||
-      !original.commandDigest || original.commandDigest !== rerun.commandDigest) return false;
+      original.providerId !== rerun.providerId || original.operationId !== rerun.operationId) return false;
   const originalProvider = originalManifest.providers.find((entry) => entry.id === original.providerId);
   const rerunProvider = rerunManifest.providers.find((entry) => entry.id === rerun.providerId);
+  if (isReviewLocalMigration(originalProvider, rerunProvider)) return true;
+  const beforeCommand = originalProvider?.operations.find((operation) => operation.id === original.operationId)?.argv;
+  const afterCommand = rerunProvider?.operations.find((operation) => operation.id === rerun.operationId)?.argv;
+  const commandCorrected = reviewedCorrection && stableJson(beforeCommand) !== stableJson(afterCommand);
+  if (!original.commandDigest || (!commandCorrected && original.commandDigest !== rerun.commandDigest)) return false;
   const migrated = originalProvider && rerunProvider && isReviewCiMigration(originalProvider, rerunProvider);
   const contract = (manifest: ReviewEvidenceManifest, record: ReviewEvidenceRecord) => {
     const provider = manifest.providers.find((entry) => entry.id === record.providerId);
@@ -1257,19 +1275,8 @@ function sameEvidenceOperationContract(
         executionContext: migrated ? rerunProvider.executionContext : provider.executionContext,
       },
       operation: {
-        id: operation.id,
-        target: operation.target,
-        argv: operation.argv,
-        expectedExit: operation.expectedExit,
-        expectedExitCode: operation.expectedExitCode ?? null,
-        timeoutMs: operation.timeoutMs,
-        maxOutputBytes: operation.maxOutputBytes,
-        network: operation.network,
-        authorizationId: operation.authorizationId ?? null,
-        evidenceLevel: operation.evidenceLevel,
-        requiredSystemTools: operation.requiredSystemTools ?? [],
-        seed: operation.seed ?? null,
-        iterations: operation.iterations ?? null,
+        ...reviewOperationBoundary(operation),
+        argv: reviewedCorrection ? undefined : operation.argv,
       },
     }) : undefined;
   };
@@ -1506,7 +1513,7 @@ function validateEvidenceExecutionContext(value: unknown): EvidenceExecutionCont
     }
     return { sandboxOwner, runner };
   }
-  if (sandboxOwner === 'provider' && (runner === 'host-seatbelt' || runner === 'github-actions')) {
+  if (sandboxOwner === 'provider' && (runner === 'host-seatbelt' || runner === 'github-actions' || runner === 'local-host')) {
     return {
       sandboxOwner,
       runner,
@@ -1679,12 +1686,12 @@ function validatePythonContractPath(
 
 function validateOperationNetwork(item: Record<string, unknown>): Pick<EvidenceOperation, 'network' | 'authorizationId'> {
   const network = requiredString(item.network, 'evidence operation.network');
-  if (network !== 'deny' && network !== 'authorized') throw new Error(`invalid evidence operation.network: ${network}`);
+  if (network !== 'deny' && network !== 'authorized' && network !== 'host') throw new Error(`invalid evidence operation.network: ${network}`);
   const authorizationId = optionalString(item.authorizationId);
   if (network === 'authorized' && !authorizationId) {
     throw new Error(`network operation ${String(item.id)} requires typed authorization`);
   }
-  if (network === 'deny' && authorizationId) {
+  if (network !== 'authorized' && authorizationId) {
     throw new Error(`network-denied operation ${String(item.id)} cannot carry authorization`);
   }
   return { network, authorizationId };
@@ -1702,6 +1709,7 @@ function validateRequiredSystemTools(value: unknown): string[] {
 }
 
 function validateProviderContract(provider: EvidenceProvider): void {
+  assertLocalReviewProvider(provider);
   const base = provider.operations.filter((operation) => operation.target === 'base');
   const candidate = provider.operations.filter((operation) => operation.target === 'candidate');
   if (provider.kind === 'regression' &&
@@ -1786,7 +1794,7 @@ function validateOperationAuthorization(
   operation: EvidenceOperation,
   manifest: ReviewEvidenceManifest,
 ): void {
-  if (operation.network === 'deny') {
+  if (operation.network === 'deny' || operation.network === 'host') {
     if (operation.authorizationId) throw new Error(`network-denied operation ${operation.id} cannot carry authorization`);
     return;
   }
@@ -2038,6 +2046,8 @@ type EvidenceExecutionResult = {
 async function runEvidenceOperation(
   options: RunEvidenceOperationOptions,
 ): Promise<ReviewEvidenceRecord> {
+  if (options.provider.executionContext.runner === 'local-host') return runLocalReviewEvidence(options,
+    () => snapshotContentDigest(options.snapshotRoot, []));
   const startedAt = new Date().toISOString();
   try {
     const runtime = await prepareOperationRuntime(options);
@@ -4005,6 +4015,7 @@ export function selectedEvidenceProviderIds(manifest: ReviewEvidenceManifest, ch
 function evidenceExecutionUnavailable(ctx: WorkflowContext, provider: EvidenceProvider) {
   if (provider.executionContext.runner === 'sealed') return sealedEvidenceExecutionUnavailable();
   if (provider.executionContext.runner === 'host-seatbelt') return hostEvidenceExecutionUnavailable(ctx, provider);
+  if (provider.executionContext.runner === 'local-host') return localEvidenceExecutionUnavailable(ctx, provider);
   return undefined;
 }
 
@@ -4136,6 +4147,25 @@ function pythonRuntimeIncompleteRecord(
   };
 }
 
+function localEvidenceExecutionUnavailable(ctx: WorkflowContext, provider: EvidenceProvider) {
+  try {
+    if (process.platform !== 'darwin' || process.env[EVIDENCE_SANDBOX_ACTIVE_ENV] === '1') {
+      throw new Error('local self-tests require a native macOS host outside sealed evidence');
+    }
+    if (!isReviewLocalProvider(provider)) throw new Error('unsupported local self-test recipe');
+    reviewReceiptAuthority(ctx);
+    const file = ctx.options.reviewReceiptTrustedConfig ?? process.env[REVIEW_RECEIPT_TRUSTED_CONFIG_ENV];
+    if (!file) throw new Error('local self-tests require the installed launcher authority');
+    const trusted = JSON.parse(readFileSync(file, 'utf8'));
+    if (trusted.runtimeHost !== ctx.options.host || trusted.reviewLocalEvidenceLane !== REVIEW_LOCAL_LANE) {
+      throw new Error('installed runtime does not authorize the local self-test lane');
+    }
+    return undefined;
+  } catch (error) {
+    return { actual: 'local-host/unavailable', detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 function hostEvidenceExecutionUnavailable(
   ctx: WorkflowContext,
   provider: EvidenceProvider,
@@ -4228,6 +4258,27 @@ function evidenceCellsForFinding(
   return uniqueSorted(evidence.records
     .filter((record) => ids.has(record.id))
     .flatMap((record) => record.cellIds));
+}
+
+/** Resolve legacy and current findings through the same declared coverage. */
+export function reviewFindingCellIds(
+  finding: ReviewFinding,
+  evidence: ReviewEvidenceBundle,
+  manifest = evidence.manifest,
+): string[] {
+  const bound = uniqueSorted([
+    ...(finding.behaviorCellIds ?? []),
+    ...evidenceCellsForFinding(finding, evidence),
+  ]);
+  if (bound.length > 0) return bound;
+  if (finding.classification !== 'semantic-concern' ||
+      !finding.file || finding.file.startsWith('<')) return [];
+  // Applicability belongs to the project contract. Do not bind every high
+  // severity finding to every cell, or invent coverage for an unknown path.
+  const inherited = evidence.manifest.providers.filter((provider) => providerApplies(provider, [finding.file]));
+  const providers = inherited.length > 0 ? inherited : manifest.providers.filter((provider) =>
+    provider.applicability.kind === 'paths' && providerApplies(provider, [finding.file]));
+  return uniqueSorted(providers.flatMap((provider) => provider.cellIds));
 }
 
 function cellAffectedByPaths(
@@ -4340,7 +4391,7 @@ function diffPatchTexts(original: string, repaired: string): string {
         '--src-prefix=original/', '--dst-prefix=repaired/', '--',
         'original.patch', 'repaired.patch',
       ],
-      { cwd: root, encoding: 'utf8', maxBuffer: MAX_REVIEW_CLOSURE_DELTA_BYTES * 2 },
+      { cwd: root, encoding: 'utf8', maxBuffer: MAX_REVIEW_DIFF_BYTES * 2 },
     );
     if (result.status !== 0 && result.status !== 1) {
       throw new Error(`review closure could not calculate repair delta: ${result.stderr}`);
@@ -4944,40 +4995,6 @@ export function removeInitialReviewRuntimeReceipt(ctx: WorkflowContext, id: stri
   const safeId = requiredId(id, 'initial review runtime receipt id');
   const { receiptRoot } = reviewReceiptAuthority(ctx);
   rmSync(join(receiptRoot, `${safeId}.json`), { force: true });
-}
-
-export function claimInitialReviewClosure(
-  ctx: WorkflowContext,
-  artifact: InitialReviewArtifact,
-  repairedCandidateDigest: string,
-): string {
-  validateInitialReviewRuntimeReceipt(ctx, artifact);
-  assertSha256(repairedCandidateDigest, 'repaired closure candidate digest');
-  const { receiptRoot } = reviewReceiptAuthority(ctx);
-  const claimRoot = join(receiptRoot, 'closure-claims');
-  mkdirSync(claimRoot, { recursive: true, mode: 0o700 });
-  const claimFile = join(
-    claimRoot,
-    `${requiredId(artifact.runtimeReceipt.id, 'initial review runtime receipt id')}.json`,
-  );
-  try {
-    writeFileSync(claimFile, `${JSON.stringify({
-      schemaVersion: 1,
-      initialReceiptId: artifact.runtimeReceipt.id,
-      initialReceiptDigest: artifact.runtimeReceipt.digest,
-      closureRunId: ctx.runId,
-      repairedCandidateDigest,
-      reviewScope: artifact.runtimeReceipt.reviewScope,
-      semantics: 'at-most-once',
-      claimedAt: new Date().toISOString(),
-    }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
-  } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST') {
-      throw new Error('closure initial review receipt has already been claimed');
-    }
-    throw error;
-  }
-  return claimFile;
 }
 
 function signReviewReceipt(receiptDigest: string, key: Buffer): string {

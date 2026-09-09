@@ -1,0 +1,4 @@
+[
+  "Review the subagent's final output. Check: (1) Did it claim completion? If so, does the output contain concrete evidence (file paths, test results, command output) \u2014 not just 'Done!' or 'All set!'? (2) Are there red flags like 'should work', 'probably', or missing verification steps? If the output lacks evidence of completion, respond with a brief note about what verification is missing. If the output contains proper evidence, respond with 'LGTM'.",
+  "Review the subagent completion using $ARGUMENTS. Require evidence appropriate to its task; previously verified evidence is valid when the relevant code, configuration, and environment are unchanged. Do not require tests for read-only analysis or trivial text edits. Return only JSON: {\"ok\": true} when completion is supported or no completion is claimed; otherwise {\"ok\": false, \"reason\": \"State the specific unsupported completion claim and missing verification.\"}."
+]

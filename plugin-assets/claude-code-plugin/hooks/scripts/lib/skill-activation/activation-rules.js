@@ -33,12 +33,9 @@ const RULES = [
   {
     skill: 'performance-optimization',
     priority: 'high',
-    hint: 'Measure and profile before changing code for speed.',
+    hint: 'Check the changed code path and workload; measure the metric claimed before reporting an improvement.',
     keywords: [
       'slow',
-      'performance',
-      'optimize',
-      'optimization',
       'bottleneck',
       'latency',
       'throughput',
@@ -46,7 +43,12 @@ const RULES = [
       'bundle size',
       'n+1',
     ],
-    patterns: [/\b(core web vitals|profil(e|ing)|render perf)\b/i],
+    patterns: [
+      /\b(core web vitals|render perf|memory allocations?)\b/i,
+      /\b(performance|optimiz\w*|profil\w*)\b.{0,80}\b(code|function|query|database|api|memory|cpu|bundle|render|loop|cache)\b/i,
+      /\b(code|function|query|database|api|memory|cpu|bundle|render|loop|cache)\b.{0,80}\b(performance|optimiz\w*|profil\w*)\b/i,
+      /(?:程式|函式|查詢|資料庫|API|記憶體|CPU).{0,40}(?:效能|優化|很慢)/i,
+    ],
   },
   {
     skill: 'testing-strategy',

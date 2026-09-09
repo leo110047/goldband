@@ -2,9 +2,9 @@
 
 ## Baseline Policy
 
-- Treat repository facts as unverified until they are checked against files, commands, tests, or logs from the current turn.
+- Treat repository facts as unverified until they are checked against files, commands, tests, or logs that cover the current candidate and relevant environment.
 - Treat current external facts as unverified until they are backed by a cited source. This includes latest versions, docs, prices, rules, and news.
-- Do not claim work is complete without fresh verification evidence from the current turn.
+- Completion claims need valid evidence for the requested outcome. Reuse inspected results while the candidate, inputs, relevant environment, and requirements are unchanged; a new conversational turn alone does not invalidate them. Repeat or broaden checks only after relevant changes, failures, or unresolved concerns, while completing required repository checks.
 - Brainstorming is allowed, but assumptions must be labeled as hypotheses instead of stated as confirmed facts.
 
 ## Required Behavior

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,7 +9,7 @@ import { runWorkflow } from '../workflows/runtime';
 import {
   finalizeClosureReviewLineage,
   finalizeInitialReviewLineage,
-  assertReviewContractNotWeaker,
+  assertReviewContractBoundary,
   prepareReviewLineage,
   readReviewLineageForTest,
   releaseReviewLineage,
@@ -21,6 +21,8 @@ import type {
 } from '../workflows/review-evidence';
 import { createCandidateBinding } from '../workflows/review-evidence';
 import type { ReviewContractResolution } from '../workflows/review-contract-resolution';
+import { adapterFor } from '../workflows/host-adapter';
+import { reviewContractChanges, validateReviewContractAssessment } from '../workflows/review-contract-changes';
 
 const roots: string[] = [];
 const key = Buffer.alloc(32, 7);
@@ -41,25 +43,25 @@ describe('authoritative review lineage', () => {
 			kind: 'paths',
 			pathPrefixes: ['workflows/review-evidence.ts', 'workflows/review.ts'],
 		};
-		expect(() => assertReviewContractNotWeaker(baseline, wider)).not.toThrow();
+		expect(() => assertReviewContractBoundary(baseline, wider)).not.toThrow();
 
 		const broader = structuredClone(baseline);
 		broader.providers[0]!.applicability = {
 			kind: 'paths',
 			pathPrefixes: ['workflows'],
 		};
-		expect(() => assertReviewContractNotWeaker(baseline, broader)).not.toThrow();
+		expect(() => assertReviewContractBoundary(baseline, broader)).not.toThrow();
 
 		const narrower = structuredClone(baseline);
 		narrower.providers[0]!.applicability = {
 			kind: 'paths',
 			pathPrefixes: ['test'],
 		};
-		expect(() => assertReviewContractNotWeaker(baseline, narrower))
+		expect(() => assertReviewContractBoundary(baseline, narrower))
 			.toThrow('contract laundering blocked');
 	});
 
-	test('permits reason removal only when an unsupported cell gains typed evidence', () => {
+	test('reason edits remain reviewable and cannot silently waive an unsupported boundary', () => {
 		const unsupported = manifest();
 		unsupported.behaviorMatrix[0] = {
 			...unsupported.behaviorMatrix[0]!,
@@ -70,9 +72,10 @@ describe('authoritative review lineage', () => {
 		unsupported.providers = [];
 		const rewritten = structuredClone(unsupported);
 		rewritten.behaviorMatrix[0]!.reason = 'A different unsupported explanation.';
-		expect(() => assertReviewContractNotWeaker(unsupported, rewritten))
-			.toThrow('required behavior reason changed');
-		expect(() => assertReviewContractNotWeaker(unsupported, manifest())).not.toThrow();
+		expect(() => assertReviewContractBoundary(unsupported, rewritten)).not.toThrow();
+		expect(() => validateReviewContractAssessment(undefined, reviewContractChanges([unsupported], rewritten)))
+			.toThrow('explicit semantic contract assessment');
+		expect(() => assertReviewContractBoundary(unsupported, manifest())).not.toThrow();
 	});
 
   test('rejects an empty initial candidate before lineage creation and permits a later candidate', async () => {
@@ -134,7 +137,7 @@ describe('authoritative review lineage', () => {
     await expect(runWorkflow(getWorkflow('review/code'), {
       mode: 'mock', host: 'mock', cwd: fixture.repo, goldbandHome: fixture.state,
       diffFile: 'candidate.diff', evidenceManifestFile: 'goldband.review-evidence.json',
-    })).rejects.toThrow('review contract laundering blocked: required behavior semantics changed');
+    })).rejects.toThrow('prior findings/blockers open');
     const telemetryRoot = join(fixture.state, 'workflow-runs', 'telemetry');
     const hostTelemetry = spawnSync('find', [telemetryRoot, '-name', '*-review-host-usage.json'], { encoding: 'utf8' });
     expect(hostTelemetry.stdout.trim().split('\n').filter(Boolean)).toHaveLength(1);
@@ -219,13 +222,27 @@ describe('authoritative review lineage', () => {
     })).toThrow(`repair deterministic evidence with: --closure-artifact ${artifactFile}`);
     const repair = prepare(fixture, manifest(), artifact, {
       candidateDigest: 'f'.repeat(64),
+      scopeDigest: '8'.repeat(64), acceptanceDigest: '9'.repeat(64),
+      scopeSummary: ['deploy.ts', 'repair.ts'],
     });
     expect(repair.predecessor?.authoritativeArtifact).toMatchObject({
       runId: artifact.runId,
       receiptId: artifact.runtimeReceipt.id,
       hostCallCount: 0,
     });
+    expect(repair.file).toBe(first.file);
+    expect(repair.acceptanceDigest).toBe('c'.repeat(64));
+    expect(repair.scopeSummary).toEqual(['deploy.ts']);
+    const repairedArtifact = initialArtifact(manifest(), []);
+    finalizeInitialReviewLineage({
+      handle: repair, key, repository: 'repo', baseDigest: 'a'.repeat(64),
+      scopeDigest: repair.predecessor!.scopeDigest, artifact: repairedArtifact,
+      artifactFile: join(fixture.state, 'repaired.json'), findings: [],
+      deterministicComplete: true, runtimeIncomplete: false,
+    });
     releaseReviewLineage(repair);
+    const next = prepare(fixture, manifest(), undefined, { candidateDigest: '7'.repeat(64) });
+    releaseReviewLineage(next);
   });
 
   test('detects all inherited contract downgrade classes and permits additive coverage', () => {
@@ -248,16 +265,26 @@ describe('authoritative review lineage', () => {
 
     const mutations: Array<(value: ReviewEvidenceManifest) => void> = [
       (value) => { value.behaviorMatrix = []; },
-      (value) => { value.behaviorMatrix[0]!.expected = 'unsafe state is accepted'; },
+      (value) => { value.behaviorMatrix[0]!.kind = 'normal'; },
       (value) => { value.behaviorMatrix[0]!.risk = 'low'; },
       (value) => { value.behaviorMatrix[0]!.disposition = 'manual'; value.behaviorMatrix[0]!.reason = 'skip'; },
-      (value) => { value.providers[0]!.operations[0]!.argv = ['true']; },
+      (value) => { value.providers[0]!.operations[0]!.network = 'authorized'; },
       (value) => { value.providers[0]!.operations[0]!.evidenceLevel = 'fixture'; },
     ];
     for (const mutate of mutations) {
       const changed = structuredClone(manifest());
       mutate(changed);
       expect(() => prepare(fixture, changed)).toThrow('contract laundering blocked');
+    }
+    for (const mutate of [
+      (value: ReviewEvidenceManifest) => { value.behaviorMatrix[0]!.expected = 'unsafe state is accepted'; },
+      (value: ReviewEvidenceManifest) => { value.providers[0]!.operations[0]!.argv = ['true']; },
+    ]) {
+      const changed = structuredClone(manifest());
+      mutate(changed);
+      const changes = reviewContractChanges([manifest()], changed);
+      expect(changes).toHaveLength(1);
+      expect(() => validateReviewContractAssessment(undefined, changes)).toThrow('explicit semantic contract assessment');
     }
 
     const additive = structuredClone(manifest());
@@ -285,6 +312,78 @@ describe('authoritative review lineage', () => {
     const next = prepare(fixture, additive);
     expect(next.appliedWaiverIds).toEqual([]);
     releaseReviewLineage(next);
+  });
+
+  test('workflow records a rejected check rewrite as a blocker despite passing evidence', async () => {
+    const fixture = repository();
+    const evidenceFile = join(fixture.repo, 'goldband.review-evidence.json');
+    const original = dispositionManifest('unsafe deployment is rejected');
+    writeFileSync(evidenceFile, JSON.stringify(original));
+    git(fixture.repo, ['add', 'goldband.review-evidence.json']);
+    git(fixture.repo, ['commit', '-qm', 'review contract baseline']);
+    writeFileSync(evidenceFile, JSON.stringify(dispositionManifest('unsafe deployment is accepted')));
+    writeFileSync(join(fixture.repo, 'candidate.diff'), 'diff --git a/deploy.ts b/deploy.ts\n--- a/deploy.ts\n+++ b/deploy.ts\n@@ -1 +1 @@\n-before();\n+after();\n');
+    const prototype = Object.getPrototypeOf(adapterFor('mock'));
+    const originalRun = prototype.runJson;
+    let observedPrompt = '';
+    const mock = spyOn(prototype, 'runJson').mockImplementation(async (prompt: string) => {
+      observedPrompt = prompt;
+      const result = await originalRun.call(adapterFor('mock'), prompt);
+      result.parsed.contractReview = { preserved: false, summary: 'The revised expectation accepts the unsafe deployment.' };
+      return result;
+    });
+    try {
+      const result = await runWorkflow(getWorkflow('review/code'), {
+        mode: 'mock', host: 'mock', cwd: fixture.repo, goldbandHome: fixture.state,
+        diffFile: 'candidate.diff', evidenceManifestFile: 'goldband.review-evidence.json',
+      });
+      expect(observedPrompt).toContain('REVIEW_CONTRACT_CHANGES_START');
+      expect(observedPrompt).toContain('unsafe deployment is rejected');
+      expect(observedPrompt).toContain('unsafe deployment is accepted');
+      expect(String(result.output)).toContain('completion-authorized: false');
+      const artifactFile = result.artifacts.find((file: string) => file.endsWith('-review-evidence.json'))!;
+      const artifact = JSON.parse(readFileSync(artifactFile, 'utf8'));
+      expect(artifact.contractReview.assessment.preserved).toBe(false);
+      expect(artifact.findings).toContainEqual(expect.objectContaining({ category: 'review-contract', blocking: true }));
+    } finally {
+      mock.mockRestore();
+    }
+  });
+
+  test('unreviewed initial check corrections retain their predecessor across the next repair', () => {
+    for (const outcome of ['host-incomplete', 'rejected'] as const) {
+      const fixture = repository();
+      const baseline = manifest();
+      const changed = structuredClone(baseline);
+      changed.providers[0]!.operations[0]!.argv = ['node', 'corrected-check.js'];
+      changed.behaviorMatrix[0]!.expected = 'Corrected check still rejects unsafe input.';
+      const first = prepare(fixture, changed, undefined, { baselineManifest: baseline });
+      const artifact = initialArtifact(changed, [{
+        id: 'D-001', file: '<typed-evidence>', severity: 'high', summary: 'Evidence remains incomplete.',
+        blocking: true, classification: 'runtime-incomplete', category: 'deterministic-evidence',
+        behaviorCellIds: ['deployment-safe'],
+      }]);
+      artifact.hostCallCount = outcome === 'host-incomplete' ? 0 : 1;
+      artifact.contractReview = {
+        changes: reviewContractChanges([baseline], changed),
+        ...(outcome === 'rejected' ? { assessment: { preserved: false, summary: 'Missing rejection evidence.' } } : {}),
+      };
+      const artifactFile = join(fixture.state, 'unreviewed.json');
+      writeFileSync(artifactFile, JSON.stringify(artifact));
+      finalizeInitialReviewLineage({
+        handle: first, key, repository: 'repo', baseDigest: 'a'.repeat(64), scopeDigest: 'b'.repeat(64),
+        artifact, artifactFile, findings: artifact.findings, deterministicComplete: false, runtimeIncomplete: true,
+      });
+      releaseReviewLineage(first);
+      const retained = readReviewLineageForTest(first.file, key)!;
+      expect(retained.requiredManifest.providers[0]!.operations[0]!.argv).toEqual(baseline.providers[0]!.operations[0]!.argv);
+      expect(retained.requiredManifest.behaviorMatrix[0]!.expected).toBe(baseline.behaviorMatrix[0]!.expected);
+      const next = prepare(fixture, changed, artifact, { candidateDigest: 'f'.repeat(64) });
+      expect(reviewContractChanges([next.requiredManifest], changed)).toHaveLength(2);
+      expect(() => validateReviewContractAssessment(undefined, reviewContractChanges([next.requiredManifest], changed)))
+        .toThrow('explicit semantic contract assessment');
+      releaseReviewLineage(next);
+    }
   });
 
   test('signed no-finding lineage records each current contract resolution', () => {
@@ -509,18 +608,21 @@ describe('authoritative review lineage', () => {
     })).toThrow(/prior findings\/blockers open \(S-001\)/);
 
     const closure = prepare(fixture, manifest(), artifact, {
-      scopeDigest: originalScope,
+      scopeDigest: expandedScope,
       legacyScopeDigest: collectionScope,
       scopeSummary: ['deploy.ts'],
       candidateDigest: 'f'.repeat(64),
     });
     finalizeClosureReviewLineage({
+      artifact,
       handle: closure, key,
       results: [{ findingId: 'S-001', status: 'closed', summary: 'fixed', evidenceIds: ['gate:check'] }],
       deterministicComplete: true, runtimeIncomplete: false,
     });
     releaseReviewLineage(closure);
     expect(readReviewLineageForTest(closure.file, key)?.unresolvedFindings).toEqual([]);
+    expect(closure.file).toBe(first.file);
+    expect(readReviewLineageForTest(closure.file, key)?.scopeDigest).toBe(originalScope);
 
     const restarted = prepare(fixture, manifest(), undefined, {
       scopeDigest: expandedScope,
@@ -530,6 +632,10 @@ describe('authoritative review lineage', () => {
     });
     expect(restarted.predecessor).toBeUndefined();
     releaseReviewLineage(restarted);
+    expect(() => prepare(fixture, manifest(), artifact, {
+      scopeDigest: originalScope, legacyScopeDigest: collectionScope,
+      scopeSummary: ['deploy.ts'], candidateDigest: 'f'.repeat(64),
+    })).toThrow('authoritative signed lineage');
   });
 
   test('reads through legacy scope without letting an empty legacy candidate pollute a later candidate', () => {
@@ -591,6 +697,7 @@ describe('authoritative review lineage', () => {
       candidateDigest: 'f'.repeat(64),
     });
     finalizeClosureReviewLineage({
+      artifact: matchingArtifact,
       handle: closure, key,
       results: [{ findingId: 'S-001', status: 'closed', summary: 'fixed', evidenceIds: ['gate:check'] }],
       deterministicComplete: true, runtimeIncomplete: false,
@@ -598,7 +705,7 @@ describe('authoritative review lineage', () => {
     releaseReviewLineage(closure);
     expect(readReviewLineageForTest(closure.file, key)).toMatchObject({
       id: closure.id,
-      scopeDigest: scoped,
+      scopeDigest: 'b'.repeat(64),
       acceptanceDigest: 'c'.repeat(64),
       unresolvedFindings: [],
     });
@@ -695,6 +802,7 @@ describe('authoritative review lineage', () => {
       id: 'S-001', file: 'deploy.ts', severity: 'high', summary: 'unsafe',
       blocking: true, behaviorCellIds: ['deployment-safe'],
     }]);
+    expect(() => prepare(fixture, manifest(), artifact)).toThrow('authoritative signed lineage');
     const artifactFile = join(fixture.state, 'initial.json');
     finalizeInitialReviewLineage({
       handle: first, key, repository: 'repo', baseDigest: 'a'.repeat(64), scopeDigest: 'b'.repeat(64),
@@ -704,10 +812,24 @@ describe('authoritative review lineage', () => {
     releaseReviewLineage(first);
 
     expect(() => prepare(fixture, manifest(), { ...artifact, runId: 'forged' })).toThrow(
-      'not the authoritative unresolved finding lineage',
+      'authoritative signed lineage',
     );
+    const failedAttempt = prepare(fixture, manifest(), artifact);
+    expect(() => prepare(fixture, manifest(), artifact)).toThrow('already owned');
+    releaseReviewLineage(failedAttempt);
+    expect(() => prepare(fixture, manifest())).toThrow('prior findings/blockers open');
+    const incompleteAttempt = prepare(fixture, manifest(), artifact);
+    const incomplete = finalizeClosureReviewLineage({
+      artifact,
+      handle: incompleteAttempt, key,
+      results: [{ findingId: 'S-001', status: 'evidence-incomplete', summary: 'host failed', evidenceIds: [] }],
+      deterministicComplete: false, runtimeIncomplete: true,
+    });
+    expect(incomplete.completionAuthorized).toBe(false);
+    releaseReviewLineage(incompleteAttempt);
     const closure = prepare(fixture, manifest(), artifact);
     const verdict = finalizeClosureReviewLineage({
+      artifact,
       handle: closure,
       key,
       results: [{ findingId: 'S-001', status: 'closed', summary: 'fixed', evidenceIds: ['gate:check'] }],
@@ -720,6 +842,72 @@ describe('authoritative review lineage', () => {
       completionAuthorized: true,
     });
     releaseReviewLineage(closure);
+    expect(() => prepare(fixture, manifest(), artifact)).toThrow('authoritative signed lineage');
+  });
+
+  test('closure rejects duplicate signed owners instead of choosing a scope copy', () => {
+    const fixture = repository();
+    const artifact = initialArtifact(manifest(), [{
+      id: 'S-001', file: 'deploy.ts', severity: 'high', summary: 'unsafe',
+      blocking: true, behaviorCellIds: ['deployment-safe'],
+    }]);
+    for (const scopeDigest of ['b'.repeat(64), '8'.repeat(64)]) {
+      const owner = prepare(fixture, manifest(), undefined, { scopeDigest });
+      finalizeInitialReviewLineage({
+        handle: owner, key, repository: 'repo', baseDigest: 'a'.repeat(64), scopeDigest,
+        artifact, artifactFile: join(fixture.state, `${scopeDigest}.json`), findings: artifact.findings,
+        deterministicComplete: true, runtimeIncomplete: false,
+      });
+      releaseReviewLineage(owner);
+    }
+    expect(() => prepare(fixture, manifest(), artifact)).toThrow('missing or ambiguous owner');
+  });
+
+  test('partial closure preserves remaining findings and can finish through the same authority', () => {
+    const fixture = repository();
+    const artifact = initialArtifact(manifest(), ['S-001', 'S-002'].map((id) => ({
+      id, file: 'deploy.ts', severity: 'high' as const, summary: 'unsafe',
+      blocking: true, behaviorCellIds: ['deployment-safe'],
+    })));
+    const first = prepare(fixture, manifest());
+    finalizeInitialReviewLineage({
+      handle: first, key, repository: 'repo', baseDigest: 'a'.repeat(64), scopeDigest: 'b'.repeat(64),
+      artifact, artifactFile: join(fixture.state, 'initial.json'), findings: artifact.findings,
+      deterministicComplete: true, runtimeIncomplete: false,
+    });
+    releaseReviewLineage(first);
+    const partial = prepare(fixture, manifest(), artifact);
+    finalizeClosureReviewLineage({
+      artifact,
+      handle: partial, key, deterministicComplete: true, runtimeIncomplete: false,
+      results: [
+        { findingId: 'S-001', status: 'closed', summary: 'fixed', evidenceIds: ['gate:check'] },
+        { findingId: 'S-002', status: 'still-open', summary: 'needs repair', evidenceIds: [] },
+      ],
+    });
+    releaseReviewLineage(partial);
+    const retry = prepare(fixture, manifest(), artifact);
+    expect(retry.predecessor!.unresolvedFindings.map((finding) => finding.findingId)).toEqual(['S-002']);
+    expect(finalizeClosureReviewLineage({
+      artifact, handle: retry, key, deterministicComplete: true, runtimeIncomplete: false,
+      results: [
+        { findingId: 'S-001', status: 'direct-regression', summary: 'repair reopened A', evidenceIds: [] },
+        { findingId: 'S-002', status: 'closed', summary: 'fixed', evidenceIds: ['gate:check'] },
+      ],
+    }).completionAuthorized).toBe(false);
+    releaseReviewLineage(retry);
+    expect(readReviewLineageForTest(retry.file, key)!.unresolvedFindings.map((finding) => finding.findingId)).toEqual(['S-001']);
+    expect(() => prepare(fixture, manifest())).toThrow('prior findings/blockers open');
+    const finalAttempt = prepare(fixture, manifest(), artifact);
+    expect(finalizeClosureReviewLineage({
+      artifact,
+      handle: finalAttempt, key, deterministicComplete: true, runtimeIncomplete: false,
+      results: artifact.findings.map((finding) => ({
+        findingId: finding.id!, status: 'closed', summary: 'fixed', evidenceIds: ['gate:check'],
+      })),
+    }).completionAuthorized).toBe(true);
+    releaseReviewLineage(finalAttempt);
+    expect(() => prepare(fixture, manifest(), artifact)).toThrow('authoritative signed lineage');
   });
 
   test('rejects concurrent owners, recovers a dead owner, and detects tampering', () => {
@@ -833,10 +1021,12 @@ function prepare(
   closureArtifact?: InitialReviewArtifact,
   overrides: {
     scopeDigest?: string;
+    acceptanceDigest?: string;
     legacyScopeDigest?: string;
     scopeSummary?: string[];
     candidateDigest?: string;
     contractResolution?: ReviewContractResolution;
+    baselineManifest?: ReviewEvidenceManifest;
   } = {},
 ) {
   return prepareReviewLineage({
@@ -849,11 +1039,12 @@ function prepare(
     scopeDigest: overrides.scopeDigest ?? 'b'.repeat(64),
     legacyScopeDigest: overrides.legacyScopeDigest,
     scopeSummary: overrides.scopeSummary ?? ['deploy.ts'],
-    acceptanceDigest: 'c'.repeat(64),
+    acceptanceDigest: overrides.acceptanceDigest ?? 'c'.repeat(64),
     policyIdentityDigest: 'd'.repeat(64),
     candidateDigest: overrides.candidateDigest ?? 'e'.repeat(64),
     behaviorContractDigest: createHash('sha256').update(JSON.stringify(evidenceManifest)).digest('hex'),
     manifest: evidenceManifest,
+    baselineManifest: overrides.baselineManifest,
     contractResolution: overrides.contractResolution ?? {
       schemaVersion: 1,
       repositoryIdentity: {

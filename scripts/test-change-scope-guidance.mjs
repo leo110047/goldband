@@ -145,7 +145,7 @@ const tempHome = fs.mkdtempSync(
 try {
   const install = spawnSync(
     './install.sh',
-    ['claude-guidance', 'skills-full', 'codex-agents', 'codex-skills'],
+    ['claude-guidance', 'rules', 'skills-full', 'codex-agents', 'codex-skills'],
     {
       cwd: root,
       env: {
@@ -165,6 +165,20 @@ try {
 
   assertGuidance(path.join(tempHome, '.claude', 'CLAUDE.md'));
   assertGuidance(path.join(tempHome, '.codex', 'AGENTS.md'));
+  for (const host of ['claude', 'codex']) {
+    assert.equal(
+      fs.existsSync(
+        path.join(tempHome, `.${host}`, 'goldband-rules', 'security.md'),
+      ),
+      true,
+      `${host} must expose full policies on demand`,
+    );
+  }
+  assert.equal(
+    fs.existsSync(path.join(tempHome, '.claude', 'rules')),
+    false,
+    'full policies must not be installed in the unconditional Claude rules directory',
+  );
   assertNoLegacyHealthiestDefault(
     fs.readFileSync(path.join(tempHome, '.claude', 'CLAUDE.md'), 'utf8'),
     'installed Claude adapter',

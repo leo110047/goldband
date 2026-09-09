@@ -105,3 +105,5 @@ claude plugin uninstall goldband@goldband    # Remove the Claude plugin
 ## License
 
 [MIT License](LICENSE).
+
+Claude and Codex global guidance is generated from one compact policy. Full policies live in each host’s `goldband-rules/` directory for task-specific reading. Upgrades retire Goldband’s old Claude autoload link while preserving custom rules. The Codex plugin follows the installer catalog with 13 compatible skills; Claude provides 17. If Goldband Loop is installed, also rerun the original workflow install command to refresh its copied runtime and review rubric.

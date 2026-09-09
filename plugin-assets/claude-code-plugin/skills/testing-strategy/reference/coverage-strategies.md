@@ -11,12 +11,12 @@ Function Coverage: % of functions called
 Statement Coverage: % of statements executed
 ```
 
-### Target Coverage
+### Coverage Policy
 
-- **Critical paths:** 100% (auth, payment, security)
-- **Business logic:** 90%+
-- **Utilities:** 80%+
-- **UI components:** 70%+
+Use the repository's explicit coverage requirements. Choose regression cases
+from the failure modes and contract boundaries at risk; no universal percentage
+proves that auth, payments, or UI behavior is correct. When no threshold exists,
+report uncovered risks instead of inventing one.
 
 ### Measuring Coverage
 

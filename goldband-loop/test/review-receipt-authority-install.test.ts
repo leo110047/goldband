@@ -181,9 +181,9 @@ describe("review receipt authority provisioning", () => {
 			'printf "%s\\n" claude >> "$GOLDBAND_TEST_HOST_CALL_LOG"',
 			"prompt=\"$(cat)\"",
 			"if printf '%s' \"$prompt\" | grep -q CLOSURE_INPUT_START; then",
-			"printf '%s\\n' '{\"result\":\"{\\\"results\\\":[{\\\"findingId\\\":\\\"S-001\\\",\\\"status\\\":\\\"closed\\\",\\\"summary\\\":\\\"repair verified\\\",\\\"evidenceIds\\\":[\\\"claude-repair-gate:candidate-green\\\"]}]}\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'",
+			"printf '%s\\n' '{\"result\":\"{\\\"results\\\":[{\\\"findingId\\\":\\\"S-001\\\",\\\"status\\\":\\\"closed\\\",\\\"summary\\\":\\\"repair verified\\\",\\\"evidenceIds\\\":[\\\"claude-repair-gate:candidate-green\\\"]}],\\\"contractReview\\\":{\\\"preserved\\\":true,\\\"summary\\\":\\\"Fixture review confirms unsupported coverage was replaced with the declared static check.\\\"}}\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'",
 			"else",
-			"printf '%s\\n' '{\"result\":\"{\\\"findings\\\":[{\\\"id\\\":\\\"F-001\\\",\\\"file\\\":\\\"candidate.txt\\\",\\\"line\\\":1,\\\"severity\\\":\\\"medium\\\",\\\"summary\\\":\\\"fixture concern\\\",\\\"evidence\\\":\\\"fixture semantic observation\\\",\\\"failureScenario\\\":\\\"fixture path\\\",\\\"suggestedVerification\\\":\\\"rerun gate\\\",\\\"classification\\\":\\\"semantic-concern\\\",\\\"blocking\\\":false,\\\"evidenceIds\\\":[\\\"claude-repair-gate:candidate-green\\\"],\\\"behaviorCellIds\\\":[\\\"unsupported-runtime\\\"]}]}\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'",
+			"printf '%s\\n' '{\"result\":\"{\\\"findings\\\":[{\\\"id\\\":\\\"F-001\\\",\\\"file\\\":\\\"candidate.txt\\\",\\\"line\\\":1,\\\"severity\\\":\\\"medium\\\",\\\"summary\\\":\\\"fixture concern\\\",\\\"evidence\\\":\\\"fixture semantic observation\\\",\\\"failureScenario\\\":\\\"fixture path\\\",\\\"suggestedVerification\\\":\\\"rerun gate\\\",\\\"classification\\\":\\\"semantic-concern\\\",\\\"blocking\\\":false,\\\"evidenceIds\\\":[\\\"claude-repair-gate:candidate-green\\\"],\\\"behaviorCellIds\\\":[\\\"unsupported-runtime\\\"]}],\\\"contractReview\\\":{\\\"preserved\\\":true,\\\"summary\\\":\\\"Fixture review confirms unsupported coverage was replaced with the declared static check.\\\"}}\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'",
 			"fi",
 		].join("\n"));
 		chmodSync(fakeClaude, 0o755);

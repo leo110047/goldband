@@ -14,6 +14,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { resolveReviewContract } from '../workflows/review-contract-resolution';
+import type { WorkflowContext } from '../workflows/types';
 import { getWorkflow } from '../workflows/registry';
 import { runWorkflow } from '../workflows/runtime';
 import {
@@ -197,7 +199,7 @@ describe('review contract resolution and runtime store', () => {
     const inspection = goldband(repo, state, ['review', 'contract', 'inspect']);
     expect(inspection.schemaMigration).toMatchObject({ observedVersion: 1, supportedVersion: 2 });
     expect(inspection.candidate).toMatchObject({ trackingState: 'modified' });
-    expect(inspection.candidateCompatibility).toEqual({ valid: true });
+    expect(inspection.candidateCompatibility).toEqual({ valid: true, requiresSemanticReview: false });
   });
 
   test('repository baseline rejects a weaker explicit manifest before evidence execution', async () => {
@@ -251,6 +253,94 @@ describe('review contract resolution and runtime store', () => {
     expect(artifact.evidence.contractResolution.effectiveDigest).toBe(
       artifact.binding.behaviorContractDigest,
     );
+  });
+
+  test('sandbox evidence fallback still discovers the durable project contract without a manifest argument', async () => {
+    const root = temporaryRoot();
+    const repo = gitRepository(root, 'repo');
+    const durable = join(root, 'durable');
+    const temporary = join(root, 'temporary');
+    const manifestFile = join(root, 'central.json');
+    writeJson(manifestFile, noOpManifest());
+    const imported = importReviewContract(repo, durable, manifestFile);
+    writeCandidateDiff(repo);
+    const key = 'GOLDBAND_REVIEW_CONTRACT_ROOT';
+    const previous = process.env[key];
+    process.env[key] = durable;
+    try {
+      const result = await runWorkflow(getWorkflow('review/code'), {
+        mode: 'mock', host: 'mock', cwd: repo, goldbandHome: temporary,
+        diffFile: 'candidate.diff',
+      });
+      const artifactFile = result.artifacts.find((file) => file.endsWith('-review-evidence.json'))!;
+      const artifact = JSON.parse(readFileSync(artifactFile, 'utf8'));
+      expect(artifact.evidence.contractResolution.baseline).toMatchObject({
+        kind: 'runtime-store', identity: imported.entryFile,
+      });
+      expect(artifactFile.startsWith(temporary)).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
+    }
+  });
+
+  test('registry relocation preserves hard boundaries and presents changed semantics for review', async () => {
+    const root = temporaryRoot();
+    const repo = gitRepository(root, 'repo');
+    const state = join(root, 'state');
+    const file = join(repo, 'goldband.review-evidence.json');
+    writeJson(file, noOpManifest());
+    git(repo, ['add', 'goldband.review-evidence.json']);
+    git(repo, ['commit', '-m', 'baseline contract']);
+    importReviewContract(repo, state, file);
+    rmSync(file);
+    const result = await runWorkflow(getWorkflow('review/code'), {
+      mode: 'mock', host: 'mock', cwd: repo, goldbandHome: state, worktree: true,
+    });
+    expect(result.artifacts.some((file) => file.endsWith('-review-evidence.json'))).toBe(true);
+    const altered = noOpManifest();
+    altered.behaviorMatrix[0]!.expected = 'A different contract';
+    const changedFile = join(root, 'changed.json');
+    writeJson(changedFile, altered);
+    importReviewContract(repo, state, changedFile);
+    const resolved = resolveReviewContract({ cwd: repo, options: { mode: 'real', worktree: true, goldbandHome: state } } as WorkflowContext,
+      { source: 'git diff', diff: git(repo, ['diff']), changedFiles: ['goldband.review-evidence.json'] });
+    expect(resolved.monotonicExtensions[0]!.baseline.behaviorMatrix[0]!.expected).toBe(noOpManifest().behaviorMatrix[0]!.expected);
+    expect(resolved.manifest.behaviorMatrix[0]!.expected).toBe('A different contract');
+    altered.behaviorMatrix[0]!.id = 'replacement-cell';
+    writeJson(changedFile, altered);
+    importReviewContract(repo, state, changedFile);
+    await expect(runWorkflow(getWorkflow('review/code'), {
+      mode: 'mock', host: 'mock', cwd: repo, goldbandHome: state, worktree: true,
+    })).rejects.toThrow('removes the authoritative repository manifest');
+  });
+
+  test('registered pre-push migration resolves without changing or committing the candidate', () => {
+    const root = temporaryRoot();
+    const repo = gitRepository(root, 'repo');
+    const state = join(root, 'state');
+    const baseline = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/review-contracts/goldband.json'), 'utf8'));
+    writeJson(join(repo, 'goldband.review-evidence.json'), baseline);
+    git(repo, ['add', 'goldband.review-evidence.json']);
+    git(repo, ['commit', '-m', 'legacy CI contract']);
+    for (const provider of baseline.providers) if (provider.executionContext.runner === 'github-actions') {
+      provider.executionContext = { sandboxOwner: 'provider', runner: 'local-host', lane: 'goldband-local-review-host' };
+      provider.operations[0].network = 'host';
+      provider.operations[0].timeoutMs = 600000;
+    }
+    const external = join(root, 'local.json'); writeJson(external, baseline);
+    const registered = importReviewContract(repo, state, external);
+    rmSync(join(repo, 'goldband.review-evidence.json'));
+    const before = git(repo, ['status', '--porcelain']);
+    const inspected = goldband(repo, state, ['review', 'contract', 'inspect']);
+    expect(inspected.baseline.kind).toBe('runtime-store');
+    expect(inspected.runtimeStore.shadowed).toBe(false);
+    const resolved = resolveReviewContract({ cwd: repo, options: { mode: 'real', worktree: true, goldbandHome: state } } as WorkflowContext,
+      { source: 'git diff', diff: git(repo, ['diff']), changedFiles: ['goldband.review-evidence.json'] });
+    expect(resolved.resolution.baseline.kind).toBe('runtime-store');
+    expect(resolved.resolution.effectiveDigest).toBe(registered.entry!.manifestDigest);
+    expect(resolved.manifest.providers.filter((provider) => provider.executionContext.runner === 'local-host')).toHaveLength(3);
+    expect(git(repo, ['status', '--porcelain'])).toBe(before);
   });
 
   test('additive explicit contract passes and records baseline, explicit, and effective digests', async () => {

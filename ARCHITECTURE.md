@@ -114,18 +114,33 @@ provenance, and baseline/candidate/effective digests. The store binds Git
 worktrees through their common directory path and filesystem instance, and also
 records remote identity; moves, path reuse, clones, remote changes, and
 ambiguity fail closed until explicit re-import. Review never mutates repository
-manifests.
+manifests. An exact-digest registered copy permits removing a legacy repository
+manifest during migration without reducing the baseline. The launcher retains
+the durable registry root separately from sandbox-temporary evidence output;
+read-only contract inspection never probes write access.
 
-Goldband's three macOS sandbox self-test providers are an explicit exception to
-local execution. `workflows/review-ci-evidence.ts` owns their fixed GitHub Actions
-recipe and read-only public API adapter, bundled by the existing Claude and
-Codex runtime installers. No new binary, skill, token store, or artifact import
-surface is introduced. The adapter binds an exact materialized Git tree to the
-remote commit and latest run/attempt/step, then the existing runtime signs the
-CI provenance. This is trusted writable CI checkout evidence, not a local
-sealed-snapshot or network-isolation attestation. Missing or unsuccessful CI
-keeps review incomplete. Only the three unchanged operations can migrate from
-the previous host lane; the signed finding lineage and closure checks remain.
+`review-lineage.ts` enforces structured coverage and execution boundaries, while
+`review-contract-changes.ts` projects check-command and descriptive changes for
+the existing independent semantic call. Exact string equality is not an
+equivalence proof: changed checks need an explicit preservation assessment,
+fresh evidence, and preserved operation/execution identity. This uses the same
+review and signed artifact, without a separate approval workflow or state store.
+Unaccepted descriptions and commands cannot replace the prior required contract.
+`reviewFindingCellIds` is the single owner of finding-to-evidence coverage for
+initial classification and closure, including legacy semantic findings that
+omitted bindings. It uses declared provider applicability, never severity-wide
+fallback or guessed deterministic coverage.
+
+Goldband's three macOS sandbox self-test providers use the installed
+`review-local-evidence.ts` adapter before push. It runs the fixed complete recipes
+on an exact local candidate copy, with temporary HOME/state and without forwarded
+credentials. These native host processes own their nested Seatbelt tests and
+explicitly declare host networking; they are not an adversarial-code sandbox.
+The existing signed evidence records bind the candidate, operation, dependencies,
+and before/after snapshot. Only the named unchanged CI recipes can migrate to
+this lane, with increased timeouts; a registered migration can replace the legacy
+base manifest during its removal. The read-only GitHub adapter remains available
+for post-push CI evidence, without making CI a pre-push review prerequisite.
 
 The resolved contract declares stable behavior cells and typed providers. The
 runtime validates every disposition and reciprocal provider/cell
@@ -213,10 +228,15 @@ intentionally trusts the same-permission host user and installed Goldband runtim
 against a malicious same-user host process requires a privileged helper or OS-backed signing key. Closure then proves
 repository/scope provenance and records the original and repaired
 behavior-contract digests, derives a bounded multi-hunk repair delta without
-unchanged middle regions. After repaired binding and Work Map causality validate,
-runtime atomically claims the initial receipt with at-most-once semantics. A crash or later
-failure leaves it spent and requires a new initial review; this favors fail-closed behavior
-over replayable closure authority. Closure reruns original plus new or changed affected cells,
+unchanged middle regions. Initial and closure inputs share a 256 KiB patch budget
+and 48 KiB non-patch budget; oversized inputs fail without truncation. After repaired binding and Work Map causality validate,
+the signed lineage and its exclusive owner lock authorize retries while findings remain unresolved.
+Failed attempts do not consume a second permanent claim. Successful closure clears its
+authoritative artifact, so stale or concurrent replay is rejected. Closure locates and
+locks the unique signed owner by receipt and artifact digest, preserving that owner's
+file and authority coordinates even when the repair expands its candidate scope.
+Missing or ambiguous owners fail closed; a receipt alone cannot recreate lineage.
+Closure reruns original plus new or changed affected cells,
 and permits exactly one host call returning
 only `closed`, `still-open`, `direct-regression`, or `evidence-incomplete` for
 original finding IDs. A zero-finding initial review cannot start closure, and
