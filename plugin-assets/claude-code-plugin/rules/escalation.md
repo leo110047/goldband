@@ -3,7 +3,7 @@
 ## Baseline Policy
 
 Default to acting autonomously on work that is reversible, inside the stated
-scope, and verifiable in the current turn. Asking is reserved for decisions
+scope, and verifiable in the relevant environment. Asking is reserved for decisions
 that genuinely belong to the user. Stopping is mandatory when a tripwire below
 fires. This rule converts "when to give up or check in" from judgment into
 mechanics so it does not depend on the model's own confidence.

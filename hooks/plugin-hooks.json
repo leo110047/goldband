@@ -86,7 +86,7 @@
       "hooks": [
         {
           "type": "prompt",
-          "prompt": "Review the subagent's final output. Check: (1) Did it claim completion? If so, does the output contain concrete evidence (file paths, test results, command output) — not just 'Done!' or 'All set!'? (2) Are there red flags like 'should work', 'probably', or missing verification steps? If the output lacks evidence of completion, respond with a brief note about what verification is missing. If the output contains proper evidence, respond with 'LGTM'.",
+          "prompt": "The subagent completion claims for its assigned task are supported by evidence already in the conversation. Evaluate only that condition, not whether the subagent performed this hook review. Session metadata and transcript paths are identifiers, not additional tasks or files the subagent must read. Arithmetic reasoning is sufficient for arithmetic; tests are not required for read-only analysis or trivial text edits. Previously verified evidence remains valid when the relevant code, configuration, and environment are unchanged. Return only JSON: {\"ok\": true} if claims are supported or no completion is claimed; otherwise {\"ok\": false, \"reason\": \"Name the unsupported task completion claim and the specific missing evidence.\"}. Hook context: $ARGUMENTS",
           "timeout": 30
         }
       ],

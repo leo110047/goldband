@@ -64,9 +64,10 @@ uninstall_claude_guidance() {
 }
 
 uninstall_claude_paths() {
+    retire_claude_rule_autoload
     local paths=(
         "$CLAUDE_DIR/commands"
-        "$CLAUDE_DIR/rules"
+        "$CLAUDE_DIR/goldband-rules"
         "$CLAUDE_DIR/hooks/scripts"
         "$SHELL_UPDATE_BIN"
         "$SHELL_LAUNCHERS_FILE"
@@ -136,6 +137,7 @@ uninstall_codex_paths() {
     local codex_paths=(
         "$CODEX_CONFIG_FILE"
         "$CODEX_AGENTS_FILE"
+        "$CODEX_DIR/goldband-rules"
         "$CODEX_CUSTOM_AGENTS_DIR"
         "$CODEX_HOOKS_FILE"
         "$CODEX_HOOKS_DIR"

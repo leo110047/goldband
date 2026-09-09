@@ -1,11 +1,6 @@
 ---
 name: evidence-based-coding
-description: |
-  Use when making any claim about code, APIs, configs, files, tests, or fixes,
-  especially before proposing changes or declaring work complete.
-
-  CRITICAL: verify with actual code, tool output, or tests before you claim anything.
-enforced-globally: true
+description: Ground code, configuration, and completion claims in evidence for the current candidate and relevant environment. Use when inspecting, changing, or reporting repository behavior.
 allowed-tools:
   - Read
   - Grep
@@ -15,43 +10,25 @@ allowed-tools:
 
 # Evidence-Based Coding
 
-Make codebase claims only after checking current files, commands, tests, or
-logs. This entrypoint stays short because it is frequently loaded; use
-`reference/` only when detailed procedures are needed.
+Check the authoritative code, configuration, output, or logs before making a
+claim. Match the evidence to the scope and boundary being claimed.
 
-## When to Use This Skill
+- Read relevant context behind search results and agent reports.
+- Static inspection proves structure; mocks and type checks do not establish
+  live provider, authorization, process, platform, or deployment behavior.
+- Evidence may be reused when it still covers the same candidate, inputs,
+  relevant environment, and requirement. A new conversational turn alone does
+  not invalidate it. Recheck state that may have changed.
+- Run checks required by the repository and the changed risk. Repeat or broaden
+  them only after relevant changes, failures, or unresolved concerns.
+- Never weaken, skip, or delete an assertion, test, type, or lint rule to pass.
+  Correct a wrong gate together with its stated policy and regression coverage.
+- Report unavailable verification, partial results, and assumptions explicitly.
+  Do not turn a plausible result or another agent's summary into a verified fact.
 
-Use before:
+Load only the reference needed:
 
-- Suggesting a code change.
-- Claiming behavior, API shape, config state, file existence, errors, or fixes.
-- Declaring work complete.
-
-## Hard Rules
-
-- Read the actual file before describing behavior.
-- Treat search results as leads; read matched context before claiming.
-- Do not reuse stale test output, logs, screenshots, or prior-agent reports.
-- Do not cite unchecked paths, APIs, configs, line numbers, or errors.
-- If behavior matters, run the relevant command or test when feasible.
-- If verification is impossible, say what is unverified and what would prove it.
-- Treat agent reports as claims until independently checked.
-- Never weaken, skip, or delete a test, assertion, type, or lint rule just to
-  make a check pass.
-- Completion claims need fresh evidence from the current turn.
-
-## References
-
-- `reference/completion-verification.md`: completion gate and failure patterns.
-- `reference/verification-workflows.md`: workflows for code, API, path, config,
-  and bug claims.
-- `reference/hallucination-patterns.md`: common false-claim patterns.
-- `reference/goal-verification.md`: goal-backward verification.
-
-## Verification Checklist
-
-Before answering or finishing, confirm:
-
-- The files or commands supporting the claim were checked in this turn.
-- The verification scope matches the claim's scope.
-- Any unverified behavior, skipped test, or local-only result is named plainly.
+- `reference/completion-verification.md`: evidence reuse and completion.
+- `reference/verification-workflows.md`: choosing proof for a claim.
+- `reference/hallucination-patterns.md`: misleading evidence patterns.
+- `reference/goal-verification.md`: tracing a requested outcome to behavior.

@@ -26,13 +26,11 @@ No fixes without root-cause investigation first.
 If you cannot state the observed symptom, reproduction path, and evidence source,
 you are not ready to propose a fix.
 
-## Conflict Rules
+## Scope
 
-- Overrides review and optimization work when a concrete bug or failing command
-  is present.
-- When bugs are found during review or optimization, stop and debug first.
-- Resume other skills only after the defect is systematically investigated and
-  fixed or explicitly scoped as out of the current change.
+Investigate a concrete defect before proposing its fix. During a review-only
+request, verify and report findings without changing code. A bug report or
+keyword does not authorize implementation or override the user's task.
 
 ## Gotchas
 

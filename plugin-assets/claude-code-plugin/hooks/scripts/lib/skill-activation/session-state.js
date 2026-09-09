@@ -1,119 +1,69 @@
-const { getPersistentDataPath, readFile, writeFile } = require('../utils');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { createHash } = require('crypto');
 
-function normalizeSessionId(sessionId) {
-  const raw = String(
-    sessionId || process.env.CLAUDE_SESSION_ID || 'default',
-  ).trim();
-  return (raw.length > 0 ? raw : 'default').replace(/[^a-zA-Z0-9._-]/g, '-');
+// Advisory state only: never use this cache to suppress an approval or a gate.
+function stateFile(sessionId, { host = 'claude', cwd = process.cwd() } = {}) {
+  if (typeof sessionId !== 'string' || !sessionId.trim()) return null;
+  const identity = JSON.stringify([host, sessionId, path.resolve(cwd)]);
+  const key = createHash('sha256').update(identity).digest('hex');
+  const root =
+    process.env.CLAUDE_PLUGIN_DATA ||
+    process.env.GOLDBAND_DATA_DIR ||
+    path.join(
+      process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'),
+      'goldband',
+    );
+  return path.join(root, 'skill-activation', `session-${key}.json`);
 }
 
-function resolveStateFile(sessionId) {
-  const safeSessionId = normalizeSessionId(sessionId);
-  return getPersistentDataPath(
-    'skill-activation',
-    `session-${safeSessionId}.json`,
-  );
-}
-
-function readState(sessionId) {
-  const filePath = resolveStateFile(sessionId);
-  const raw = readFile(filePath);
-  if (!raw) {
-    return {
-      sessionId: normalizeSessionId(sessionId),
-      lastSuggestedSkills: [],
-      lastKnowledgeAdvisoryKey: null,
-      filePath,
-    };
-  }
-
+function shouldEmit(sessionId, field, value, scope) {
+  const file = stateFile(sessionId, scope);
+  if (!file) return true;
+  let state = {};
   try {
-    const parsed = JSON.parse(raw);
-    const lastSuggestedSkills = Array.isArray(parsed.lastSuggestedSkills)
-      ? parsed.lastSuggestedSkills.filter((item) => typeof item === 'string')
-      : [];
-    const lastKnowledgeAdvisoryKey =
-      typeof parsed.lastKnowledgeAdvisoryKey === 'string'
-        ? parsed.lastKnowledgeAdvisoryKey
-        : null;
-
-    return {
-      sessionId: normalizeSessionId(parsed.sessionId || sessionId),
-      lastSuggestedSkills,
-      lastKnowledgeAdvisoryKey,
-      filePath,
-    };
+    if (fs.statSync(file).size <= 16384) {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+        state = parsed;
+    }
   } catch {
-    return {
-      sessionId: normalizeSessionId(sessionId),
-      lastSuggestedSkills: [],
-      lastKnowledgeAdvisoryKey: null,
-      filePath,
-    };
+    // Missing or invalid advisory state means emit the useful hint again.
   }
+  if (JSON.stringify(state[field]) === JSON.stringify(value)) return false;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        lastSuggestedSkills: state.lastSuggestedSkills,
+        lastKnowledgeAdvisoryKey: state.lastKnowledgeAdvisoryKey,
+        [field]: value,
+      }),
+      { mode: 0o600 },
+    );
+  } catch {
+    // Cache failure must not interrupt the task or change permission authority.
+  }
+  return true;
 }
 
-function sameSkillList(left, right) {
-  if (left.length !== right.length) return false;
-  return left.every((value, index) => value === right[index]);
-}
-
-function persistState(state, updates) {
-  writeFile(
-    state.filePath,
-    JSON.stringify(
-      {
-        sessionId: state.sessionId,
-        updatedAt: new Date().toISOString(),
-        lastSuggestedSkills: Array.isArray(updates.lastSuggestedSkills)
-          ? updates.lastSuggestedSkills
-          : state.lastSuggestedSkills,
-        lastKnowledgeAdvisoryKey: Object.prototype.hasOwnProperty.call(
-          updates,
-          'lastKnowledgeAdvisoryKey',
-        )
-          ? updates.lastKnowledgeAdvisoryKey
-          : state.lastKnowledgeAdvisoryKey,
-      },
-      null,
-      2,
-    ) + '\n',
+function shouldEmitSuggestions(sessionId, skills, scope) {
+  return shouldEmit(
+    sessionId,
+    'lastSuggestedSkills',
+    [...skills].sort(),
+    scope,
   );
 }
 
-function shouldEmitSuggestions(sessionId, skills) {
-  const state = readState(sessionId);
-  const normalizedSkills = [...skills].sort();
-
-  if (sameSkillList(state.lastSuggestedSkills, normalizedSkills)) {
-    return false;
-  }
-
-  persistState(state, {
-    lastSuggestedSkills: normalizedSkills,
-  });
-
-  return true;
+function shouldEmitKnowledgeAdvisory(sessionId, advisoryKey, scope) {
+  const key = String(advisoryKey || '').trim();
+  return (
+    Boolean(key) &&
+    shouldEmit(sessionId, 'lastKnowledgeAdvisoryKey', key, scope)
+  );
 }
 
-function shouldEmitKnowledgeAdvisory(sessionId, advisoryKey) {
-  const state = readState(sessionId);
-  const normalizedKey = String(advisoryKey || '').trim();
-  if (!normalizedKey) return false;
-
-  if (state.lastKnowledgeAdvisoryKey === normalizedKey) {
-    return false;
-  }
-
-  persistState(state, {
-    lastKnowledgeAdvisoryKey: normalizedKey,
-  });
-
-  return true;
-}
-
-module.exports = {
-  normalizeSessionId,
-  shouldEmitKnowledgeAdvisory,
-  shouldEmitSuggestions,
-};
+module.exports = { shouldEmitKnowledgeAdvisory, shouldEmitSuggestions };

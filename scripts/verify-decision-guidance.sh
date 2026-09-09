@@ -76,9 +76,9 @@ check_contains "rules/change-scope.md" "## Pre-Implementation Proportionality" "
 check_contains "rules/change-scope.md" "Phase metadata expresses applicability, not deterministic enforcement." "canonical policy preserves the guidance boundary"
 check_contains "skills/global/OPERATIONS.md" "recommendation 應附：assumptions、failure modes、warning signals、best alternative、unknowns" "operations docs keep decision recommendation guidance"
 check_contains "skills/global/VALIDATION.md" "recommendation 沒有 assumptions / failure modes / alternatives" "validation docs flag missing decision-quality evidence"
-check_contains "skills/global/security-checklist/SKILL.md" "Goldband cso workflow" "security-checklist defers deep security workflow"
-check_contains "skills/global/decision-log/SKILL.md" "### Failure Signals" "decision-log failure signals section"
-check_contains "skills/global/decision-log/SKILL.md" "### Revisit Triggers / Exit Criteria" "decision-log revisit triggers section"
+check_contains "skills/global/security-checklist/SKILL.md" '$goldband review code' "security-checklist names the current review capability"
+check_contains "skills/global/decision-log/reference/adr-template.md" "### Failure Signals" "decision-log failure signals section"
+check_contains "skills/global/decision-log/reference/adr-template.md" "### Revisit Triggers / Exit Criteria" "decision-log revisit triggers section"
 
 check_contains "commands/verify-config.md" "scripts/verify-decision-guidance.sh" "verify-config documents decision guidance check"
 

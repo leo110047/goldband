@@ -132,3 +132,5 @@ the same independent review. Required coverage, execution permissions, fresh
 evidence, and unresolved finding history remain enforced. Legacy semantic
 findings can resolve their evidence through declared file coverage; unrelated
 passing tests cannot close them.
+
+Claude 與 Codex 的全域指引由同一份精簡政策產生；完整政策存放在各自的 `goldband-rules/`，依任務讀取。升級會移除 Goldband 舊版 Claude 自動載入連結，保留自訂規則。Codex plugin 依 installer catalog 提供 13 個相容 skills；Claude 提供 17 個。已安裝 Goldband Loop 時，也請重跑原本的 workflow 安裝指令，更新複製的執行環境與審查規準。

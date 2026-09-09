@@ -1,4 +1,4 @@
-# Claude Global Instructions
+# {{HOST_NAME}} Global Instructions
 
 <!-- Generated from rules/global-instructions.md.tmpl. Edit the shared source. -->
 
@@ -73,7 +73,7 @@ Use a skill only when it materially applies. For UI, read the project's
 materialization, caching, parallel execution, or performance claims, use
 `performance-optimization`; unrelated edits need no benchmark.
 
-Full policies are available under `~/.claude/goldband-rules/` after full
+Full policies are available under `~/.{{HOST_DIR}}/goldband-rules/` after full
 installation. Read only the relevant file when the task needs more detail;
 do not load the directory as startup context. For installed Goldband workflows,
-use `/goldband <capability> <action>`.
+use `{{SELECTOR}} <capability> <action>`.

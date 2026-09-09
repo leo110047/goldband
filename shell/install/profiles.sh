@@ -69,6 +69,7 @@ install_codex_requirements() {
 install_codex_agents() {
     link_component "$REPO_DIR/codex/AGENTS.md" "$CODEX_AGENTS_FILE" "Codex AGENTS.md"
     link_component "$REPO_DIR/codex/agents" "$CODEX_CUSTOM_AGENTS_DIR" "Codex custom agents"
+    link_component "$REPO_DIR/rules" "$CODEX_DIR/goldband-rules" "Codex on-demand policies"
 }
 
 install_codex_prompts() {
@@ -155,9 +156,44 @@ install_commands() {
 }
 
 install_rules() {
-    local rule_count
-    rule_count=$(find "$REPO_DIR/rules" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')
-    link_component "$REPO_DIR/rules" "$CLAUDE_DIR/rules" "Rules (${rule_count} 個)"
+    link_component "$REPO_DIR/rules" "$CLAUDE_DIR/goldband-rules" "Claude on-demand policies"
+    retire_claude_rule_autoload
+}
+
+retire_claude_rule_autoload() {
+    local legacy="$CLAUDE_DIR/rules"
+    if repo_link_points_to "$legacy" "$REPO_DIR/rules"; then
+        rm "$legacy"
+    elif [ -L "$legacy" ]; then
+        echo "  [保留] 外部 Claude rules 連結: $legacy"
+    elif [ -d "$legacy" ]; then
+        local src dest
+        for src in "$REPO_DIR/rules"/*; do
+            [ -f "$src" ] || continue
+            dest="$legacy/$(basename "$src")"
+            if repo_link_points_to "$dest" "$src" || { [ -f "$dest" ] && cmp -s "$src" "$dest"; } || is_retired_rule_copy "$dest"; then
+                rm "$dest"
+            elif [ -e "$dest" ]; then
+                echo "  [保留] 自訂或已修改的 Claude rule: $dest"
+            fi
+        done
+        if [ -z "$(ls -A "$legacy")" ]; then rmdir "$legacy"; fi
+    fi
+}
+
+is_retired_rule_copy() {
+    [ -f "$1" ] && [ ! -L "$1" ] || return 1
+    node - "$1" "$REPO_DIR/shell/install/retired-rule-hashes.json" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+try {
+  const [file, manifest] = process.argv.slice(2);
+  const known = JSON.parse(fs.readFileSync(manifest, 'utf8'))[path.basename(file)] || [];
+  const digest = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  process.exit(known.includes(digest) ? 0 : 1);
+} catch { process.exit(1); }
+NODE
 }
 
 merge_hooks_config() {
@@ -202,29 +238,23 @@ merge_hooks_config() {
 merge_claude_hooks_json() {
     local existing_hooks="$1"
     local hooks_content="$2"
-    jq -n --argjson existing "$existing_hooks" --argjson new_hooks "$hooks_content" '
-        def hook_key:
-            .hooks[0].command // .hooks[0].prompt // .description // tostring;
-
-        def merge_phase(phase):
-            (($existing[phase] // []) + ($new_hooks[phase] // []))
-            | group_by(hook_key)
-            | map(last);
-
-        {
-            SessionStart: merge_phase("SessionStart"),
-            UserPromptSubmit: merge_phase("UserPromptSubmit"),
-            PreToolUse: merge_phase("PreToolUse"),
-            PostToolUse: merge_phase("PostToolUse"),
-            PostToolUseFailure: merge_phase("PostToolUseFailure"),
-            Stop: merge_phase("Stop"),
-            SubagentStop: merge_phase("SubagentStop"),
-            Notification: merge_phase("Notification"),
-            PreCompact: merge_phase("PreCompact"),
-            PostCompact: merge_phase("PostCompact"),
-            SessionEnd: merge_phase("SessionEnd")
-        }
+    local managed_command="node \"$CLAUDE_DIR/hooks/scripts/hooks/hook-router.js\""
+    jq -n --argjson existing "$existing_hooks" --argjson new_hooks "$hooks_content" \
+        --arg router "$managed_command" \
+        --slurpfile retired "$REPO_DIR/hooks/claude-retired-hook-prompts.json" '
+        ($new_hooks | [ .[][] | .hooks[] | .command? // empty ] + [$router]) as $commands
+        | ($new_hooks | [ .[][] | .hooks[] | .prompt? // empty ] + $retired[0]) as $prompts
+        | def owned:
+            (.command? as $c | $commands | index($c)) != null
+            or (.prompt? as $p | $prompts | index($p)) != null;
+        ($existing | with_entries(.value |= map(
+            .hooks |= map(select(owned | not))
+            | select(.hooks | length > 0)
+        ))) as $preserved
+        | reduce (($preserved + $new_hooks) | keys[]) as $phase ({};
+            .[$phase] = (($preserved[$phase] // []) + ($new_hooks[$phase] // [])))
         '
+
 }
 
 print_missing_jq_hooks_help() {

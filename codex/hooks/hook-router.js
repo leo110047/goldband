@@ -12,6 +12,7 @@ const {
 } = require('./high-risk-policy');
 const { recordHookTelemetry } = require('./telemetry');
 const { reviewLaunchAdvisory } = require('./review-launch-advisory');
+const { shouldEmitSuggestions } = require('./session-state');
 function loadCrossReviewGate() {
   return requireFirst([
     path.resolve(
@@ -301,15 +302,19 @@ function evaluateUserPromptSubmitResult(input) {
       : null;
   }
 
-  messages.push(
-    ...loadWorkflowHints()
-      .filter((hint) =>
-        hint.triggers.some((trigger) =>
-          workflowTriggerMatches(prompt, trigger),
-        ),
-      )
-      .map((hint) => hint.message),
+  const hints = loadWorkflowHints().filter((hint) =>
+    hint.triggers.some((trigger) => workflowTriggerMatches(prompt, trigger)),
   );
+  if (
+    hints.length > 0 &&
+    shouldEmitSuggestions(
+      input.session_id,
+      hints.map((hint) => hint.message),
+      { host: 'codex', cwd: input.cwd || process.cwd() },
+    )
+  ) {
+    messages.push(...hints.map((hint) => hint.message));
+  }
 
   if (crossReviewContract) {
     messages.unshift(formatCrossReviewArmMessage(crossReviewContract));

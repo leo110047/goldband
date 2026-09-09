@@ -60,7 +60,7 @@ const GENERATED_ROOTS = [
 
 export function buildAppSupportArtifacts() {
   const packageJson = readJson(path.join(ROOT_DIR, 'package.json'));
-  const skills = skillDirs('skills/global');
+  const skills = codexSkills();
   const codexManifest = buildCodexManifest(packageJson);
   const rootCodexManifest = buildRootCodexManifest(packageJson);
   const codexMarketplace = buildCodexMarketplace();
@@ -95,11 +95,22 @@ export function buildAppSupportArtifacts() {
     [APP_SUPPORT_EXPECTED_ASSETS_PATH, stableJson(expectedAssets)],
   ]);
 
-  addDirectoryArtifacts(
-    artifacts,
-    'skills/global',
-    path.join(CODEX_PLUGIN_ROOT_PATH, 'skills'),
-  );
+  for (const skill of skills) {
+    addDirectoryArtifacts(
+      artifacts,
+      `skills/global/${skill}`,
+      path.join(CODEX_PLUGIN_ROOT_PATH, 'skills', skill),
+    );
+  }
+  for (const entry of fs.readdirSync(path.join(ROOT_DIR, 'skills/global'), {
+    withFileTypes: true,
+  })) {
+    if (!entry.isFile()) continue;
+    artifacts.set(
+      path.join(CODEX_PLUGIN_ROOT_PATH, 'skills', entry.name),
+      fs.readFileSync(path.join(ROOT_DIR, 'skills/global', entry.name), 'utf8'),
+    );
+  }
   return artifacts;
 }
 
@@ -488,14 +499,17 @@ function listFiles(rootDir) {
   return files.sort();
 }
 
-function skillDirs(dir) {
+function codexSkills() {
   return fs
-    .readdirSync(path.join(ROOT_DIR, dir), { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .filter((entry) =>
-      fs.existsSync(path.join(ROOT_DIR, dir, entry.name, 'SKILL.md')),
+    .readFileSync(
+      path.join(ROOT_DIR, 'shell/install/skill-catalog.txt'),
+      'utf8',
     )
-    .map((entry) => entry.name)
+    .trim()
+    .split('\n')
+    .map((line) => line.split('|'))
+    .filter(([, , profile]) => profile)
+    .map(([name]) => name)
     .sort();
 }
 
