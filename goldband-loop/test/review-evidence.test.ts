@@ -1,3 +1,4 @@
+import { isHostPythonToolPath, localReviewPythonPath, resolveHostPythonTool } from '../workflows/review-python-tools';
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -4218,5 +4219,113 @@ describe('candidate-bound GitHub review evidence', () => {
     expect(evidence.records[0]!.ciProvenance).toBeUndefined();
     expect(evidence.records[0]!.outputSummary).toContain('CI evidence incomplete');
     await expect(collectReviewCiEvidence(repo, repo, provider, 'goldband-loop')).rejects.toThrow('invocation directory');
+  });
+});
+
+function pythonToolFixture() {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'python-host-tools-'))); roots.push(root);
+  const home = join(root, 'home'); const repository = join(root, 'repository');
+  mkdirSync(home); mkdirSync(repository);
+  return { root, home, repository };
+}
+function nativeToolFixture(path: string) {
+  mkdirSync(dirname(path), { recursive: true });
+  // Discovery fixture only; never executed. Real runtime integration is separate.
+  writeFileSync(path, Buffer.from('cffaedfe00000000', 'hex')); chmodSync(path, 0o755);
+  return path;
+}
+
+describe('Python host tool discovery', () => {
+  test.each([
+    ['uv', '.local/bin/uv'], ['python3.14', '.local/bin/python3.14'],
+    ['python3.14', '.local/share/uv/python/cpython-3.14/bin/python3.14'],
+    ['python3.14', '.pyenv/versions/3.14.0/bin/python3.14'],
+  ] as const)('accepts the supported native %s at %s', (command, location) => {
+    const { home, repository } = pythonToolFixture(); const tool = nativeToolFixture(join(home, location));
+    expect(resolveHostPythonTool(command, repository, { home, path: dirname(tool) })).toBe(tool);
+  });
+
+  test('validates both the selected alias and its canonical target', () => {
+    const { home, repository, root } = pythonToolFixture();
+    const native = nativeToolFixture(join(home, '.local/share/uv/python/cpython-3.14/bin/python3.14'));
+    const alias = join(home, '.local/bin/python3.14'); mkdirSync(dirname(alias), { recursive: true }); symlinkSync(native, alias);
+    expect(resolveHostPythonTool('python3.14', repository, { home, path: dirname(alias) })).toBe(native);
+    rmSync(alias); symlinkSync(nativeToolFixture(join(root, 'untrusted/python3.14')), alias);
+    expect(() => resolveHostPythonTool('python3.14', repository, { home, path: dirname(alias) })).toThrow('trusted host package root');
+    rmSync(alias); symlinkSync(nativeToolFixture(join(repository, 'bin/python3.14')), alias);
+    expect(() => resolveHostPythonTool('python3.14', repository, { home, path: dirname(alias) })).toThrow('source checkout');
+  });
+
+  test('rejects a repository alias even when it points at a supported host tool', () => {
+    const { home, repository } = pythonToolFixture(); symlinkSync(nativeToolFixture(join(home, '.local/bin/uv')), join(repository, 'uv'));
+    expect(() => resolveHostPythonTool('uv', repository, { home, path: repository })).toThrow('source checkout');
+  });
+
+  test('rejects an intermediate directory symlink escaping the trusted root', () => {
+    const { home, repository, root } = pythonToolFixture(); const external = nativeToolFixture(join(root, 'untrusted/uv'));
+    mkdirSync(join(home, '.local')); symlinkSync(dirname(external), join(home, '.local/bin'));
+    expect(() => resolveHostPythonTool('uv', repository, { home, path: join(home, '.local/bin') })).toThrow('trusted host package root');
+  });
+
+  test('rejects a shim without executing it or falling through to a later native binary', () => {
+    const { home, repository } = pythonToolFixture(); const shim = nativeToolFixture(join(home, '.local/bin/python3.14'));
+    writeFileSync(shim, '#!/bin/sh\nexit 99\n'); const native = nativeToolFixture(join(home, '.pyenv/versions/3.14.0/bin/python3.14'));
+    expect(() => resolveHostPythonTool('python3.14', repository, { home, path: `${dirname(shim)}:${dirname(native)}` })).toThrow('scripts and version-manager shims are unsupported');
+  });
+
+  test('rejects pyenv shims and arbitrary PATH roots with selected/target diagnostics', () => {
+    const { home, repository, root } = pythonToolFixture();
+    for (const location of [join(home, '.pyenv/shims/python3.14'), join(root, 'arbitrary/python3.14')]) {
+      nativeToolFixture(location);
+      expect(() => resolveHostPythonTool('python3.14', repository, { home, path: dirname(location) })).toThrow(`selected=${location}; resolved=${location}`);
+      expect(() => resolveHostPythonTool('python3.14', repository, { home, path: dirname(location) })).toThrow('trusted host package root');
+    }
+  });
+
+  test('distinguishes a missing executable from a refused installation', () => {
+    const { home, repository } = pythonToolFixture();
+    expect(() => resolveHostPythonTool('uv', repository, { home, path: home })).toThrow('executable is unavailable: uv');
+  });
+
+  test('local self-tests preserve selected directories, including user installations', () => {
+    const { home, repository } = pythonToolFixture();
+    const python = nativeToolFixture(join(home, '.pyenv/versions/3.14.0/bin/python3.14')); const uv = nativeToolFixture(join(home, '.local/bin/uv'));
+    expect(localReviewPythonPath(repository, { home, path: `${dirname(python)}:${dirname(uv)}` })).toEqual([dirname(python), dirname(uv)]);
+    expect(localReviewPythonPath(repository, { home, path: home })).toEqual([]);
+  });
+
+  test('a fresh runtime cannot gain trust through a caller-controlled HOME', () => {
+    if (process.platform !== 'darwin') return;
+    const { home, repository } = pythonToolFixture();
+    const fake = nativeToolFixture(join(home, '.local/bin/uv'));
+    const modulePath = join(import.meta.dir, '../workflows/review-python-tools.ts');
+    const script = `import { resolveHostPythonTool } from ${JSON.stringify(modulePath)}; resolveHostPythonTool('uv', ${JSON.stringify(repository)});`;
+    const result = spawnSync(process.execPath, ['-e', script], {
+      encoding: 'utf8', env: { HOME: home, PATH: dirname(fake) },
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('trusted host package root');
+    expect(result.stderr).toContain(`selected=${fake}`);
+  });
+
+  test('host identity remains independent of the isolated child HOME', () => {
+    const { repository } = pythonToolFixture(); const previous = process.env.HOME; process.env.HOME = repository;
+    try {
+      const uv = Bun.which('uv'); if (!uv || process.platform !== 'darwin') return;
+      expect(resolveHostPythonTool('uv', repository)).toBe(realpathSync(uv));
+    } finally { if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; }
+  });
+
+  test.each([
+    '/opt/homebrew/bin/python3.14', '/opt/homebrew/opt/python@3.14/bin/python3.14',
+    '/opt/homebrew/Cellar/python@3.14/3.14.0/bin/python3.14',
+    '/usr/local/opt/python@3.14/bin/python3.14', '/opt/local/bin/python3.14',
+    '/opt/local/Library/Frameworks/Python.framework/Versions/3.14/bin/python3.14',
+    '/Library/Frameworks/Python.framework/Versions/3.14/bin/python3.14',
+  ])('recognizes supported system installation path %s without requiring that package manager', (path) => {
+    const { home } = pythonToolFixture();
+    expect(isHostPythonToolPath(path, 'python3.14', home)).toBe(true);
+    expect(isHostPythonToolPath('/opt/homebrew/opt-poison/python3.14', 'python3.14', home)).toBe(false);
+    expect(isHostPythonToolPath('/opt/local/bin-poison/python3.14', 'python3.14', home)).toBe(false);
   });
 });

@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { resolveHostPythonTool } from './review-python-tools';
 import {
   createHash,
   createHmac,
@@ -73,7 +74,7 @@ const MAX_REVIEW_EVIDENCE_TOTAL_BYTES = 1024 * 1024;
 const MAX_REVIEW_EVIDENCE_OPERATIONS = 64;
 const MAX_EVIDENCE_RUNTIME_DIAGNOSTIC_CHARS = 16 * 1024;
 const DEFAULT_REVIEW_EVIDENCE_MANIFEST = 'goldband.review-evidence.json';
-const EVIDENCE_RUNNER_POLICY = 'per-operation-sealed-runtime-readonly-snapshot-default-deny-read-write-network-v57';
+const EVIDENCE_RUNNER_POLICY = 'per-operation-sealed-runtime-readonly-snapshot-default-deny-read-write-network-v58';
 // coverage.py 7.15.4's conditional process_startup(slug="pth") hook. Review
 // changed hook bytes before extending support; package ownership alone cannot
 // authorize arbitrary startup code. Keep the hook for subprocess measurement.
@@ -2219,20 +2220,12 @@ function preparePythonRuntimeInputs(
   if (dirname(projectFile) !== dirname(lockFile)) {
     throw new Error('declared pyproject.toml and uv.lock must share one project directory');
   }
-  const selectedPython = resolveTrustedPythonTool(
-    contract.interpreter,
-    options.binding.repository,
-    'Python interpreter',
-  );
+  const selectedPython = resolveHostPythonTool(contract.interpreter, options.binding.repository);
   const sourceCommand = realpathSync(selectedPython);
   const source = inspectPythonRuntime(sourceCommand, options.snapshotRoot);
   const sourceAccess = pythonRuntimeReadAccess(sourceCommand, source);
   const sourceIdentity = sourceAccess.identityDigest;
-  const uvCommand = resolveTrustedPythonTool(
-    contract.resolver,
-    options.binding.repository,
-    'uv resolver',
-  );
+  const uvCommand = resolveHostPythonTool(contract.resolver, options.binding.repository);
   const uvAccess = evidenceRuntimeReadAccess(uvCommand);
   const preparedUv = cachedEvidenceRuntime(options, uvCommand, uvAccess);
   const ambientCacheRoot = pythonLockNeedsOfflineCache(lockFile)
@@ -2414,33 +2407,6 @@ function rejectRepositoryRuntime(command: string, repository: string, label: str
   ) {
     throw new Error(`${label} must not come from the source checkout or its virtual environment`);
   }
-}
-
-const TRUSTED_PYTHON_TOOL_ROOTS = [
-  '/opt/homebrew/bin',
-  '/opt/homebrew/Cellar',
-  '/usr/local/bin',
-  '/usr/local/Cellar',
-  '/usr/bin',
-  '/bin',
-  '/Library/Frameworks',
-];
-
-function resolveTrustedPythonTool(command: string, repository: string, label: string): string {
-  const selected = resolveExecutable(command);
-  rejectRepositoryRuntime(selected, repository, label);
-  const canonical = realpathSync(selected);
-  if (![selected, canonical].every(pathIsInTrustedPythonToolRoot)) {
-    throw new Error(`${label} must resolve from a trusted host package root`);
-  }
-  return selected;
-}
-
-function pathIsInTrustedPythonToolRoot(path: string): boolean {
-  const absolute = resolve(path);
-  return TRUSTED_PYTHON_TOOL_ROOTS.some(
-    (root) => absolute === root || absolute.startsWith(`${root}${sep}`),
-  );
 }
 
 type PythonRuntimeInspection = {

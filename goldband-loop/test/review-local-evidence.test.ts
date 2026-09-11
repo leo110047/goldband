@@ -2,9 +2,9 @@ import { spawnSync } from 'node:child_process';
 import { getWorkflow } from '../workflows/registry';
 import Ajv2020 from 'ajv/dist/2020';
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createCandidateBinding, executeEvidencePlan, reviewEvidenceManifestSchema, type CandidateBinding } from '../workflows/review-evidence';
 import { assertReviewContractBoundary } from '../workflows/review-lineage';
 import { reviewCandidateTree } from '../workflows/review-ci-evidence';
@@ -115,5 +115,41 @@ describe('pre-push local self-test evidence', () => {
     expect(record.candidateDigest).toBe(binding.candidateDigest);
     expect(record.environment).toBe('local-host/macos-self-tests');
     expect(record.ciProvenance).toBeUndefined();
+  });
+});
+
+
+describe('local Python self-test tool selection', () => {
+  test.each(['supported', 'rejected'] as const)('records %s host tools before starting the self-test', async (scenario) => {
+    if (process.platform !== 'darwin') return;
+    const root = mkdtempSync(join(tmpdir(), 'review-local-python-')); roots.push(root);
+    const candidate = join(root, 'candidate');
+    mkdirSync(join(candidate, 'goldband-loop/test'), { recursive: true });
+    const provider = manifests().after.providers.find((p) => p.id === 'review-evidence-tests')!;
+    const previousPath = process.env.PATH;
+    const python = Bun.which('python3.14');
+    if (!python) {
+      if (process.env.GOLDBAND_REQUIRE_REVIEW_HOST_BOUNDARY === '1') throw new Error('required review host boundary prerequisite is unavailable: Python 3.14 executable');
+      return;
+    }
+    const selected = dirname(python);
+    const poison = join(root, 'poison'); mkdirSync(poison);
+    writeFileSync(join(poison, 'python3.14'), '#!/bin/sh\nexit 99\n'); chmodSync(join(poison, 'python3.14'), 0o755);
+    const source = `import { test, expect } from 'bun:test'; test('selected tool', () => { expect(Bun.which('python3.14')).toBe(${JSON.stringify(join(selected, 'python3.14'))}); expect(process.env.HOME).not.toBe(${JSON.stringify(process.env.HOME)}); });`;
+    for (const file of ['review-evidence.test.ts', 'review-evidence-platform.test.ts']) writeFileSync(join(candidate, 'goldband-loop/test', file), source);
+    process.env.PATH = `${scenario === 'supported' ? selected : poison}:${previousPath ?? ''}`;
+    try {
+      const binding = { repository: candidate, candidateDigest: 'a'.repeat(64), baseDigest: 'b'.repeat(64), scopeDigest: 'c'.repeat(64) } as CandidateBinding;
+      const record = await runLocalReviewEvidence({ provider, operation: provider.operations[0]!, snapshotRoot: candidate,
+        runnerRoot: join(root, 'runner'), binding, dependencyDigest: 'd'.repeat(64), executionOffset: '',
+      }, () => reviewCandidateTree(candidate));
+      expect(record.status, record.outputSummary).toBe(scenario === 'supported' ? 'verified-pass' : 'runtime-incomplete');
+      expect(record.fresh).toBe(scenario === 'supported');
+      if (scenario === 'rejected') {
+        expect(record.exitStatus).toBeUndefined();
+        expect(record.outputSummary).toContain(`selected=${poison}/python3.14`);
+        expect(record.outputSummary).toContain('trusted host package root');
+      }
+    } finally { if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath; }
   });
 });
