@@ -8,6 +8,9 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
+  readlinkSync,
+  lstatSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -26,6 +29,7 @@ import {
   evidenceRuntimeReadAccess,
   isEvidenceSandboxRuntimeFailure,
   loadReviewEvidenceManifest,
+  materializePythonUvCache,
   readClosureArtifact,
   reviewFindingCellIds,
   reviewEvidenceManifestSchema,
@@ -44,7 +48,7 @@ import {
   type ReviewEvidenceManifest,
 } from '../workflows/review-evidence';
 import { getWorkflow } from '../workflows/registry';
-import { createCompilerOutputDiagnosticCapture } from '../workflows/review-evidence-sandbox';
+import { evidenceSandboxCommand, createCompilerOutputDiagnosticCapture } from '../workflows/review-evidence-sandbox';
 import { readReviewCiResult, reviewCandidateTree, collectReviewCiEvidence, validateReviewCiProvenance } from '../workflows/review-ci-evidence';
 import { assertReviewContractBoundary } from '../workflows/review-lineage';
 import { reviewContractChanges, validateReviewContractAssessment } from '../workflows/review-contract-changes';
@@ -1594,6 +1598,155 @@ describe('review evidence contracts', () => {
     expect(repeated.records[0]!.executionIdentityDigest)
       .toBe(evidence.records[0]!.executionIdentityDigest);
   });
+
+  test('copied uv archive links are readable in the real sandbox without ambient cache access', () => {
+    if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
+    const root = mkdtempSync(join(tmpdir(), 'uv-cache-boundary-'));
+    roots.push(root);
+    const source = join(root, 'ambient');
+    const target = join(root, 'copied');
+    const archive = join(source, 'archive-v0', 'fixture');
+    mkdirSync(archive, { recursive: true });
+    mkdirSync(join(source, 'wheels-v5'), { recursive: true });
+    writeFileSync(join(archive, 'payload'), 'cached wheel bytes\n');
+    symlinkSync(archive, join(source, 'wheels-v5', 'absolute'));
+    symlinkSync('../archive-v0/fixture', join(source, 'wheels-v5', 'relative'));
+    symlinkSync(source, join(source, 'root-alias'));
+    symlinkSync(join(source, 'root-alias', 'archive-v0', 'fixture'), join(source, 'wheels-v5', 'alias-chain'));
+    symlinkSync('cycle-b', join(source, 'cycle-a'));
+    symlinkSync('cycle-a', join(source, 'cycle-b'));
+    symlinkSync(root, join(source, 'unused-external'));
+    symlinkSync(join(source, 'missing'), join(source, 'unused-broken'));
+    const deniedDirectory = join(root, 'denied');
+    mkdirSync(deniedDirectory);
+    writeFileSync(join(deniedDirectory, 'payload'), 'unreadable external bytes');
+    symlinkSync(join(deniedDirectory, 'payload'), join(source, 'unused-denied'));
+    chmodSync(deniedDirectory, 0o000);
+    try {
+      materializePythonUvCache(source, target);
+    } finally {
+      chmodSync(deniedDirectory, 0o700);
+    }
+    for (const name of ['absolute', 'relative', 'alias-chain']) {
+      const file = join(target, 'wheels-v5', name, 'payload');
+      const command = evidenceSandboxCommand({
+        cwd: target,
+        writableRoots: [],
+        argv: ['/bin/cat', file],
+        runtimeAccess: evidenceRuntimeReadAccess('/bin/cat'),
+      });
+      const result = spawnSync(command.command, command.args, { encoding: 'utf8' });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe('cached wheel bytes\n');
+    }
+    const denied = evidenceSandboxCommand({
+      cwd: target,
+      writableRoots: [],
+      argv: ['/bin/cat', join(archive, 'payload')],
+      runtimeAccess: evidenceRuntimeReadAccess('/bin/cat'),
+    });
+    const result = spawnSync(denied.command, denied.args, { encoding: 'utf8' });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toMatch(/Operation not permitted|Permission denied/);
+    expect(existsSync(join(target, 'unused-external'))).toBe(false);
+    expect(existsSync(join(target, 'unused-broken'))).toBe(false);
+    expect(existsSync(join(target, 'unused-denied'))).toBe(false);
+    expect(readlinkSync(join(source, 'unused-denied'))).toBe(join(deniedDirectory, 'payload'));
+    expect(readdirSync(target)).not.toContain('cycle-a');
+    expect(readdirSync(target)).not.toContain('cycle-b');
+    expect(readlinkSync(join(source, 'unused-external'))).toBe(root);
+    expect(readlinkSync(join(source, 'unused-broken'))).toBe(join(source, 'missing'));
+  });
+
+  test('offline Python evidence consumes relocated uv registry archives and binds used bytes', async () => {
+    if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
+    const python = spawnSync('/usr/bin/which', ['python3.14'], { encoding: 'utf8' }).stdout.trim();
+    const uv = spawnSync('/usr/bin/which', ['uv'], { encoding: 'utf8' }).stdout.trim();
+    if (!hostBoundaryPrerequisite(Boolean(python) && Boolean(uv), 'Python 3.14 and uv executables')) return;
+    const repo = gitFixture();
+    const fixture = mkdtempSync(join(tmpdir(), 'uv-registry-fixture-'));
+    roots.push(fixture);
+    const wheelName = 'fixture_dep-1.0.0-py3-none-any.whl';
+    const wheel = join(fixture, wheelName);
+    const cache = join(fixture, 'cache');
+    writeFixtureWheel(python, wheel);
+    const wheelBytes = readFileSync(wheel);
+    const hash = createHash('sha256').update(wheelBytes).digest('hex');
+    const server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch(request) {
+        return new URL(request.url).pathname.endsWith('.whl')
+          ? new Response(wheelBytes, { headers: { 'Content-Type': 'application/octet-stream' } })
+          : new Response(`<a href="/${wheelName}#sha256=${hash}">${wheelName}</a>`, {
+            headers: { 'Content-Type': 'text/html' },
+          });
+      },
+    });
+    try {
+      writeFileSync(join(repo, 'pyproject.toml'), [
+        '[project]', 'name="cached-evidence-fixture"', 'version="0.1.0"',
+        'requires-python=">=3.14,<3.15"', 'dependencies=["fixture-dep==1.0.0"]',
+        '[[tool.uv.index]]', `url="http://127.0.0.1:${server.port}/simple"`, '',
+      ].join('\n'));
+      const seed = Bun.spawn([uv, 'sync', '--no-python-downloads', '--no-managed-python', '--no-config', '--index', `http://127.0.0.1:${server.port}/simple`, '--project', repo, '--python', python, '--cache-dir', cache], {
+        stdout: 'pipe', stderr: 'pipe',
+      });
+      const [exit, stderr] = await Promise.all([seed.exited, new Response(seed.stderr).text()]);
+      if (exit !== 0) throw new Error(stderr);
+    } finally {
+      await server.stop(true);
+    }
+    rmSync(join(repo, '.venv'), { recursive: true, force: true });
+    git(repo, ['add', 'pyproject.toml', 'uv.lock']);
+    git(repo, ['commit', '-m', 'add cached Python fixture']);
+    const links: string[] = [];
+    const visit = (directory: string) => {
+      for (const entry of readdirSync(directory)) {
+        const path = join(directory, entry);
+        if (lstatSync(path).isSymbolicLink()) links.push(path);
+        else if (lstatSync(path).isDirectory()) visit(path);
+      }
+    };
+    visit(cache);
+    const archiveLink = links.find((path) => existsSync(join(path, 'fixture_dep', '__init__.py')));
+    expect(archiveLink).toBeDefined();
+    expect(readlinkSync(archiveLink!)).toStartWith('/');
+    const archive = realpathSync(archiveLink!);
+    const value = manifest();
+    value.providers[0]!.operations[0] = {
+      ...operation('cached-python-gate', ['python3.14', '-c', 'import fixture_dep; print(fixture_dep.VALUE)'], 'candidate', 'zero'),
+      pythonRuntime: { interpreter: 'python3.14', resolver: 'uv', projectFile: 'pyproject.toml', lockFile: 'uv.lock' },
+    };
+    const validated = reviewEvidenceManifestSchema.validate(value);
+    const input = { source: 'git diff', diff: '', changedFiles: [] };
+    const run = () => executeEvidencePlan(context(repo), input, validated, createCandidateBinding(repo, input, validated));
+    const previousCache = process.env.UV_CACHE_DIR;
+    process.env.UV_CACHE_DIR = cache;
+    try {
+      const first = await run();
+      expect(first.records[0]).toMatchObject({ status: 'verified-pass', fresh: true, exitStatus: 0 });
+      expect(first.records[0]!.outputSummary).toContain('42');
+      writeFileSync(join(archive, 'fixture_dep', '__init__.py'), 'VALUE = 43\n');
+      const changed = await run();
+      expect(changed.records[0]).toMatchObject({ status: 'verified-pass', fresh: true });
+      expect(changed.records[0]!.outputSummary).toContain('43');
+      expect(changed.records[0]!.executionIdentityDigest).not.toBe(first.records[0]!.executionIdentityDigest);
+      const external = join(fixture, 'outside-archive');
+      renameSync(archive, external);
+      for (const target of [external, join(cache, 'missing-archive')]) {
+        rmSync(archiveLink!);
+        symlinkSync(target, archiveLink!);
+        const unavailable = await run();
+        expect(unavailable.records[0]).toMatchObject({ status: 'runtime-incomplete', fresh: false });
+        expect(unavailable.records[0]!.exitStatus).toBeUndefined();
+        expect(unavailable.records[0]!.outputSummary).toContain('before project gate');
+      }
+    } finally {
+      if (previousCache === undefined) delete process.env.UV_CACHE_DIR;
+      else process.env.UV_CACHE_DIR = previousCache;
+    }
+  }, 120_000);
 
   test('binds the one lock wheel selected by installed compatibility tags', () => {
     const selectedHash = `sha256:${'a'.repeat(64)}`;

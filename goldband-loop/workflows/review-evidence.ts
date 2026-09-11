@@ -25,6 +25,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
   type Dirent,
 } from 'node:fs';
@@ -72,7 +73,7 @@ const MAX_REVIEW_EVIDENCE_TOTAL_BYTES = 1024 * 1024;
 const MAX_REVIEW_EVIDENCE_OPERATIONS = 64;
 const MAX_EVIDENCE_RUNTIME_DIAGNOSTIC_CHARS = 16 * 1024;
 const DEFAULT_REVIEW_EVIDENCE_MANIFEST = 'goldband.review-evidence.json';
-const EVIDENCE_RUNNER_POLICY = 'per-operation-sealed-runtime-readonly-snapshot-default-deny-read-write-network-v56';
+const EVIDENCE_RUNNER_POLICY = 'per-operation-sealed-runtime-readonly-snapshot-default-deny-read-write-network-v57';
 // coverage.py 7.15.4's conditional process_startup(slug="pth") hook. Review
 // changed hook bytes before extending support; package ownership alone cannot
 // authorize arbitrary startup code. Keep the hook for subprocess measurement.
@@ -2269,7 +2270,7 @@ function materializePythonEnvironment(
   const tempRoot = join(pythonRoot, 'tmp');
   for (const root of [pythonRoot, homeRoot, tempRoot]) mkdirSync(root, { recursive: true, mode: 0o700 });
   const cacheRoot = join(pythonRoot, 'uv-cache');
-  materializeCandidate(inputs.ambientCacheRoot, cacheRoot);
+  materializePythonUvCache(inputs.ambientCacheRoot, cacheRoot);
   const cacheAccess = ambientUvCacheReadAccess(cacheRoot);
   const preparationAccess = mergeEvidenceRuntimeReadAccess([
     inputs.preparedUv.access,
@@ -2615,6 +2616,42 @@ function sandboxedUvCacheRoot(
     throw new Error(`uv cache discovery failed: ${boundText(result.stderr || result.stdout, 4096)}`);
   }
   return result.stdout.trim();
+}
+
+export function materializePythonUvCache(source: string, target: string): void {
+  materializeCandidate(source, target);
+  const sourceRoot = realpathSync(source);
+  const targetRoot = realpathSync(target);
+  const pending = [targetRoot];
+  while (pending.length > 0) {
+    const directory = pending.pop()!;
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const copiedPath = join(directory, entry.name);
+      if (entry.isDirectory()) pending.push(copiedPath);
+      if (!entry.isSymbolicLink()) continue;
+      relocatePythonCacheLink(sourceRoot, targetRoot, copiedPath);
+    }
+  }
+}
+
+function relocatePythonCacheLink(sourceRoot: string, targetRoot: string, copiedPath: string): void {
+  const sourcePath = join(sourceRoot, relative(targetRoot, copiedPath));
+  let resolved: string;
+  try {
+    resolved = realpathSync(resolve(dirname(sourcePath), readlinkSync(copiedPath)));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (!['ENOENT', 'ENOTDIR', 'ELOOP', 'EACCES', 'EPERM'].includes(code ?? '')) throw error;
+    // Unused unavailable cache entries must not block a locked offline operation.
+    // If selected, uv must report the missing input rather than follow it.
+    rmSync(copiedPath);
+    return;
+  }
+  const destination = relative(sourceRoot, resolved);
+  rmSync(copiedPath);
+  if (destination === '..' || destination.startsWith(`..${sep}`) || isAbsolute(destination)) return;
+  // Resolve against the source boundary, but only grant access to copied bytes.
+  symlinkSync(relative(dirname(copiedPath), join(targetRoot, destination)) || '.', copiedPath);
 }
 
 function ambientUvCacheReadAccess(cacheRoot: string): EvidenceRuntimeReadAccess {
