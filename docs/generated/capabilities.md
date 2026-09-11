@@ -7,7 +7,7 @@ Public inventory: 20 actions. Experimental actions are excluded from routing and
 
 | Capability | Action | Outcome | Runtime owner | Runtime | Dispatch | Risk |
 | --- | --- | --- | --- | --- | --- | --- |
-| `review` | `code` | Evidence-first code review. | `review-runtime` | `typed` | `trusted-launcher` | `medium` |
+| `review` | `code` | Evidence-backed or explicit semantic-only code review. | `review-runtime` | `typed` | `trusted-launcher` | `medium` |
 | `review` | `security` | Review security and trust boundaries. | `prompt-contract-dispatch` | `compatibility` | `prompt-contract` | `medium` |
 | `investigate` | `code` | Investigate code or runtime behavior. | `prompt-contract-dispatch` | `compatibility` | `prompt-contract` | `medium` |
 | `qa` | `app` | Run product QA and record evidence. | `qa-runtime` | `typed` | `host-runtime` | `medium` |

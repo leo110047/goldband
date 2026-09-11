@@ -4,6 +4,7 @@ copy_distribution_fixture_inputs() {
   cp "$ROOT_DIR/docs/review-evidence-manifest.md" "$TMP_ROOT/docs/review-evidence-manifest.md"
   cp "$ROOT_DIR/examples/review-evidence/minimal-local-gate.json" "$TMP_ROOT/examples/review-evidence/minimal-local-gate.json"
   cp "$ROOT_DIR/schemas/review-evidence-manifest.schema.json" "$TMP_ROOT/schemas/review-evidence-manifest.schema.json"
+  cp "$ROOT_DIR/schemas/review-semantic-result.schema.json" "$TMP_ROOT/schemas/review-semantic-result.schema.json"
   cp "$ROOT_DIR/schemas/review-behavior-matrix.schema.json" "$TMP_ROOT/schemas/review-behavior-matrix.schema.json"
 }
 
@@ -82,5 +83,6 @@ EOF_TODOS
   cp "$ROOT_DIR/docs/review-evidence-manifest.md" "$loop_dir/review/review-evidence-manifest.md"
   cp "$ROOT_DIR/examples/review-evidence/minimal-local-gate.json" "$loop_dir/review/examples/minimal-local-gate.json"
   cp "$ROOT_DIR/schemas/review-evidence-manifest.schema.json" "$loop_dir/review/schemas/review-evidence-manifest.schema.json"
+  cp "$ROOT_DIR/schemas/review-semantic-result.schema.json" "$loop_dir/review/schemas/review-semantic-result.schema.json"
   cp "$ROOT_DIR/schemas/review-behavior-matrix.schema.json" "$loop_dir/review/schemas/review-behavior-matrix.schema.json"
 }

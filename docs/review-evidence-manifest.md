@@ -346,9 +346,20 @@ Python gate 必須明確宣告，不能猜測專案路徑或 lockfile：
 project directory。`argv` 第一項必須和 declared interpreter 相同；目前不接受
 其他 Python 版本、resolver 或 online mode。
 
-Runtime 只從受信任的 macOS system／Homebrew package roots 選取 host
-`python3.14` 與 `uv`，先 attestation，再在 Seatbelt 內執行 interpreter inspection
-與 cache discovery；不會直接執行 caller `PATH` 的任意 shim。驗證 candidate
+Runtime 從 `PATH` 第一個可執行的 `python3.14` 與 `uv` 選取 host 工具，
+同時驗證入口、父目錄與最終 symlink 目標。支援 macOS system／Python.org
+framework、Homebrew `bin`／`Cellar`／`opt`、MacPorts `bin`／`Library/Frameworks`，
+以及 OS 帳號家目錄下的 `.local/bin`；Python 另支援 `.local/share/uv/python`
+與 `.pyenv/versions`。家目錄使用 OS 帳號資訊，隔離 self-test 的 `HOME` 不會改變
+受信任目錄。自訂 XDG／安裝 prefix 不會自動取得信任。
+
+工具必須是原生 macOS executable；pyenv 等 shell shim 不受支援，請將實際
+version 的 `bin` 放在 `PATH` 前方。已找到但不受支援的工具會列出 selected／resolved
+路徑及原因，不會默默改用下一份安裝。Repository 內工具、指回 repository 或其他
+不受信任位置的 symlink 仍拒絕。指定的 local Python／installed-runtime self-tests
+只保留已驗證工具的入口目錄與原有系統 PATH，維持原先選取次序；不繼承整份 caller PATH。
+
+先 attestation，再在 Seatbelt 內執行 interpreter inspection 與 cache discovery；驗證 candidate
 lockfiles 後，把 ambient uv cache clone 到 operation 專屬 writable root，以 `--frozen --offline
 --no-install-project --no-editable --link-mode copy` 建立一次性 environment。執行
 identity 綁定 interpreter、uv、兩個 contract files、materialized environment

@@ -30,6 +30,7 @@ const REVIEW_ASSETS = [
 ] as const;
 
 const REVIEW_AUTHORING_ASSETS = [
+	{ source: "../schemas/review-semantic-result.schema.json", target: "review/schemas/review-semantic-result.schema.json" },
 	{ source: "../docs/review-evidence-manifest.md", target: "review/review-evidence-manifest.md" },
 	{ source: "../examples/review-evidence/minimal-local-gate.json", target: "review/examples/minimal-local-gate.json" },
 	{ source: "../schemas/review-evidence-manifest.schema.json", target: "review/schemas/review-evidence-manifest.schema.json" },

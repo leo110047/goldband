@@ -114,6 +114,7 @@ import type {
   WorkflowStep,
 } from './types';
 import { resolveReviewWorkspace } from './review-workspace';
+import { runSemanticReview, renderSemanticReport } from './review-semantic';
 
 export type UntrackedDiffState = {
   includedBytes: number;
@@ -165,14 +166,33 @@ export const reviewSteps: WorkflowStep[] = [
     produces: reviewInputSchema,
     run: collectImpactContext,
   },
-  { name: 'plan-evidence', kind: 'typed', produces: reviewInputSchema, run: planEvidence },
-  { name: 'run-evidence', kind: 'typed', produces: reviewInputSchema, run: runEvidence },
-  { name: 'verify-evidence', kind: 'typed', produces: reviewInputSchema, run: verifyEvidence },
-  { name: 'run-review', kind: 'llm', produces: findingsSchema, run: runReview },
-  { name: 'parse-findings', kind: 'typed', produces: findingsSchema, run: parseFindings },
-  { name: 'verify-findings', kind: 'typed', produces: findingsSchema, run: verifyFindings },
-  { name: 'render-report', kind: 'typed', produces: textSchema, run: renderReport },
+  { name: 'plan-evidence', kind: 'typed', produces: reviewInputSchema, run: reviewModeStep(planEvidence, skipEvidence) },
+  { name: 'run-evidence', kind: 'typed', produces: reviewInputSchema, run: reviewModeStep(runEvidence, skipEvidence) },
+  { name: 'verify-evidence', kind: 'typed', produces: reviewInputSchema, run: reviewModeStep(verifyEvidence, skipEvidence) },
+  { name: 'run-review', kind: 'llm', produces: findingsSchema, run: reviewModeStep(runReview, semanticReview) },
+  { name: 'parse-findings', kind: 'typed', produces: findingsSchema, run: reviewModeStep(parseFindings, semanticParsedFindings) },
+  { name: 'verify-findings', kind: 'typed', produces: findingsSchema, run: reviewModeStep(verifyFindings, semanticParsedFindings) },
+  { name: 'render-report', kind: 'typed', produces: textSchema, run: reviewModeStep(renderReport, renderSemanticReport) },
 ];
+
+function reviewModeStep(evidence: WorkflowStep['run'], semantic: WorkflowStep['run']): WorkflowStep['run'] {
+  return (ctx) => ctx.options.semanticOnly ? semantic(ctx) : evidence(ctx);
+}
+
+function skipEvidence(ctx: WorkflowContext) {
+  return reviewInputSchema.validate(ctx.input);
+}
+
+function semanticParsedFindings(ctx: WorkflowContext) {
+  return normalizeFindings(findingsSchema.validate(ctx.input));
+}
+
+function semanticReview(ctx: WorkflowContext) {
+  return runSemanticReview(ctx, {
+    collectDiff, buildReviewPrompt, reviewHost, recordReviewHostUsage,
+    recordReviewPromptTelemetry, findingsJsonSchema, buildReviewPolicyText, hasConcreteFailurePath,
+  });
+}
 
 export function reviewSignalFromOutput(
   output: unknown,
@@ -1328,6 +1348,30 @@ function reviewHost(ctx: WorkflowContext): 'mock' | 'claude' | 'codex' {
   throw new Error('--mode real requires --host claude or --host codex');
 }
 
+function reviewModeInstructions(ctx: WorkflowContext): string {
+  return ctx.options.semanticOnly
+    ? 'Semantic-only: inspect code and report grounded risks with source locations, triggers, and suggested verification. Deterministic behavior completeness is not evaluated. Do not read evidence manifests, run candidate tests, prepare dependencies or environments, or claim reproduced failures. Return only semantic-concern findings without evidence IDs, behavior cells, or completion authority; disclose inaccessible context.'
+    : 'Find omissions in the declared behavior matrix, contracts, tests, ownership, wiring, and failure model. Treat deterministic evidence status as authoritative; do not claim an unbound concern is a verified failure.';
+}
+
+function reviewOmissionInstructions(ctx: WorkflowContext): string {
+  return ctx.options.semanticOnly ? '' : readReviewAsset('evidence-omission.md');
+}
+
+function buildReviewPolicyText(ctx: WorkflowContext, rules: ReturnType<typeof coreReviewRules>): string {
+  return [
+    readReviewAsset('shared-rubric.md'),
+    readReviewAsset('checklist.md'),
+    reviewOmissionInstructions(ctx),
+    'APPLICABLE_GOLDBAND_RULES_START',
+    rules.text,
+    'APPLICABLE_GOLDBAND_RULES_END',
+    'Inspect applicable AGENTS.md and CLAUDE.md files in the repository root and touched-file ancestors as review policy.',
+    reviewModeInstructions(ctx),
+    'Use the diff to define scope. Inspect repository context outside the diff when needed to verify wiring, authoritative ownership, consumers, registrations, and dead code.',
+  ].join('\n');
+}
+
 export function buildReviewPrompt(
   ctx: WorkflowContext,
   diff: string,
@@ -1337,6 +1381,7 @@ export function buildReviewPrompt(
     workMapIntentBundle?: string;
     evidence?: ReviewEvidenceBundle;
     contractChanges?: ReviewContractChange[];
+    policyText?: string;
   } = {},
 ): string {
   const { rules = coreReviewRules(ctx.cwd, diff), impact, workMapIntentBundle, evidence, contractChanges = [] } = context;
@@ -1349,20 +1394,12 @@ export function buildReviewPrompt(
     throw new Error(`review evidence projection exceeds ${MAX_REVIEW_EVIDENCE_PROMPT_BYTES} byte limit`);
   }
   const prompt = [
-    readReviewAsset('shared-rubric.md'),
-    readReviewAsset('checklist.md'),
-    readReviewAsset('evidence-omission.md'),
-    'APPLICABLE_GOLDBAND_RULES_START',
-    rules.text,
-    'APPLICABLE_GOLDBAND_RULES_END',
+    context.policyText ?? buildReviewPolicyText(ctx, rules),
     impact ? formatReviewImpactContext(impact) : '',
     workMapIntentBundle ?? '',
     matrixProjection,
     evidenceProjection,
     reviewContractChangesPrompt(contractChanges),
-    'Inspect applicable AGENTS.md and CLAUDE.md files in the repository root and touched-file ancestors as review policy.',
-    'Find omissions in the declared behavior matrix, contracts, tests, ownership, wiring, and failure model. Treat deterministic evidence status as authoritative; do not claim an unbound concern is a verified failure.',
-    'Use the diff to define scope. Inspect repository context outside the diff when needed to verify wiring, authoritative ownership, consumers, registrations, and dead code.',
     'DIFF_START',
     diff,
     'DIFF_END',
@@ -1593,7 +1630,7 @@ function recordReviewPromptTelemetry(
   diff: string,
   timeoutPolicy: ReviewTimeoutPolicy,
   impact: ReviewImpactContext,
-  evidence: ReviewEvidenceBundle,
+  evidence?: ReviewEvidenceBundle,
   closure?: ClosureReviewInput,
 ): void {
   const telemetry = {
@@ -1604,11 +1641,9 @@ function recordReviewPromptTelemetry(
       coreRulesText,
       diff: closure?.kind === 'semantic-closure' ? '' : diff,
     }),
-    phase: transitionPhase(closure),
+    ...reviewEvidenceTelemetry(ctx, evidence, closure),
     hostCallBudget: 1,
     hostCallCount: 1,
-    matrixBytes: Buffer.byteLength(behaviorMatrixProjection(evidence)),
-    evidenceBytes: Buffer.byteLength(evidenceSummaryProjection(evidence)),
     repairDeltaBytes: closure ? Buffer.byteLength(closure.repairDelta) : 0,
     originalDiffBytesSent: closure?.kind === 'semantic-closure' ? 0 : Buffer.byteLength(diff),
     specialistMode: timeoutPolicy.specialistMode,
@@ -1624,6 +1659,14 @@ function recordReviewPromptTelemetry(
   mkdirSync(dir, { recursive: true });
   const file = join(dir, `${ctx.runId}-review-prompt.json`);
   writeFileSync(file, `${JSON.stringify(telemetry, null, 2)}\n`);
+}
+
+function reviewEvidenceTelemetry(ctx: WorkflowContext, evidence?: ReviewEvidenceBundle, closure?: ClosureReviewInput) {
+  return {
+    phase: ctx.options.semanticOnly ? 'semantic-only' : transitionPhase(closure),
+    matrixBytes: evidence ? Buffer.byteLength(behaviorMatrixProjection(evidence)) : 0,
+    evidenceBytes: evidence ? Buffer.byteLength(evidenceSummaryProjection(evidence)) : 0,
+  };
 }
 
 function requiredEvidenceRunState(runId: string): ReviewEvidenceRunState {

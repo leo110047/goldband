@@ -70,9 +70,9 @@ Codex:       $goldband system health
 
 一般實作涉及大量處理、資料實體化、快取、平行執行或效能改善宣稱時，Claude／Codex 的指引會導向共用 `performance-optimization` skill，檢查有研究案例支持的 agent 陷阱，不需先跑 planning。Review 會檢查改善證據與實際路徑；這些指引不代表自動量測 CPU／RAM，也不要求所有修改都跑 benchmark。
 
-程式碼審查需要先為目標專案設定驗證契約；請從[審查入門](docs/review-evidence-manifest.md#quick-start)開始。需要本機隔離執行測試的正式審查目前僅支援 macOS；Linux／Windows 缺少這類證據時會回報未完成。測試或安裝成功也不代表審查、部署已完成。
+包含執行驗證的程式碼審查需要先為目標專案設定驗證契約；純語意 `--semantic-only` 不需要。請從[審查入門](docs/review-evidence-manifest.md#quick-start)開始。需要本機隔離執行測試的正式審查目前僅支援 macOS；Linux／Windows 缺少這類證據時會回報未完成。測試或安裝成功也不代表審查、部署已完成。
 
-Claude／Codex 的 Python 審查 gate 必須宣告 `pythonRuntime`：目前只支援 macOS Python 3.14 + uv，且 candidate 需有 `pyproject.toml`、`uv.lock` 與完整離線依賴；缺少條件會阻擋執行。
+Claude／Codex 的 Python 審查 gate 必須宣告 `pythonRuntime`：目前只支援 macOS Python 3.14 + uv，且 candidate 需有 `pyproject.toml`、`uv.lock` 與完整離線依賴；缺少條件會阻擋執行。主機工具支援系統、Homebrew（含 `opt`）、MacPorts，以及標準使用者 uv／Python 與 pyenv 實際版本目錄；shell shim 不受支援，詳見 [Python runtime 安裝位置](docs/review-evidence-manifest.md#python-314--uv-runtime)。
 
 ## 更新與移除
 
@@ -107,6 +107,28 @@ claude plugin uninstall goldband@goldband    # 移除 Claude plugin
 ## 授權
 
 [MIT License](LICENSE)。
+
+### 純語意與完整審查
+
+「只看程式」使用 `$goldband review code --semantic-only`（Claude 使用
+`/goldband review code --semantic-only`）。兩端沿用 installed launcher 與唯讀 host：
+讀取完整 scoped diff、必要 impact context、shared rubric 與 applicable Rules；不讀取或驗證
+manifest、不執行 evidence providers、candidate tests、dependency preparation 或下載套件。
+缺少 Python、uv、offline wheels 或資料庫不會阻擋此模式；host 本身仍須可用且已認證。
+
+「包含執行驗證」使用預設 `$goldband review code`。缺少或無效 evidence contract、執行前提
+不足時仍 fail closed，不會自動切換純語意模式。
+
+純語意 artifact 使用 `phase: semantic-only`、`evidenceStatus: not-declared`、
+`completionAuthorized: false`，沒有 behavior contract digest 或 runtime receipt。
+所有 findings 僅為 `semantic-concern`；零 finding 顯示 `No semantic concerns found`，不代表
+完整審查或測試通過。既有 blockers 以 `prior-blockers-open` 唯讀顯示，不能關閉或覆寫。
+`--semantic-only` 與 `--evidence-manifest`、`--closure-artifact`、`--work-id`、`--ticket-id` 互斥。
+
+同一 installed authority 內，相同 candidate、canonical scope、Rules／policy 的純語意重複呼叫會在 host 前拒絕，包含並行
+呼叫及先前 host 失敗的重試；此成本紀錄與 acceptance lineage 分開，不阻擋後續完整審查。
+Claude／Codex 各自安裝的 authority 延續既有隔離邊界，去重與 prior blocker 投影不跨 authority。
+結果格式見 [`review-semantic-result.schema.json`](schemas/review-semantic-result.schema.json)。
 
 ### Project review evidence
 

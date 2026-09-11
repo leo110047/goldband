@@ -1,3 +1,4 @@
+import { localReviewPythonPath } from './review-python-tools';
 import { REVIEW_HOST_EVIDENCE_POLICY } from '../lib/review-runtime-contract';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
@@ -79,10 +80,12 @@ export async function runLocalReviewEvidence(options: LocalOperation, snapshotDi
   const output = createHash('sha256');
   const diagnostics = localPrerequisiteDiagnostics();
   const startedAt = new Date().toISOString();
-  const result = await superviseCommand(process.execPath, operation.argv.slice(1), {
+  const tools = localPythonPrerequisites(options);
+  if (tools.error) { diagnostics.write(tools.error); output.update(tools.error); }
+  const result = tools.error ? { exitCode: 1, reason: 'prerequisite-unavailable', stdout: '', stderr: tools.error } : await superviseCommand(process.execPath, operation.argv.slice(1), {
     cwd: options.snapshotRoot,
     env: {
-      PATH: `${dirname(process.execPath)}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
+      PATH: [...tools.directories, dirname(process.execPath), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':'),
       HOME: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary,
       GOLDBAND_HOME: join(home, '.goldband'), LANG: 'C.UTF-8', CI: '1',
       GOLDBAND_REQUIRE_REVIEW_HOST_BOUNDARY: '1',
@@ -136,4 +139,13 @@ function localPrerequisiteDiagnostics() {
     },
     unavailable: () => unavailable,
   };
+}
+
+function localPythonPrerequisites(options: LocalOperation): { directories: string[]; error?: string } {
+  if (!['review-evidence-tests', 'installed-runtime-tests'].includes(options.provider.id)) return { directories: [] };
+  try {
+    return { directories: localReviewPythonPath(options.binding.repository) };
+  } catch (error) {
+    return { directories: [], error: `required review host boundary prerequisite is unavailable: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }

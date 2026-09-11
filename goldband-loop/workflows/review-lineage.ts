@@ -422,6 +422,43 @@ export function readReviewLineageForTest(
   return readSignedLineage(file, key);
 }
 
+/** Read-only projection; never prepares, supersedes, or finalizes acceptance lineage. */
+export function projectPriorReviewBlockers(options: {
+  storeRoot: string;
+  key: Buffer;
+  repository: string;
+  baseDigest: string;
+  changedFiles: string[];
+}): Array<{ lineageId: string; findingId: string; artifactFile?: string }> {
+  const root = join(options.storeRoot, 'review-lineages');
+  const stat = lstatSync(root, { throwIfNoEntry: false });
+  if (!stat) return [];
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('unsafe review lineage store');
+  const blockers: Array<{ lineageId: string; findingId: string; artifactFile?: string }> = [];
+  for (const name of readdirSync(root).filter((name) => name.endsWith('.json')).sort()) {
+    const lineage = readSignedLineage(join(root, name), options.key);
+    if (!lineage || !semanticScopeOverlaps(lineage, options)) continue;
+    for (const finding of lineage.unresolvedFindings.filter((finding) => finding.blocking)) {
+      blockers.push({ lineageId: lineage.id, findingId: finding.findingId,
+        artifactFile: lineage.authoritativeArtifact?.file });
+    }
+  }
+  return blockers;
+}
+
+function semanticScopeOverlaps(lineage: ReviewLineagePayload, options: {
+  repository: string; baseDigest: string; changedFiles: string[];
+}): boolean {
+  if (lineage.repository !== options.repository || lineage.baseDigest !== options.baseDigest) return false;
+  const scope = lineage.scopeSummary ?? verifiedArtifactScope(lineage)?.changedFiles;
+  // Unknown legacy scope cannot prove that blockers are unrelated.
+  return !scope || scope.some((path) => options.changedFiles.includes(path));
+}
+
+export function reviewPolicyIdentity(cwd: string, baseRef: string): string {
+  return sha256(stableJson(readBaseReviewPolicy(cwd, baseRef)));
+}
+
 function assertMonotonicContract(
   predecessor: ReviewEvidenceManifest,
   current: ReviewEvidenceManifest,

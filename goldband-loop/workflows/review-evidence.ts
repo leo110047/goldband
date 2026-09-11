@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { resolveHostPythonTool } from './review-python-tools';
 import {
   createHash,
   createHmac,
@@ -25,6 +26,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
   type Dirent,
 } from 'node:fs';
@@ -72,7 +74,7 @@ const MAX_REVIEW_EVIDENCE_TOTAL_BYTES = 1024 * 1024;
 const MAX_REVIEW_EVIDENCE_OPERATIONS = 64;
 const MAX_EVIDENCE_RUNTIME_DIAGNOSTIC_CHARS = 16 * 1024;
 const DEFAULT_REVIEW_EVIDENCE_MANIFEST = 'goldband.review-evidence.json';
-const EVIDENCE_RUNNER_POLICY = 'per-operation-sealed-runtime-readonly-snapshot-default-deny-read-write-network-v56';
+const EVIDENCE_RUNNER_POLICY = 'per-operation-sealed-runtime-readonly-snapshot-default-deny-read-write-network-v58';
 // coverage.py 7.15.4's conditional process_startup(slug="pth") hook. Review
 // changed hook bytes before extending support; package ownership alone cannot
 // authorize arbitrary startup code. Keep the hook for subprocess measurement.
@@ -421,6 +423,18 @@ export function createCandidateBinding(
   manifest: ReviewEvidenceManifest,
   requestedBase?: string,
 ): CandidateBinding {
+  return {
+    ...createReviewCandidateBinding(cwd, input, requestedBase),
+    behaviorContractDigest: sha256(stableJson(manifest)),
+  };
+}
+
+/** Candidate identity does not require or infer an evidence contract. */
+export function createReviewCandidateBinding(
+  cwd: string,
+  input: ReviewDiffInput,
+  requestedBase?: string,
+): Omit<CandidateBinding, 'behaviorContractDigest'> {
   const repository = canonicalRepository(cwd);
   const baseRef = requestedBase
     ? gitOutput(cwd, ['merge-base', requestedBase, 'HEAD'], true) || requestedBase
@@ -444,7 +458,6 @@ export function createCandidateBinding(
         ? undefined
         : input.source.replace(/ \+ untracked$/, ''),
     })),
-    behaviorContractDigest: sha256(stableJson(manifest)),
     changedFiles: [...input.changedFiles],
     redactedUntrackedFiles: hiddenUntracked,
   };
@@ -2218,20 +2231,12 @@ function preparePythonRuntimeInputs(
   if (dirname(projectFile) !== dirname(lockFile)) {
     throw new Error('declared pyproject.toml and uv.lock must share one project directory');
   }
-  const selectedPython = resolveTrustedPythonTool(
-    contract.interpreter,
-    options.binding.repository,
-    'Python interpreter',
-  );
+  const selectedPython = resolveHostPythonTool(contract.interpreter, options.binding.repository);
   const sourceCommand = realpathSync(selectedPython);
   const source = inspectPythonRuntime(sourceCommand, options.snapshotRoot);
   const sourceAccess = pythonRuntimeReadAccess(sourceCommand, source);
   const sourceIdentity = sourceAccess.identityDigest;
-  const uvCommand = resolveTrustedPythonTool(
-    contract.resolver,
-    options.binding.repository,
-    'uv resolver',
-  );
+  const uvCommand = resolveHostPythonTool(contract.resolver, options.binding.repository);
   const uvAccess = evidenceRuntimeReadAccess(uvCommand);
   const preparedUv = cachedEvidenceRuntime(options, uvCommand, uvAccess);
   const ambientCacheRoot = pythonLockNeedsOfflineCache(lockFile)
@@ -2269,7 +2274,7 @@ function materializePythonEnvironment(
   const tempRoot = join(pythonRoot, 'tmp');
   for (const root of [pythonRoot, homeRoot, tempRoot]) mkdirSync(root, { recursive: true, mode: 0o700 });
   const cacheRoot = join(pythonRoot, 'uv-cache');
-  materializeCandidate(inputs.ambientCacheRoot, cacheRoot);
+  materializePythonUvCache(inputs.ambientCacheRoot, cacheRoot);
   const cacheAccess = ambientUvCacheReadAccess(cacheRoot);
   const preparationAccess = mergeEvidenceRuntimeReadAccess([
     inputs.preparedUv.access,
@@ -2413,33 +2418,6 @@ function rejectRepositoryRuntime(command: string, repository: string, label: str
   ) {
     throw new Error(`${label} must not come from the source checkout or its virtual environment`);
   }
-}
-
-const TRUSTED_PYTHON_TOOL_ROOTS = [
-  '/opt/homebrew/bin',
-  '/opt/homebrew/Cellar',
-  '/usr/local/bin',
-  '/usr/local/Cellar',
-  '/usr/bin',
-  '/bin',
-  '/Library/Frameworks',
-];
-
-function resolveTrustedPythonTool(command: string, repository: string, label: string): string {
-  const selected = resolveExecutable(command);
-  rejectRepositoryRuntime(selected, repository, label);
-  const canonical = realpathSync(selected);
-  if (![selected, canonical].every(pathIsInTrustedPythonToolRoot)) {
-    throw new Error(`${label} must resolve from a trusted host package root`);
-  }
-  return selected;
-}
-
-function pathIsInTrustedPythonToolRoot(path: string): boolean {
-  const absolute = resolve(path);
-  return TRUSTED_PYTHON_TOOL_ROOTS.some(
-    (root) => absolute === root || absolute.startsWith(`${root}${sep}`),
-  );
 }
 
 type PythonRuntimeInspection = {
@@ -2615,6 +2593,42 @@ function sandboxedUvCacheRoot(
     throw new Error(`uv cache discovery failed: ${boundText(result.stderr || result.stdout, 4096)}`);
   }
   return result.stdout.trim();
+}
+
+export function materializePythonUvCache(source: string, target: string): void {
+  materializeCandidate(source, target);
+  const sourceRoot = realpathSync(source);
+  const targetRoot = realpathSync(target);
+  const pending = [targetRoot];
+  while (pending.length > 0) {
+    const directory = pending.pop()!;
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const copiedPath = join(directory, entry.name);
+      if (entry.isDirectory()) pending.push(copiedPath);
+      if (!entry.isSymbolicLink()) continue;
+      relocatePythonCacheLink(sourceRoot, targetRoot, copiedPath);
+    }
+  }
+}
+
+function relocatePythonCacheLink(sourceRoot: string, targetRoot: string, copiedPath: string): void {
+  const sourcePath = join(sourceRoot, relative(targetRoot, copiedPath));
+  let resolved: string;
+  try {
+    resolved = realpathSync(resolve(dirname(sourcePath), readlinkSync(copiedPath)));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (!['ENOENT', 'ENOTDIR', 'ELOOP', 'EACCES', 'EPERM'].includes(code ?? '')) throw error;
+    // Unused unavailable cache entries must not block a locked offline operation.
+    // If selected, uv must report the missing input rather than follow it.
+    rmSync(copiedPath);
+    return;
+  }
+  const destination = relative(sourceRoot, resolved);
+  rmSync(copiedPath);
+  if (destination === '..' || destination.startsWith(`..${sep}`) || isAbsolute(destination)) return;
+  // Resolve against the source boundary, but only grant access to copied bytes.
+  symlinkSync(relative(dirname(copiedPath), join(targetRoot, destination)) || '.', copiedPath);
 }
 
 function ambientUvCacheReadAccess(cacheRoot: string): EvidenceRuntimeReadAccess {

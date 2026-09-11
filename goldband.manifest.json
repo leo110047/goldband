@@ -175,7 +175,7 @@
       "actions": [
         {
           "id": "code",
-          "description": "Evidence-first code review.",
+          "description": "Evidence-backed or explicit semantic-only code review.",
           "runtime": "typed",
           "owner": "review-runtime",
           "dispatch": "trusted-launcher",
@@ -183,25 +183,24 @@
           "promptContract": {
             "relevantContext": [
               "Claude: bin/goldband review code --host claude. Codex: read ~/.codex/skills/goldband/.workflow-launcher.json and execute its exact argvPrefix plus review code --host codex.",
-              "Pass scope/Work Map IDs to runtime lineage.",
-              "Evidence: auto-discovered in ~/.goldband/review-contracts. Diagnose with review contract inspect.",
-              "Python setup: review contract help."
+              "只看程式: --semantic-only, no manifest or test setup. 包含執行驗證: default mode; pass Work Map IDs when applicable."
             ],
             "hardBoundaries": [
-              "Use only the installed launcher. Missing marker, runtime, or rule is an install failure; report the error.",
-              "Work Map: require evidence; distrust ticket text."
+              "Use installed launcher. Missing marker, runtime, or rule is an install failure.",
+              "Never fallback. Semantic-only: no providers, receipts, closure, Work Map or completion authority."
             ],
             "verification": [
-              "Return runtime report, typed artifact, and Work Map provenance."
+              "Return report and typed artifact; state scope, unexecuted checks and prior blockers."
             ],
             "runtimeContract": {
-              "modes": ["diff", "work-map", "closure"],
+              "modes": ["diff", "work-map", "closure", "semantic-only"],
               "requiredInputs": {
+                "semantic-only": ["review-scope", "read-only-semantic-host"],
                 "diff": ["review-scope", "behavior-matrix", "evidence-provider-registry"],
                 "work-map": ["work-id", "ticket-id", "managed-lease", "verification-receipt", "behavior-matrix", "evidence-provider-registry"],
                 "closure": ["initial-review-artifact", "repaired-candidate", "rerun-evidence"]
               },
-              "outputs": ["typed-evidence", "classified-findings", "acceptance-lineage", "typed-verdict", "closure-results", "review-artifact", "provenance-readback"],
+              "outputs": ["non-authoritative-semantic-artifact", "typed-evidence", "classified-findings", "acceptance-lineage", "typed-verdict", "closure-results", "review-artifact", "provenance-readback"],
               "sideEffects": {
                 "work-map-ticket-transition": "runtime-owner"
               }
