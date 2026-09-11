@@ -4245,6 +4245,13 @@ describe('Python host tool discovery', () => {
     expect(resolveHostPythonTool(command, repository, { home, path: dirname(tool) })).toBe(tool);
   });
 
+  test('preserves OS home aliases while validating their canonical targets', () => {
+    const { root, home, repository } = pythonToolFixture();
+    const native = nativeToolFixture(join(home, '.local/bin/uv'));
+    const homeAlias = join(root, 'home-alias'); symlinkSync(home, homeAlias);
+    expect(resolveHostPythonTool('uv', repository, { home: homeAlias, path: join(homeAlias, '.local/bin') })).toBe(native);
+  });
+
   test('validates both the selected alias and its canonical target', () => {
     const { home, repository, root } = pythonToolFixture();
     const native = nativeToolFixture(join(home, '.local/share/uv/python/cpython-3.14/bin/python3.14'));

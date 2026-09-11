@@ -32,7 +32,7 @@ function hostAccountHome(): string {
   if (result.status !== 0 || /^uid: (.+)$/m.exec(result.stdout ?? '')?.[1] !== uid || !home || !isAbsolute(home)) {
     throw new Error('Python host tool discovery cannot resolve the macOS account home by uid');
   }
-  accountHome = realpathSync(home);
+  accountHome = home;
   return accountHome;
 }
 
