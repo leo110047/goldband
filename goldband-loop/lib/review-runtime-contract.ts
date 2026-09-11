@@ -36,6 +36,11 @@ type ReviewScopeOptions = {
 };
 
 type ReviewExecutionOptions = ReviewScopeOptions & {
+	semanticOnly?: boolean;
+	evidenceManifestFile?: string;
+	closureArtifactFile?: string;
+	workId?: string;
+	ticketId?: string;
 	specialists?: "off" | "auto" | "all";
 	reviewClaudeMaxBudgetUsd?: number;
 };
@@ -80,6 +85,9 @@ function assertValidReviewScopeOptions(options: ReviewScopeOptions): void {
 export function assertValidReviewExecutionOptions(
 	options: ReviewExecutionOptions,
 ): void {
+	if (options.semanticOnly && [options.evidenceManifestFile, options.closureArtifactFile, options.workId, options.ticketId].some((value) => value !== undefined)) {
+		throw new Error("--semantic-only is incompatible with --evidence-manifest, --closure-artifact, --work-id, and --ticket-id");
+	}
 	assertValidReviewScopeOptions(options);
 	if (options.specialists && options.specialists !== "off") {
 		throw new Error(`${INDEPENDENT_REVIEWER_ERROR}; remove --specialists`);

@@ -22,7 +22,7 @@ export const CAPABILITY_ACTIONS: CapabilityActionRecord[] = [
     "capability": "review",
     "action": "code",
     "name": "review/code",
-    "description": "Evidence-first code review.",
+    "description": "Evidence-backed or explicit semantic-only code review.",
     "contractPath": "generated/workflow-contracts/review/code.workflow.md",
     "runtime": "typed",
     "dispatch": "trusted-launcher",

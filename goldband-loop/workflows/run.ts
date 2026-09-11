@@ -28,14 +28,12 @@ function parseArgs(args: string[]): { capability: string; action: string; option
   let loop = false;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    if (setBooleanOption(arg, options)) continue;
     if (arg === '--input') options.inputFile = takeValue(args, ++index, arg);
     else if (arg === '--base') options.base = takeValue(args, ++index, arg);
     else if (arg === '--mode') options.mode = takeValue(args, ++index, arg) as WorkflowRunOptions['mode'];
     else if (arg === '--host') options.host = takeValue(args, ++index, arg) as WorkflowRunOptions['host'];
     else if (arg === '--diff-file') options.diffFile = takeValue(args, ++index, arg);
-    else if (arg === '--staged') options.staged = true;
-    else if (arg === '--worktree') options.worktree = true;
-    else if (arg === '--include-untracked') options.includeUntracked = true;
     else if (arg === '--specialists') options.specialists = takeValue(args, ++index, arg) as WorkflowRunOptions['specialists'];
     else if (arg === '--review-host-timeout-seconds') options.reviewHostTimeoutMs = takeSeconds(args, ++index, arg);
     else if (arg === '--review-pass-timeout-seconds') options.reviewPassTimeoutMs = takeSeconds(args, ++index, arg);
@@ -53,6 +51,14 @@ function parseArgs(args: string[]): { capability: string; action: string; option
   validateOptions(capability, action, options);
 
   return { capability, action, options, loop };
+}
+
+function setBooleanOption(arg: string | undefined, options: WorkflowRunOptions): boolean {
+  const key = { '--staged': 'staged', '--worktree': 'worktree',
+    '--include-untracked': 'includeUntracked', '--semantic-only': 'semanticOnly' }[arg ?? ''];
+  if (!key) return false;
+  options[key as 'staged' | 'worktree' | 'includeUntracked' | 'semanticOnly'] = true;
+  return true;
 }
 
 function validateOptions(
@@ -89,7 +95,7 @@ function validateOptions(
     usageError('review timeout and budget options are only valid for review/code');
   }
   if (
-    (options.evidenceManifestFile || options.closureArtifactFile) &&
+    (options.semanticOnly || options.evidenceManifestFile || options.closureArtifactFile) &&
     `${capability}/${action}` !== 'review/code'
   ) {
     usageError('evidence manifest and closure artifact options are only valid for review/code');
@@ -162,7 +168,7 @@ function usageError(message: string): never {
 }
 
 function usage(): void {
-  console.error('Usage: bun run workflows/run.ts <capability> <action> [--loop] [--max-iterations <n>] [--input <file>] [--base <ref>] [--mode mock|real] [--host mock|claude|codex] [--work-id <id> --ticket-id <id>] [--evidence-manifest <file>] [--closure-artifact <initial-review-artifact>] [--review-host-timeout-seconds <60-1800>] [--review-pass-timeout-seconds <60-1800>] [--review-claude-max-budget-usd <0.01-100.00>] [--staged|--worktree|--include-untracked|--diff-file <file>]');
+  console.error('Usage: bun run workflows/run.ts <capability> <action> [--loop] [--max-iterations <n>] [--input <file>] [--base <ref>] [--mode mock|real] [--host mock|claude|codex] [--work-id <id> --ticket-id <id>] [--semantic-only] [--evidence-manifest <file>] [--closure-artifact <initial-review-artifact>] [--review-host-timeout-seconds <60-1800>] [--review-pass-timeout-seconds <60-1800>] [--review-claude-max-budget-usd <0.01-100.00>] [--staged|--worktree|--include-untracked|--diff-file <file>]');
 }
 
 main().catch((error) => {

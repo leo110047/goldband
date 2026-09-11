@@ -869,9 +869,15 @@ create_internal_workflow_docs() {
 install_review_authoring_assets() {
   local goldband_dir="$1"
   local runtime_root="$2"
-  local repo_root guide_source example_source manifest_schema_source behavior_schema_source
+  local repo_root guide_source example_source manifest_schema_source behavior_schema_source semantic_schema_source
   repo_root="$(cd "$goldband_dir/.." && pwd -P)"
 
+  semantic_schema_source="$repo_root/schemas/review-semantic-result.schema.json"
+  [ -f "$semantic_schema_source" ] || semantic_schema_source="$goldband_dir/review/schemas/review-semantic-result.schema.json"
+  [ -f "$semantic_schema_source" ] || {
+    echo "goldband setup failed: missing semantic review schema" >&2
+    exit 1
+  }
   guide_source="$repo_root/docs/review-evidence-manifest.md"
   example_source="$repo_root/examples/review-evidence/minimal-local-gate.json"
   manifest_schema_source="$repo_root/schemas/review-evidence-manifest.schema.json"
@@ -899,6 +905,7 @@ install_review_authoring_assets() {
   }
 
   mkdir -p "$runtime_root/review/examples" "$runtime_root/review/schemas"
+  _link_or_copy "$semantic_schema_source" "$runtime_root/review/schemas/review-semantic-result.schema.json"
   _link_or_copy \
     "$guide_source" \
     "$runtime_root/review/review-evidence-manifest.md"

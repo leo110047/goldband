@@ -423,6 +423,18 @@ export function createCandidateBinding(
   manifest: ReviewEvidenceManifest,
   requestedBase?: string,
 ): CandidateBinding {
+  return {
+    ...createReviewCandidateBinding(cwd, input, requestedBase),
+    behaviorContractDigest: sha256(stableJson(manifest)),
+  };
+}
+
+/** Candidate identity does not require or infer an evidence contract. */
+export function createReviewCandidateBinding(
+  cwd: string,
+  input: ReviewDiffInput,
+  requestedBase?: string,
+): Omit<CandidateBinding, 'behaviorContractDigest'> {
   const repository = canonicalRepository(cwd);
   const baseRef = requestedBase
     ? gitOutput(cwd, ['merge-base', requestedBase, 'HEAD'], true) || requestedBase
@@ -446,7 +458,6 @@ export function createCandidateBinding(
         ? undefined
         : input.source.replace(/ \+ untracked$/, ''),
     })),
-    behaviorContractDigest: sha256(stableJson(manifest)),
     changedFiles: [...input.changedFiles],
     redactedUntrackedFiles: hiddenUntracked,
   };

@@ -66,6 +66,7 @@ describe("Codex trusted workflow launcher install", () => {
 					"done",
 					'test -n "$output"',
 					'if [ -n "${GOLDBAND_TEST_HOST_CALL_LOG:-}" ]; then printf "%s\\n" codex >> "$GOLDBAND_TEST_HOST_CALL_LOG"; fi',
+					'if [ -n "${GOLDBAND_TEST_MUTATE_POLICY:-}" ]; then printf "\\nPolicy changed during host call.\\n" >> "$GOLDBAND_TEST_MUTATE_POLICY"; fi',
 					'prompt="$(cat)"',
 					'if printf \'%s\' "$prompt" | grep -q CLOSURE_INPUT_START; then',
 					'  printf \'%s\\n\' \'{"contractReview":{"preserved":true,"summary":"Fixture assessment confirms declared static coverage replaces unavailable evidence."},"results":[{"findingId":"S-001","status":"closed","summary":"repair verified","evidenceIds":["installed-gate:pass"]}]}\' > "$output"',
@@ -89,6 +90,7 @@ describe("Codex trusted workflow launcher install", () => {
 					"  exit 0",
 					"fi",
 					'if [ -n "${GOLDBAND_TEST_HOST_CALL_LOG:-}" ]; then printf "%s\\n" claude >> "$GOLDBAND_TEST_HOST_CALL_LOG"; fi',
+					'if [ -n "${GOLDBAND_TEST_MUTATE_POLICY:-}" ]; then printf "\\nPolicy changed during host call.\\n" >> "$GOLDBAND_TEST_MUTATE_POLICY"; fi',
 					"cat >/dev/null",
 					'printf \'%s\\n\' \'{"result":"{\\"findings\\":[]}","usage":{"input_tokens":10,"output_tokens":2}}\'',
 				].join("\n"),
@@ -154,6 +156,7 @@ describe("Codex trusted workflow launcher install", () => {
 			expect(existsSync(join(runtimeRoot, "review", "examples", "minimal-local-gate.json"))).toBe(true);
 			expect(existsSync(join(runtimeRoot, "review", "schemas", "review-evidence-manifest.schema.json"))).toBe(true);
 			expect(existsSync(join(runtimeRoot, "review", "schemas", "review-behavior-matrix.schema.json"))).toBe(true);
+			expect(existsSync(join(runtimeRoot, "review", "schemas", "review-semantic-result.schema.json"))).toBe(true);
 			expect(readFileSync(join(runtimeRoot, "review", "review-evidence-manifest.md"), "utf8"))
 				.toContain("Python 3.14 + uv runtime");
 			expect(readFileSync(join(runtimeRoot, "review", "schemas", "review-evidence-manifest.schema.json"), "utf8"))
@@ -1038,6 +1041,7 @@ describe("Codex trusted workflow launcher install", () => {
 			expect(browser.status).toBe(0);
 			expect(browser.stdout).toContain("browser-ok:status");
 			expect(browser.stdout).toContain('"status": "completed"');
+			verifySemanticOnlyInstalled(runInstalledReview, fixture, trustedBin);
 		} finally {
 			rmSync(fixture, { recursive: true, force: true });
 		}
@@ -1420,4 +1424,111 @@ function workflowStepEventCount(file: string, step: string): number {
 		.map((line) => JSON.parse(line) as { step?: string })
 		.filter((event) => event.step === step)
 		.length;
+}
+
+function verifySemanticOnlyInstalled(
+  run: (cwd: string, args: string[], env?: NodeJS.ProcessEnv) => ReturnType<typeof spawnSync>,
+  fixture: string,
+  trustedBin: string,
+) {
+  for (const host of ['codex', 'claude']) {
+    const repo = join(fixture, `semantic-${host}`);
+    const state = join(fixture, `semantic-state-${host}`);
+    const calls = join(fixture, `semantic-calls-${host}.log`);
+    mkdirSync(repo);
+    const git = (args: string[]) => {
+      const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+      expect(result.status, result.stderr).toBe(0);
+    };
+    git(['init', '-q']);
+    writeFileSync(join(repo, 'subject.py'), 'safe()\n');
+    git(['add', '.']);
+    git(['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'baseline']);
+    writeFileSync(join(repo, 'subject.py'), 'changed()\n');
+    const env = { GOLDBAND_HOME: state, GOLDBAND_TEST_HOST_CALL_LOG: calls,
+      GOLDBAND_TEST_CLEAN_REVIEW: '1', PATH: `${trustedBin}:${process.env.PATH ?? ''}` };
+    const args = ['--host', host, '--worktree'];
+    const missing = run(repo, args, env);
+    expect(missing.status).not.toBe(0);
+    expect(String(missing.stderr)).toContain('evidence contract is required');
+    expect(existsSync(calls)).toBe(false);
+    const semantic = run(repo, [...args, '--semantic-only'], env);
+    expect(semantic.status, String(semantic.stderr)).toBe(0);
+    const result = JSON.parse(String(semantic.stdout));
+    expect(result.output).toContain('No semantic concerns found');
+    const artifact = JSON.parse(readFileSync(result.artifacts.find((file: string) => file.endsWith('-semantic-only.json')), 'utf8'));
+    expect(artifact).toMatchObject({ phase: 'semantic-only', completionAuthorized: false, providerCallCount: 0, hostCallCount: 1 });
+    expect(artifact.runtimeReceipt).toBeUndefined();
+    expect(artifact.binding.behaviorContractDigest).toBeUndefined();
+    expect(existsSync(join(state, 'tmp'))).toBe(false);
+    const duplicate = run(repo, [...args, '--semantic-only'], env);
+    expect(duplicate.status).not.toBe(0);
+    expect(String(duplicate.stderr)).toContain('duplicate semantic-only');
+    expect(readFileSync(calls, 'utf8').trim().split('\n')).toHaveLength(1);
+
+    writeFileSync(join(repo, 'goldband.review-evidence.json'), 'invalid JSON');
+    writeFileSync(join(repo, 'subject.py'), 'invalid_manifest_candidate()\n');
+    const invalid = run(repo, [...args, '--semantic-only'], env);
+    expect(invalid.status, String(invalid.stderr)).toBe(0);
+    const manifest = JSON.parse(readFileSync(resolve(sourceRoot, '../examples/review-evidence/minimal-local-gate.json'), 'utf8'));
+    manifest.providers[0].applicability = { kind: 'global', reason: 'Installed missing Python environment fixture.' };
+    manifest.providers[0].operations[0].argv = ['python3.14', 'subject.py'];
+    manifest.providers[0].operations[0].pythonRuntime = {
+      interpreter: 'python3.14', resolver: 'uv', projectFile: 'pyproject.toml', lockFile: 'uv.lock',
+    };
+    writeFileSync(join(repo, 'goldband.review-evidence.json'), JSON.stringify(manifest));
+    git(['add', 'goldband.review-evidence.json']);
+    git(['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'missing Python prerequisites']);
+    const unavailable = run(repo, [...args, '--semantic-only'], env);
+    expect(unavailable.status, String(unavailable.stderr)).toBe(0);
+    expect(existsSync(join(state, 'tmp'))).toBe(false);
+    expect(existsSync(join(repo, '.venv'))).toBe(false);
+    expect(readFileSync(calls, 'utf8').trim().split('\n')).toHaveLength(3);
+    const evidence = run(repo, [...args, '--evidence-manifest', 'goldband.review-evidence.json'], env);
+    expect(evidence.status, String(evidence.stderr)).toBe(0);
+    const evidenceResult = JSON.parse(String(evidence.stdout));
+    expect(evidenceResult.output).toContain('runtime incomplete');
+    expect(evidenceResult.output).toContain('Semantic host calls: 0');
+    expect(evidenceResult.output).toContain('completion-authorized: false');
+    expect(readFileSync(calls, 'utf8').trim().split('\n')).toHaveLength(3);
+    for (const forbidden of ['--evidence-manifest', '--closure-artifact', '--work-id', '--ticket-id']) {
+      const denied = run(repo, [...args, '--semantic-only', forbidden, 'x'], env);
+      expect(denied.status).not.toBe(0);
+      expect(String(denied.stderr)).toContain('incompatible');
+    }
+    verifySemanticPolicyIdentity(run, repo, args, env, join(fixture, 'codex', 'goldband', 'workflow-runtime'));
+  }
+}
+
+function verifySemanticPolicyIdentity(
+  run: (cwd: string, args: string[], env?: NodeJS.ProcessEnv) => ReturnType<typeof spawnSync>,
+  repo: string, args: string[], env: NodeJS.ProcessEnv, runtimeRoot: string,
+) {
+  const manifestFile = join(runtimeRoot, 'review', 'rules', 'manifest.json');
+  const rubricFile = join(runtimeRoot, 'review', 'shared-rubric.md');
+  const originalManifest = readFileSync(manifestFile, 'utf8');
+  const originalRubric = readFileSync(rubricFile, 'utf8');
+  try {
+    const manifest = JSON.parse(originalManifest);
+    for (const rule of manifest.rules) rule.reviewCriteria[0] += ' Preserve explicit semantic-only boundaries.';
+    writeFileSync(manifestFile, JSON.stringify(manifest));
+    const criteriaChanged = run(repo, [...args, '--semantic-only'], env);
+    expect(criteriaChanged.status, String(criteriaChanged.stderr)).toBe(0);
+    const criteriaResult = JSON.parse(String(criteriaChanged.stdout));
+    const criteriaArtifact = JSON.parse(readFileSync(criteriaResult.artifacts.find((file: string) => file.endsWith('-semantic-only.json')), 'utf8'));
+    writeFileSync(rubricFile, `${originalRubric}\nInspect omitted failure paths.\n`);
+    const rubricChanged = run(repo, [...args, '--semantic-only'], env);
+    expect(rubricChanged.status, String(rubricChanged.stderr)).toBe(0);
+    const rubricResult = JSON.parse(String(rubricChanged.stdout));
+    const rubricArtifact = JSON.parse(readFileSync(rubricResult.artifacts.find((file: string) => file.endsWith('-semantic-only.json')), 'utf8'));
+    expect(rubricArtifact.policyIdentityDigest).not.toBe(criteriaArtifact.policyIdentityDigest);
+    expect(rubricArtifact.identity).not.toBe(criteriaArtifact.identity);
+    writeFileSync(join(repo, 'subject.py'), 'policy_mutation_candidate()\n');
+    const duringHost = run(repo, [...args, '--semantic-only'], { ...env, GOLDBAND_TEST_MUTATE_POLICY: rubricFile });
+    expect(duringHost.status).not.toBe(0);
+    expect(String(duringHost.stderr)).toContain('candidate or Rules/policy changed');
+  } finally {
+    writeFileSync(manifestFile, originalManifest);
+    writeFileSync(rubricFile, originalRubric);
+  }
 }

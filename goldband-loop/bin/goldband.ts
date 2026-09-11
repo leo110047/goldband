@@ -110,7 +110,7 @@ type TrustedLauncherHandlers = {
 function printUsage(stream: Pick<Console, "log">): void {
 	stream.log("Usage:");
 	stream.log(
-		"  goldband review code --host <claude|codex> [--work-id <id> --ticket-id <id>] [--evidence-manifest <file>] [--closure-artifact <initial-review-artifact>] [--staged|--worktree|--base <ref>|--diff-file <file>] [--include-untracked] [--review-host-timeout-seconds <60-1800>] [--review-pass-timeout-seconds <60-1800>] [--review-claude-max-budget-usd <0.01-100.00>]",
+		"  goldband review code --host <claude|codex> [--work-id <id> --ticket-id <id>] [--semantic-only] [--evidence-manifest <file>] [--closure-artifact <initial-review-artifact>] [--staged|--worktree|--base <ref>|--diff-file <file>] [--include-untracked] [--review-host-timeout-seconds <60-1800>] [--review-pass-timeout-seconds <60-1800>] [--review-claude-max-budget-usd <0.01-100.00>]",
 	);
 	stream.log(
 		"  goldband review contract help",
@@ -229,7 +229,20 @@ function finish(name: string | undefined, args: string[]): number {
 	return 0;
 }
 
+function assertSemanticReviewArgs(args: string[]): void {
+  const count = args.filter((arg) => arg === "--semantic-only").length;
+  if (count > 1) throw new Error("--semantic-only may be supplied only once");
+  if (count && args.some((arg) => ["--evidence-manifest", "--closure-artifact", "--work-id", "--ticket-id"].includes(arg))) {
+    throw new Error("--semantic-only is incompatible with --evidence-manifest, --closure-artifact, --work-id, and --ticket-id");
+  }
+}
+
 export function buildReviewRuntimeArgs(args: string[]): string[] {
+	assertSemanticReviewArgs(args);
+	return parseReviewRuntimeArgs(args);
+}
+
+function parseReviewRuntimeArgs(args: string[]): string[] {
 	let host: ReviewHost | undefined;
 	const forwarded: string[] = [];
 	let hasScope = false;

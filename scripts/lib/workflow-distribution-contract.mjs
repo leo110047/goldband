@@ -16,6 +16,7 @@ export const SOURCE_INPUTS = [
   'goldband.manifest.json',
   'hooks/scripts/lib/rules-resolver.js',
   'rules',
+  'schemas/review-semantic-result.schema.json',
   'schemas/review-behavior-matrix.schema.json',
   'schemas/review-evidence-manifest.schema.json',
   'shell/install',

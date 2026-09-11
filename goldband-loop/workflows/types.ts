@@ -101,6 +101,7 @@ export type WorkflowRunOptions = {
   reviewHostTimeoutMs?: number;
   reviewPassTimeoutMs?: number;
   reviewClaudeMaxBudgetUsd?: number;
+  semanticOnly?: boolean;
   evidenceManifestFile?: string;
   closureArtifactFile?: string;
   workId?: string;

@@ -26,6 +26,23 @@ afterEach(() => {
 });
 
 describe("Work Map review readback", () => {
+	test("semantic-only artifact cannot complete an implemented Work Map ticket", () => {
+		const { store } = fixture();
+		const created = store.create(input(), "codex");
+		const claimed = store.claimTicket({ workId: created.id, ticketId: "ticket-a",
+			expectedRevision: created.revision, owner: "codex", leaseId: "lease-a" });
+		const implemented = store.markImplemented({ workId: created.id, ticketId: "ticket-a",
+			expectedRevision: claimed.revision, actor: "recorder",
+			receipt: { id: "receipt-a", digest: "a".repeat(64), treeDigest: "b".repeat(64) } });
+		const before = fs.readFileSync(store.mapPath(created.id), "utf8");
+		const semantic = { schemaVersion: 1, phase: "semantic-only", evidenceStatus: "not-declared",
+			completionAuthorized: false, findings: [], hostCallCount: 1, providerCallCount: 0 };
+		expect(() => store.verifyTicket({ workId: created.id, ticketId: "ticket-a",
+			expectedRevision: implemented.revision, actor: "review-readback", review: semantic as any }))
+			.toThrow("review and verification receipt tree digests differ");
+		expect(fs.readFileSync(store.mapPath(created.id), "utf8")).toBe(before);
+	});
+
 	test("requested changes return an implemented ticket to claimed", () => {
 		const { store } = fixture();
 		const created = store.create(input(), "codex");

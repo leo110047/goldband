@@ -15,7 +15,7 @@
       "actions": [
         {
           "id": "code",
-          "description": "Evidence-first code review.",
+          "description": "Evidence-backed or explicit semantic-only code review.",
           "runtime": "typed",
           "owner": "review-runtime",
           "dispatch": "trusted-launcher",
