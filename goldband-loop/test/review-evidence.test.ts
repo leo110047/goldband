@@ -1712,8 +1712,12 @@ describe('review evidence contracts', () => {
     visit(cache);
     const archiveLink = links.find((path) => existsSync(join(path, 'fixture_dep', '__init__.py')));
     expect(archiveLink).toBeDefined();
-    expect(readlinkSync(archiveLink!)).toStartWith('/');
     const archive = realpathSync(archiveLink!);
+    // uv versions may create relative links; explicitly seed the absolute-link
+    // relocation case this regression must exercise.
+    rmSync(archiveLink!);
+    symlinkSync(archive, archiveLink!);
+    expect(readlinkSync(archiveLink!)).toStartWith('/');
     const value = manifest();
     value.providers[0]!.operations[0] = {
       ...operation('cached-python-gate', ['python3.14', '-c', 'import fixture_dep; print(fixture_dep.VALUE)'], 'candidate', 'zero'),
