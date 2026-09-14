@@ -1,4 +1,5 @@
 import { isHostPythonToolPath, localReviewPythonPath, resolveHostPythonTool } from '../workflows/review-python-tools';
+import { LOCAL_PYTHON_TEST_INTERPRETERS } from '../workflows/review-local-evidence';
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -1519,11 +1520,12 @@ describe('review evidence contracts', () => {
     ]);
   });
 
-  test('materializes and executes an explicit Python 3.14 uv runtime against the candidate', async () => {
+  for (const interpreter of LOCAL_PYTHON_TEST_INTERPRETERS) {
+  test.skipIf(interpreter !== 'python3.14' && !Bun.which(interpreter))(`materializes and executes declared ${interpreter} with uv against the candidate`, async () => {
     if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
-    const python = spawnSync('/usr/bin/which', ['python3.14'], { encoding: 'utf8' }).stdout.trim();
+    const python = spawnSync('/usr/bin/which', [interpreter], { encoding: 'utf8' }).stdout.trim();
     const uv = spawnSync('/usr/bin/which', ['uv'], { encoding: 'utf8' }).stdout.trim();
-    if (!hostBoundaryPrerequisite(Boolean(python), 'python3.14 executable')) return;
+    if (!hostBoundaryPrerequisite(Boolean(python), `${interpreter} executable`)) return;
     if (!hostBoundaryPrerequisite(Boolean(uv), 'uv executable')) return;
     const repo = gitFixture();
     const wheel = join(repo, 'vendor', 'fixture_dep-1.0.0-py3-none-any.whl');
@@ -1533,7 +1535,7 @@ describe('review evidence contracts', () => {
       '[project]',
       'name = "python-evidence-fixture"',
       'version = "0.1.0"',
-      'requires-python = ">=3.14,<3.15"',
+      `requires-python = ">=${interpreter.slice(6)},<3.${Number(interpreter.split(".")[1]) + 1}"`,
       'dependencies = ["fixture-dep"]',
       '[tool.uv.sources]',
       'fixture-dep = { path = "vendor/fixture_dep-1.0.0-py3-none-any.whl" }',
@@ -1551,12 +1553,12 @@ describe('review evidence contracts', () => {
     value.providers[0]!.operations[0] = {
       ...operation(
         'python-gate',
-        ['python3.14', '-c', 'import app,fixture_dep; assert app.VALUE == "candidate" and fixture_dep.VALUE == 42; print(app.__file__); print(fixture_dep.__file__)'],
+        [interpreter, '-c', 'import app,fixture_dep; assert app.VALUE == "candidate" and fixture_dep.VALUE == 42; print(app.__file__); print(fixture_dep.__file__)'],
         'candidate',
         'zero',
       ),
       pythonRuntime: {
-        interpreter: 'python3.14',
+        interpreter,
         resolver: 'uv',
         projectFile: 'pyproject.toml',
         lockFile: 'uv.lock',
@@ -1598,7 +1600,20 @@ describe('review evidence contracts', () => {
     expect(repeated.records[0]).toMatchObject({ status: 'verified-pass', fresh: true });
     expect(repeated.records[0]!.executionIdentityDigest)
       .toBe(evidence.records[0]!.executionIdentityDigest);
+    if (interpreter === 'python3.11') {
+      // The same installed interpreter must reject incompatible project requirements;
+      // this negative case must not introduce a dependency on another installed version.
+      const projectFile = join(repo, 'pyproject.toml');
+      writeFileSync(projectFile, readFileSync(projectFile, 'utf8').replace('>=3.11,<3.12', '>=3.13,<3.14'));
+      const incompatibleInput = { source: 'git diff', diff: git(repo, ['diff']), changedFiles: ['app.py', 'pyproject.toml'] };
+      const rejected = await executeEvidencePlan(context(repo), incompatibleInput, validated,
+        createCandidateBinding(repo, incompatibleInput, validated));
+      expect(rejected.records[0]!.status, rejected.records[0]!.outputSummary).toBe('runtime-incomplete');
+      expect(rejected.records[0]!.outputSummary).toContain("incompatible with the project's Python requirement");
+      expect(rejected.records[0]!.outputSummary).not.toContain('/python-runtime/environment/lib/');
+    }
   });
+  }
 
   test('copied uv archive links are readable in the real sandbox without ambient cache access', () => {
     if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
@@ -1737,6 +1752,13 @@ describe('review evidence contracts', () => {
       expect(changed.records[0]).toMatchObject({ status: 'verified-pass', fresh: true });
       expect(changed.records[0]!.outputSummary).toContain('43');
       expect(changed.records[0]!.executionIdentityDigest).not.toBe(first.records[0]!.executionIdentityDigest);
+      writeFileSync(join(archive, 'fixture_dep-1.0.0.dist-info', 'WHEEL'),
+        'Wheel-Version: 1.0\nTag: cp314-cp314-macosx_26_0_arm64\n');
+      const unmapped = await run();
+      expect(unmapped.records[0]).toMatchObject({ status: 'runtime-incomplete', fresh: false });
+      expect(unmapped.records[0]!.exitStatus).toBeUndefined();
+      expect(unmapped.records[0]!.outputSummary).toContain('fixture-dep==1.0.0');
+      expect(unmapped.records[0]!.outputSummary).toContain('cp314-cp314-macosx_26_0_arm64');
       const external = join(fixture, 'outside-archive');
       renameSync(archive, external);
       for (const target of [external, join(cache, 'missing-archive')]) {
@@ -1796,6 +1818,29 @@ describe('review evidence contracts', () => {
       ),
       'Wheel-Version: 1.0\nTag: py2-none-any\nTag: py3-none-any\n',
     ).filename).toBe('fixture_dep-1.0.0-py2.py3-none-any.whl');
+  });
+
+  test('binds a source-built wheel to its locked sdist even when other platforms have wheels', () => {
+    const sourceHash = `sha256:${'c'.repeat(64)}`;
+    const lockPackage = [
+      '[[package]]', 'name = "watchdog"', 'version = "6.0.0"',
+      `sdist = { url = "https://files.example/watchdog-6.0.0.tar.gz", hash = "${sourceHash}" }`,
+      'wheels = [',
+      `  { url = "https://files.example/watchdog-6.0.0-py3-none-win_amd64.whl", hash = "sha256:${'a'.repeat(64)}" },`,
+      `  { url = "https://files.example/watchdog-6.0.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:${'b'.repeat(64)}" },`,
+      ']',
+    ].join('\n');
+    const metadata = 'Wheel-Version: 1.0\nTag: cp314-cp314-macosx_26_0_arm64\n';
+    expect(selectedUvLockArtifact(lockPackage, metadata)).toEqual({
+      kind: 'sdist', filename: 'watchdog-6.0.0.tar.gz', hash: sourceHash,
+    });
+    expect(selectedUvLockArtifact(lockPackage.replace(sourceHash, `sha256:${'d'.repeat(64)}`), metadata).hash)
+      .toBe(`sha256:${'d'.repeat(64)}`);
+    expect(() => selectedUvLockArtifact(lockPackage.replace(/^sdist = .*\n/m, ''), metadata)).toThrow();
+    expect(() => selectedUvLockArtifact(lockPackage, 'Wheel-Version: 1.0\n')).toThrow('no compatibility tag');
+    const ambiguous = lockPackage.replace('py3-none-win_amd64', 'cp314-cp314-macosx_26_0_arm64')
+      .replace('py3-none-manylinux2014_aarch64', 'cp314-cp314-macosx_26_0_arm64');
+    expect(() => selectedUvLockArtifact(ambiguous, metadata)).toThrow('multiple compatible uv.lock wheels');
   });
 
   test('repository Python provider produces fresh evidence through its declared operation', async () => {
@@ -2076,33 +2121,65 @@ describe('review evidence contracts', () => {
 
     const pth = join(sitePackages, 'ambient.pth');
     writeFileSync(pth, '/outside\n');
-    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo))
+    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo, { interpreter: 'python3.14' }))
       .toThrow('forbidden site customization');
     rmSync(pth);
 
     const directUrl = join(sitePackages, 'package-1.0.dist-info', 'direct_url.json');
     mkdirSync(dirname(directUrl), { recursive: true });
     writeFileSync(directUrl, JSON.stringify({ url: `file://${repo}`, dir_info: { editable: true } }));
-    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo))
+    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo, { interpreter: 'python3.14' }))
       .toThrow('editable install');
     rmSync(dirname(directUrl), { recursive: true, force: true });
 
     writeFileSync(join(sitePackages, 'source-reference.txt'), repo);
-    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo))
+    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo, { interpreter: 'python3.14' }))
       .toThrow('refers to the source checkout');
     rmSync(join(sitePackages, 'source-reference.txt'));
 
     symlinkSync(repo, join(sitePackages, 'escape'));
-    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo))
+    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo, { interpreter: 'python3.14' }))
       .toThrow('symlink escape');
   });
 
   test('preserves the recognized distribution-owned coverage startup hook', () => {
     const { environment, python, pth } = coverageStartupFixture();
     const before = readFileSync(pth);
-    expect(validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout'))
+    expect(validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout', { interpreter: 'python3.14' }))
       .toBe(join(environment, 'bin', 'python3.14'));
     expect(readFileSync(pth)).toEqual(before);
+  });
+
+  test.each([
+    'opentelemetry/instrumentation/auto_instrumentation/sitecustomize.py',
+    'another_package/usercustomize.py',
+    'another_package/sitecustomize/__init__.py',
+    'another_package/sitecustomize.pyc',
+  ])('preserves an inert package-internal startup module: %s', (path) => {
+    const { environment, python, pth } = coverageStartupFixture();
+    const module = join(dirname(pth), path);
+    mkdirSync(dirname(module), { recursive: true });
+    writeFileSync(module, 'raise RuntimeError("must not run at startup")\n');
+    const before = readFileSync(module);
+    expect(validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout', { interpreter: 'python3.14' }))
+      .toBe(python);
+    expect(readFileSync(module)).toEqual(before);
+  });
+
+  test.each([
+    'sitecustomize.py', 'usercustomize.py', 'SiteCustomize.PY',
+    'sitecustomize/__init__.py', 'usercustomize/__init__.py',
+    'sitecustomize.pyc', 'usercustomize.pyc',
+    'sitecustomize.so', 'usercustomize.abi3.so',
+    'sitecustomize.cpython-314-darwin.so',
+    'activate-nested.pth', 'activate-nested.egg-link',
+  ])('rejects a startup module or path hook at the site-packages root: %s', (path) => {
+    const { environment, python, pth } = coverageStartupFixture();
+    const hook = join(dirname(pth), path);
+    mkdirSync(dirname(hook), { recursive: true });
+    writeFileSync(hook, 'opentelemetry/instrumentation/auto_instrumentation\n');
+    expect(() => validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout', { interpreter: 'python3.14' }))
+      .toThrow('forbidden site customization');
   });
 
   test('attests a dylib symlink at its actual location behind a directory alias', () => {
@@ -2158,11 +2235,11 @@ describe('review evidence contracts', () => {
     } else {
       writeFileSync(join(dirname(pth), 'unknown.pth'), 'import arbitrary_startup_code\n');
     }
-    expect(() => validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout'))
+    expect(() => validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout', { interpreter: 'python3.14' }))
       .toThrow();
   });
 
-  test('runs a coverage startup hook from an offline wheel through the sealed Python gate', async () => {
+  test('runs coverage startup and preserves inert nested customizations through the sealed Python gate', async () => {
     if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
     const python = spawnSync('/usr/bin/which', ['python3.14'], { encoding: 'utf8' }).stdout.trim();
     const uv = spawnSync('/usr/bin/which', ['uv'], { encoding: 'utf8' }).stdout.trim();
@@ -2179,13 +2256,19 @@ describe('review evidence contracts', () => {
     // The fixture module records startup calls; the real upstream .pth bytes
     // must remain active in child interpreters, and inert without either flag.
     writeFileSync(join(repo, 'probe.py'), [
-      'import os, sqlite3, ssl, subprocess, sys',
+      'import builtins, os, sqlite3, ssl, subprocess, sys',
       'assert sqlite3.connect(":memory:").execute("select 42").fetchone() == (42,)',
       'assert ssl.OPENSSL_VERSION',
       'assert "coverage" not in sys.modules',
+      'assert not hasattr(builtins, "nested_startup_hook")',
+      'assert not any("auto_instrumentation" in path for path in sys.path)',
       'for flag in ("COVERAGE_PROCESS_START", "COVERAGE_PROCESS_CONFIG"):',
       '    env = {**os.environ, flag: "fixture"}',
-      '    subprocess.run([sys.executable, "-c", "import coverage; assert coverage.STARTED == \'pth\'"], env=env, check=True)',
+      '    subprocess.run([sys.executable, "-c", "import builtins, coverage; assert coverage.STARTED == \'pth\'; assert not hasattr(builtins, \'nested_startup_hook\')"], env=env, check=True)',
+      'import instrumentation_fixture.auto_instrumentation.sitecustomize',
+      'assert builtins.nested_startup_hook == "site"',
+      'import instrumentation_fixture.auto_instrumentation.usercustomize',
+      'assert builtins.nested_startup_hook == "user"',
       'print("coverage startup preserved")', '',
     ].join('\n'));
     const locked = spawnSync(uv, ['lock', '--project', repo, '--python', python, '--offline', '--no-cache'], { encoding: 'utf8' });
@@ -3741,6 +3824,7 @@ function writeFixtureWheel(python: string, output: string): void {
     'p=sys.argv[1]',
     'z=zipfile.ZipFile(p,"w",compression=zipfile.ZIP_DEFLATED)',
     'z.writestr("fixture_dep/__init__.py","VALUE = 42\\n")',
+    'z.writestr("fixture_dep/instrumentation/sitecustomize.py","raise RuntimeError(123)\\n")',
     'z.writestr("fixture_dep-1.0.0.dist-info/METADATA","Metadata-Version: 2.1\\nName: fixture-dep\\nVersion: 1.0.0\\n")',
     'z.writestr("fixture_dep-1.0.0.dist-info/WHEEL","Wheel-Version: 1.0\\nGenerator: goldband-test\\nRoot-Is-Purelib: true\\nTag: py3-none-any\\n")',
     'z.writestr("fixture_dep-1.0.0.dist-info/RECORD","")',
@@ -3777,6 +3861,8 @@ function writeCoverageStartupWheel(python: string, output: string): void {
   const files = {
     'a1_coverage.pth': pth.toString('utf8'),
     'coverage/__init__.py': 'STARTED = None\ndef process_startup(*, slug):\n    global STARTED\n    STARTED = slug\n',
+    'instrumentation_fixture/auto_instrumentation/sitecustomize.py': 'import builtins\nbuiltins.nested_startup_hook = "site"\n',
+    'instrumentation_fixture/auto_instrumentation/usercustomize.py': 'import builtins\nbuiltins.nested_startup_hook = "user"\n',
     'coverage-7.15.4.dist-info/METADATA': 'Metadata-Version: 2.1\nName: coverage\nVersion: 7.15.4\n',
     'coverage-7.15.4.dist-info/WHEEL': 'Wheel-Version: 1.0\nGenerator: goldband-test\nRoot-Is-Purelib: true\nTag: py3-none-any\n',
     'coverage-7.15.4.dist-info/RECORD': coverageStartupRecord(pth),
@@ -4244,6 +4330,8 @@ describe('Python host tool discovery', () => {
     ['uv', '.local/bin/uv'], ['python3.14', '.local/bin/python3.14'],
     ['python3.14', '.local/share/uv/python/cpython-3.14/bin/python3.14'],
     ['python3.14', '.pyenv/versions/3.14.0/bin/python3.14'],
+    ['python3.11', '.pyenv/versions/3.11.0/bin/python3.11'],
+    ['python3.13', '.local/share/uv/python/cpython-3.13/bin/python3.13'],
   ] as const)('accepts the supported native %s at %s', (command, location) => {
     const { home, repository } = pythonToolFixture(); const tool = nativeToolFixture(join(home, location));
     expect(resolveHostPythonTool(command, repository, { home, path: dirname(tool) })).toBe(tool);
@@ -4298,11 +4386,21 @@ describe('Python host tool discovery', () => {
     expect(() => resolveHostPythonTool('uv', repository, { home, path: home })).toThrow('executable is unavailable: uv');
   });
 
-  test('local self-tests preserve selected directories, including user installations', () => {
+  test.each(['python3.11', 'python3.13', 'python3.14'])('local self-tests preserve selected %s directories, including user installations', (interpreter) => {
     const { home, repository } = pythonToolFixture();
-    const python = nativeToolFixture(join(home, '.pyenv/versions/3.14.0/bin/python3.14')); const uv = nativeToolFixture(join(home, '.local/bin/uv'));
-    expect(localReviewPythonPath(repository, { home, path: `${dirname(python)}:${dirname(uv)}` })).toEqual([dirname(python), dirname(uv)]);
-    expect(localReviewPythonPath(repository, { home, path: home })).toEqual([]);
+    const python = nativeToolFixture(join(home, '.pyenv/versions', interpreter, 'bin', interpreter)); const uv = nativeToolFixture(join(home, '.local/bin/uv'));
+    expect(localReviewPythonPath(repository, [interpreter], { home, path: `${dirname(python)}:${dirname(uv)}` })).toEqual([dirname(python), dirname(uv)]);
+    expect(localReviewPythonPath(repository, [interpreter], { home, path: home })).toEqual([]);
+  });
+
+  test('unused versions cannot block self-tests, while a selected version still cannot be shadowed', () => {
+    const { home, repository } = pythonToolFixture();
+    const unrelated = nativeToolFixture(join(repository, '.venv/bin/python3.12'));
+    const selected = nativeToolFixture(join(home, '.pyenv/versions/3.13/bin/python3.13'));
+    const environment = { home, path: `${dirname(unrelated)}:${dirname(selected)}` };
+    expect(localReviewPythonPath(repository, ['python3.13'], environment)).toEqual([dirname(selected)]);
+    nativeToolFixture(join(repository, '.venv/bin/python3.13'));
+    expect(() => localReviewPythonPath(repository, ['python3.13'], environment)).toThrow('source checkout');
   });
 
   test('a fresh runtime cannot gain trust through a caller-controlled HOME', () => {

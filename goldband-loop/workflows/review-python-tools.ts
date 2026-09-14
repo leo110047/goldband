@@ -10,6 +10,8 @@ const SYSTEM_TOOL_ROOTS = [
   '/opt/local/bin', '/opt/local/Library/Frameworks',
 ];
 
+export const VERSIONED_PYTHON_COMMAND = /^python3\.(?:0|[1-9][0-9]*)$/;
+
 // Host identity, not HOME (which is replaced for local self-tests). No manifest
 // or environment override may add trusted roots. The explicit home is a test seam.
 type HostToolEnvironment = { path: string; home: string };
@@ -44,11 +46,11 @@ function toolRoots(home: string, command: string): string[] {
   const homes = [...new Set([resolve(home), realpathSync(home)])];
   return [...SYSTEM_TOOL_ROOTS, ...homes.flatMap((root) => [
     join(root, '.local/bin'),
-    ...(command === 'python3.14' ? [join(root, '.local/share/uv/python'), join(root, '.pyenv/versions')] : []),
+    ...(VERSIONED_PYTHON_COMMAND.test(command) ? [join(root, '.local/share/uv/python'), join(root, '.pyenv/versions')] : []),
   ])];
 }
 
-export function isHostPythonToolPath(path: string, command: 'python3.14' | 'uv', home: string): boolean {
+export function isHostPythonToolPath(path: string, command: string, home: string): boolean {
   return toolRoots(home, command).some((root) => within(resolve(path), root));
 }
 
@@ -65,8 +67,9 @@ function selectedTool(command: string, path: string): string | undefined {
 
 /** Resolve only the first PATH match; never silently substitute another tool. */
 export function resolveHostPythonTool(
-  command: 'python3.14' | 'uv', repository: string, environment = hostEnvironment(),
+  command: string, repository: string, environment = hostEnvironment(),
 ): string {
+  if (command !== 'uv' && !VERSIONED_PYTHON_COMMAND.test(command)) throw new Error('expected uv or an explicitly versioned Python 3 interpreter');
   const selected = selectedTool(command, environment.path);
   if (!selected) throw new Error(`review evidence executable is unavailable: ${command}`);
   const canonical = realpathSync(selected);
@@ -95,9 +98,9 @@ function assertNativeTool(path: string, detail: string): void {
 }
 
 /** Keep local host tests' tool selection consistent with sealed Python evidence. */
-export function localReviewPythonPath(repository: string, environment = hostEnvironment()): string[] {
+export function localReviewPythonPath(repository: string, interpreters: readonly string[], environment = hostEnvironment()): string[] {
   const directories: string[] = [];
-  for (const command of ['python3.14', 'uv'] as const) {
+  for (const command of [...interpreters, 'uv']) {
     // Missing prerequisites are reported by the relevant self-test. A found but
     // rejected executable must fail here, rather than falling back to Homebrew.
     if (!selectedTool(command, environment.path)) continue;

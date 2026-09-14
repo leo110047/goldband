@@ -119,7 +119,7 @@ describe("review contract authoring", () => {
 		}
 	});
 
-	test("JSON Schema and runtime validator expose the same opt-in Python 3.14 uv contract", () => {
+	test.each(["python3.8", "python3.11", "python3.13", "python3.14"])("JSON Schema and runtime validator accept declared %s with uv", (interpreter) => {
 		const validateJsonSchema = jsonSchemaValidator();
 		const example = JSON.parse(
 			readFileSync(join(repoRoot, "examples", "review-evidence", "minimal-local-gate.json"), "utf8"),
@@ -127,9 +127,9 @@ describe("review contract authoring", () => {
 		const python = structuredClone(example);
 		python.providers[0]!.operations[0] = {
 			...python.providers[0]!.operations[0]!,
-			argv: ["python3.14", "-c", "import app"],
+			argv: [interpreter, "-c", "import app"],
 			pythonRuntime: {
-				interpreter: "python3.14",
+				interpreter,
 				resolver: "uv",
 				projectFile: "pyproject.toml",
 				lockFile: "uv.lock",
@@ -138,9 +138,14 @@ describe("review contract authoring", () => {
 		expect(validateJsonSchema(python), JSON.stringify(validateJsonSchema.errors)).toBe(true);
 		expect(reviewEvidenceManifestSchema.validate(python).providers[0]!.operations[0]!.pythonRuntime)
 			.toEqual(python.providers[0]!.operations[0]!.pythonRuntime);
+		const mismatch = structuredClone(python);
+		mismatch.providers[0]!.operations[0]!.argv[0] = interpreter === "python3.11" ? "python3.13" : "python3.11";
+		expect(() => reviewEvidenceManifestSchema.validate(mismatch)).toThrow("declared interpreter");
 
 		for (const mutate of [
 			(value: ReviewEvidenceManifest) => { value.providers[0]!.operations[0]!.argv[0] = "python3"; },
+			(value: ReviewEvidenceManifest) => { value.providers[0]!.operations[0]!.pythonRuntime!.interpreter = "python3.13t"; },
+			(value: ReviewEvidenceManifest) => { value.providers[0]!.operations[0]!.pythonRuntime!.interpreter = "python3.13.1"; },
 			(value: ReviewEvidenceManifest) => { value.providers[0]!.operations[0]!.network = "authorized"; },
 			(value: ReviewEvidenceManifest) => { value.providers[0]!.operations[0]!.requiredSystemTools = ["uv"]; },
 			(value: ReviewEvidenceManifest) => { value.providers[0]!.operations[0]!.pythonRuntime!.projectFile = "../pyproject.toml"; },
