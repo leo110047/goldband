@@ -1748,8 +1748,52 @@ describe('workflow runtime', () => {
     })).toThrow('review/code diff file must be a regular file');
   });
 
+  test('worktree collection preserves a large combined tracked and untracked diff', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'goldband-workflow-repo-'));
+    try {
+      spawnSync('git', ['init'], { cwd: repo });
+      writeFileSync(join(repo, 'tracked.txt'), 'original\n');
+      commitAll(repo, 'initial');
+      const tracked = `${'tracked content\n'.repeat(24_000)}tracked tail\n`;
+      writeFileSync(join(repo, 'tracked.txt'), tracked);
+      for (const name of ['one.txt', 'two.txt', 'three.txt']) {
+        writeFileSync(join(repo, name), `${'untracked content\n'.repeat(7_000)}${name} tail\n`);
+      }
+      const output = await reviewSteps[0]!.run({
+        ...workflowContext(), cwd: repo,
+        options: { worktree: true, includeUntracked: true },
+      }) as { diff: string };
+      const expectedTracked = spawnSync('git', ['diff', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout;
+      const state = { includedBytes: 0 };
+      const expectedUntracked = ['one.txt', 'three.txt', 'two.txt'].map((name) =>
+        untrackedFileDiff(repo, realpathSync(repo), name, state));
+      expect(Buffer.byteLength(output.diff)).toBeGreaterThan(700 * 1024);
+      expect(output.diff).toBe([expectedTracked, ...expectedUntracked].join('\n'));
+      for (const name of ['tracked', 'one.txt', 'two.txt', 'three.txt']) {
+        expect(output.diff).toContain(`+${name} tail`);
+      }
+      expect(buildReviewPrompt({ ...workflowContext(), cwd: repo }, output.diff))
+        .toContain(`DIFF_START\n${output.diff}\nDIFF_END`);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test('diff-file accepts exactly 2 MiB of UTF-8 bytes and rejects one extra byte', async () => {
+    expect(MAX_REVIEW_DIFF_BYTES).toBe(2 * 1024 * 1024);
+    const file = join(tmpHome, 'limit.diff');
+    const diff = `${'界'.repeat(Math.floor(MAX_REVIEW_DIFF_BYTES / 3))}xx`;
+    expect(Buffer.byteLength(diff)).toBe(MAX_REVIEW_DIFF_BYTES);
+    writeFileSync(file, diff);
+    const ctx = { ...workflowContext(), options: { diffFile: file } };
+    const output = await reviewSteps[0]!.run(ctx) as { diff: string };
+    expect(output.diff).toBe(diff);
+    expect(buildReviewPrompt(ctx, output.diff)).toContain(`DIFF_START\n${diff}\nDIFF_END`);
+    writeFileSync(file, `${diff}x`);
+    expect(() => reviewSteps[0]!.run(ctx)).toThrow('byte limit');
+  });
+
   test('large tracked diffs fail with the explicit review size contract', () => {
-    expect(MAX_REVIEW_DIFF_BYTES).toBe(256 * 1024);
     const repo = mkdtempSync(join(tmpdir(), 'goldband-workflow-repo-'));
     try {
       spawnSync('git', ['init'], { cwd: repo, encoding: 'utf8' });
@@ -2387,6 +2431,7 @@ describe('workflow runtime', () => {
   test('Codex and Claude adapters pass prompts above argv limits through stdin', async () => {
     const fakeBin = mkdtempSync(join(tmpdir(), 'goldband-review-hosts-'));
     const previousPath = process.env.PATH;
+    const prompt = 'p'.repeat(MAX_REVIEW_DIFF_BYTES + MAX_REVIEW_PROMPT_OVERHEAD_BYTES);
     try {
       const fakeCodex = join(fakeBin, 'codex');
       const fakeClaude = join(fakeBin, 'claude');
@@ -2405,7 +2450,7 @@ describe('workflow runtime', () => {
         'test "$ignored_config" = 1',
         'test "$stdin_prompt" = 1',
         'bytes=$(wc -c | tr -d " ")',
-        'test "$bytes" -gt 1048576',
+        `test "$bytes" -eq ${Buffer.byteLength(prompt)}`,
         'printf \'%s\\n\' \'{"findings":[]}\' > "$output"',
         '',
       ].join('\n'));
@@ -2418,14 +2463,13 @@ describe('workflow runtime', () => {
         'fi',
         'if printf \'%s\\n\' "$@" | grep -q -- \'--max-budget-usd\'; then exit 91; fi',
         'bytes=$(wc -c | tr -d " ")',
-        'test "$bytes" -gt 1048576',
+        `test "$bytes" -eq ${Buffer.byteLength(prompt)}`,
         'printf \'%s\\n\' \'{"result":"{\\"findings\\":[]}","total_cost_usd":0.72,"usage":{"input_tokens":100,"output_tokens":20}}\'',
         '',
       ].join('\n'));
       chmodSync(fakeCodex, 0o755);
       chmodSync(fakeClaude, 0o755);
       process.env.PATH = `${fakeBin}:${previousPath ?? ''}`;
-      const prompt = 'p'.repeat(1_100_000);
       const schema = { type: 'object' };
 
       const codex = await adapterFor('codex').runJson(

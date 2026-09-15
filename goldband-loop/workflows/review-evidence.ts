@@ -697,7 +697,7 @@ export function validateInitialReviewArtifact(value: unknown): InitialReviewArti
     redactedPaths.add(entry.path);
     assertSha256(entry.digest, `initial review artifact binding redacted digest: ${entry.path}`);
   }
-  if (Buffer.byteLength(artifact.diff) > 256 * 1024) {
+  if (Buffer.byteLength(artifact.diff) > MAX_REVIEW_DIFF_BYTES) {
     throw new Error('initial review artifact diff is oversized');
   }
   if (binding.behaviorContractDigest !== sha256(stableJson(manifest)) ||

@@ -1,5 +1,6 @@
 import { isHostPythonToolPath, localReviewPythonPath, resolveHostPythonTool } from '../workflows/review-python-tools';
 import { LOCAL_PYTHON_TEST_INTERPRETERS } from '../workflows/review-local-evidence';
+import { MAX_REVIEW_DIFF_BYTES } from '../lib/review-runtime-contract';
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -3197,6 +3198,7 @@ describe('review evidence contracts', () => {
     const state = join(repo, '.state');
     const file = join(repo, 'initial-review.json');
     const { runtimeReceipt: _fixtureReceipt, ...payload } = initialArtifact();
+    payload.diff += 'x'.repeat(MAX_REVIEW_DIFF_BYTES - Buffer.byteLength(payload.diff));
     payload.evidence.manifest = reviewEvidenceManifestSchema.validate(payload.evidence.manifest);
     const binding = createCandidateBinding(repo, {
       source: 'git diff',
@@ -3218,6 +3220,9 @@ describe('review evidence contracts', () => {
       options: { mode: 'mock' as const, goldbandHome: state },
     };
     const issued = writeInitialReviewArtifact(file, payload, receiptContext);
+    expect(Buffer.byteLength(issued.diff)).toBe(MAX_REVIEW_DIFF_BYTES);
+    expect(() => validateInitialReviewArtifact({ ...issued, diff: `${issued.diff}x` }))
+      .toThrow('initial review artifact diff is oversized');
     const forged = {
       ...issued,
       hostCallCount: 1,
@@ -3665,14 +3670,20 @@ describe('review evidence contracts', () => {
   test('closure shares the initial input budget and rejects oversized delta or metadata', () => {
     const artifact = initialArtifact();
     const repairedBinding = { ...artifact.binding, candidateDigest: '9'.repeat(64) };
-    const repairedDiff = `${artifact.diff}\n${'+repair();\n'.repeat(9000)}`;
+    const repairedDiff = `${artifact.diff}\n+${'x'.repeat(700 * 1024)}repair();\n`;
     const closure = buildClosureInput(artifact, repairedBinding, repairedDiff, artifact.evidence.manifest);
     const rules = { bundle: { selected: [], snapshot: [] }, text: 'closure rule' };
-    expect(Buffer.byteLength(closure.repairDelta)).toBeGreaterThan(64 * 1024);
+    expect(Buffer.byteLength(closure.repairDelta)).toBeGreaterThan(700 * 1024);
     expect(buildClosureReviewPrompt(closure, bundle([record()]), rules)).toContain('repair();');
     expect(() => buildClosureInput(artifact, repairedBinding,
-      `${artifact.diff}\n${'+repair();\n'.repeat(30000)}`, artifact.evidence.manifest))
+      `${artifact.diff}\n+${'x'.repeat(MAX_REVIEW_DIFF_BYTES)}`, artifact.evidence.manifest))
       .toThrow('repair delta exceeds');
+    const atLimit = { ...closure, repairDelta: 'x'.repeat(MAX_REVIEW_DIFF_BYTES) };
+    expect(buildClosureReviewPrompt(atLimit, bundle([record()]), rules))
+      .toContain(`REPAIR_DELTA_START\n${atLimit.repairDelta}\nREPAIR_DELTA_END`);
+    expect(() => buildClosureReviewPrompt(
+      { ...atLimit, repairDelta: `${atLimit.repairDelta}x` }, bundle([record()]), rules))
+      .toThrow('shared input budget');
     expect(() => buildClosureReviewPrompt(closure, bundle([record()]),
       { ...rules, text: 'x'.repeat(49 * 1024) })).toThrow('shared input budget');
   });

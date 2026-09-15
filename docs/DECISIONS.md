@@ -2555,3 +2555,24 @@ candidate-bound evidence. Arbitrary extra commands remain rejected.
 Registry relocation uses the same hard-boundary comparison and explicit semantic
 assessment as other contract edits; the repository baseline remains recorded
 until reviewed. It does not silently accept changed descriptions during relocation.
+
+## 2026-09-15: Restore the shared review patch budget to 2 MiB
+
+The 256 KiB cost-control budget rejected a roughly 691 KiB complete worktree diff
+before evidence execution or semantic review. Removing generated contract files
+still left about 458 KiB, so requiring a smaller scope could not preserve the
+requested review. This supersedes the patch capacity in the July 22 and September
+9 decisions; the 48 KiB prompt metadata budget remains unchanged.
+
+Restore the original 2 MiB patch budget under one runtime constant, including
+persisted initial artifact validation and closure deltas. Keep complete input,
+one independent reviewer, signed provenance, and explicit oversize rejection.
+No project exception, scope rewrite, configurable waiver, or additional review
+coordination mechanism is needed for this failure class. Existing untracked
+redaction and safe file-reading boundaries remain separate.
+
+Boundary regressions cover UTF-8 bytes, combined tracked/untracked input, signed
+artifact readback, closure deltas, and both host adapters at the full stdin
+budget. The larger ceiling allows higher review cost and is not a token-window
+guarantee. Revisit input packaging if real host context failures or review-quality
+evidence show that complete input at this ceiling is impractical.

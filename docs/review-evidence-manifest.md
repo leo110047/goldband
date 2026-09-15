@@ -4,6 +4,22 @@
 
 Manifest 合法不代表測試已通過、review 已完成或可以部署。真正的 evidence 仍必須由同一個 candidate-bound runtime 執行並讀回。
 
+## Review input capacity
+
+完整 scoped diff 的容量上限為 **2 MiB（2,097,152 UTF-8 bytes）**，初次收集、
+持久化 initial artifact 的讀取，以及 closure 的 repair delta 都使用同一個
+`MAX_REVIEW_DIFF_BYTES`。Rules 與 evidence 等 prompt metadata 另有 48 KiB 預算。
+此政策取代舊文件中的 256 KiB patch 上限；實作來源為
+[`review-runtime-contract.ts`](../goldband-loop/lib/review-runtime-contract.ts)。
+
+Runtime 透過 stdin 傳送完整審查輸入，不會為了通過容量檢查截斷 diff、排除
+generated files 或改變 scope。超過上限仍明確失敗；closure 繼續驗證原始 scope、
+candidate 與 signed receipt，不能以縮小 diff 代替原範圍結案。
+既有 untracked file 的安全讀取與 redaction 限制仍各自適用。
+
+這是 Goldband 的輸入資源預算，不是模型 context window 的保證；host 自身的
+context 或執行錯誤仍會如實回報。接納較大的 diff 也不表示測試或 review 已通過。
+
 ## Automatic project lookup
 
 日常審查直接執行 `goldband review code --host codex` 或 `--host claude`，
