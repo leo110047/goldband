@@ -2981,7 +2981,7 @@ describe('review evidence contracts', () => {
     original.hostCallCount = 0;
     original.findings[0] = { ...original.findings[0]!, classification: 'runtime-incomplete', behaviorCellIds: ['behavior-a'] };
     const build = (artifact: InitialReviewArtifact, binding = artifact.binding) =>
-      buildClosureInput(artifact, binding, artifact.diff, artifact.evidence.manifest);
+      buildClosureInput({ artifact: artifact, repairedBinding: binding, repairedDiff: artifact.diff, repairedManifest: artifact.evidence.manifest });
     expect(build(original)).toMatchObject({ kind: 'evidence-repair', repairDelta: '', affectedCellIds: ['behavior-a'] });
     for (const classification of ['verified-failure', 'coverage-gap', 'semantic-concern'] as const) {
       const mixed = structuredClone(original);
@@ -3002,30 +3002,25 @@ describe('review evidence contracts', () => {
       ...original.binding,
       candidateDigest: 'd'.repeat(64),
     };
-    const closure = buildClosureInput(
-      original,
-      repairedBinding,
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: repairedBinding, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: original.evidence.manifest });
     expect(closure.affectedFindingIds).toEqual(['F-001']);
     expect(closure.repairDelta).not.toContain(original.diff);
-    expect(() => validateClosureResults([{
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-999',
       status: 'closed',
       summary: 'wrong scope',
-    }], closure, original.evidence)).toThrow('non-original finding ID');
-    expect(() => validateClosureResults([{
+    }], input: closure, evidence: original.evidence })).toThrow('non-original finding ID');
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-001',
       status: 'direct-regression',
       summary: 'new failure',
       evidenceIds: ['gate:pass'],
-    }], closure, original.evidence)).toThrow('requires verified rerun evidence');
-    expect(() => validateClosureResults([{
+    }], input: closure, evidence: original.evidence })).toThrow('requires verified rerun evidence');
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-001',
       status: 'closed',
       summary: 'unsupported assertion',
-    }], closure, original.evidence)).toThrow('requires fresh rerun evidence');
+    }], input: closure, evidence: original.evidence })).toThrow('requires fresh rerun evidence');
   });
 
   test('legacy unbound semantic findings use declared path coverage throughout closure', () => {
@@ -3037,11 +3032,10 @@ describe('review evidence contracts', () => {
     const stored = JSON.stringify(original);
     expect(classifyReviewFindings(original.findings, original.evidence)[0]!.behaviorCellIds)
       .toEqual(['behavior-a']);
-    const closure = buildClosureInput(original, { ...original.binding, candidateDigest: 'd'.repeat(64) },
-      'diff --git a/a.ts b/a.ts\n+fixed();', original.evidence.manifest);
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: original.evidence.manifest });
     expect(closure.affectedCellIds).toEqual(['behavior-a']);
     const result = { findingId: 'F-001', status: 'closed' as const, summary: 'Repaired and checked.', evidenceIds: ['gate:pass'] };
-    expect(validateClosureResults([result], closure, original.evidence)).toEqual([result]);
+    expect(validateClosureResults({ results: [result], input: closure, evidence: original.evidence })).toEqual([result]);
     expect(JSON.stringify(original)).toBe(stored);
     const addedGlobal = structuredClone(original.evidence);
     addedGlobal.manifest.providers.push({
@@ -3049,7 +3043,7 @@ describe('review evidence contracts', () => {
       applicability: { kind: 'global', reason: 'Candidate-added broad check.' },
     });
     addedGlobal.records.push({ ...record(), id: 'new-global:pass', providerId: 'new-global', cellIds: ['other-behavior'] });
-    expect(() => validateClosureResults([{ ...result, evidenceIds: ['new-global:pass'] }], closure, addedGlobal))
+    expect(() => validateClosureResults({ results: [{ ...result, evidenceIds: ['new-global:pass'] }], input: closure, evidence: addedGlobal }))
       .toThrow('unrelated to finding behavior cells');
 
     const uncovered = structuredClone(original);
@@ -3059,9 +3053,9 @@ describe('review evidence contracts', () => {
       expect(classifyReviewFindings(uncovered.findings, uncovered.evidence)[0]!.behaviorCellIds).toEqual([]);
     }
     const noCoverage = { ...closure, artifact: uncovered };
-    expect(() => validateClosureResults([result], noCoverage, uncovered.evidence))
+    expect(() => validateClosureResults({ results: [result], input: noCoverage, evidence: uncovered.evidence }))
       .toThrow('no behavior-cell evidence binding');
-    expect(validateClosureResults([{ ...result, status: 'still-open', evidenceIds: [] }], noCoverage, uncovered.evidence))
+    expect(validateClosureResults({ results: [{ ...result, status: 'still-open', evidenceIds: [] }], input: noCoverage, evidence: uncovered.evidence }))
       .toHaveLength(1);
     uncovered.findings[0]!.classification = 'verified-failure';
     expect(reviewFindingCellIds(uncovered.findings[0]!, original.evidence)).toEqual([]);
@@ -3079,28 +3073,27 @@ describe('review evidence contracts', () => {
     rerun.manifest.behaviorMatrix[0]!.expected = 'Valid input passes; invalid input still fails.';
     rerun.manifest.providers[0]!.operations[0]!.argv = ['node', 'corrected-check.js'];
     rerun.records[0] = { ...rerun.records[0]!, status: 'verified-pass', exitStatus: 0, commandDigest: '9'.repeat(64) };
-    const closure = buildClosureInput(original, { ...original.binding, candidateDigest: 'd'.repeat(64) },
-      'diff --git a/a.ts b/a.ts\n+fixed();', rerun.manifest);
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: rerun.manifest });
     const changes = reviewContractChanges([original.evidence.manifest, original.evidence.manifest], rerun.manifest);
     expect(changes.map((change) => change.kind)).toEqual(['behavior', 'command']);
     expect(() => assertReviewContractBoundary(original.evidence.manifest, rerun.manifest)).not.toThrow();
     expect(() => validateReviewContractAssessment(undefined, changes)).toThrow('explicit semantic contract assessment');
     const result = { findingId: 'F-001', status: 'closed' as const, summary: 'Check corrected.', evidenceIds: ['gate:pass'] };
-    expect(() => validateClosureResults([result], closure, rerun)).toThrow('preserving contract assessment');
-    expect(() => validateClosureResults([result], closure, rerun, { preserved: false, summary: 'Invalid cases no longer fail.' }))
+    expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun })).toThrow('preserving contract assessment');
+    expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: { preserved: false, summary: 'Invalid cases no longer fail.' } }))
       .toThrow('preserving contract assessment');
     const assessment = { preserved: true, summary: 'Fixture assessment: valid and invalid cases remain covered.' };
-    expect(validateClosureResults([result], closure, rerun, assessment)).toEqual([result]);
+    expect(validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment })).toEqual([result]);
     rerun.contractResolution!.workspace.invocationOffset = 'other';
-    expect(() => validateClosureResults([result], closure, rerun, assessment)).toThrow('original failed operation');
+    expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment })).toThrow('original failed operation');
     rerun.contractResolution!.workspace.invocationOffset = '';
     rerun.records[0]!.fresh = false;
-    expect(() => validateClosureResults([result], closure, rerun, assessment)).toThrow('passing fresh rerun evidence');
+    expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment })).toThrow('passing fresh rerun evidence');
     rerun.records[0]!.fresh = true;
     rerun.manifest.providers[0]!.operations[0]!.expectedExit = 'nonzero';
     rerun.manifest.providers[0]!.operations[0]!.expectedExitCode = 1;
     expect(() => assertReviewContractBoundary(original.evidence.manifest, rerun.manifest)).toThrow('provider contract changed');
-    expect(() => validateClosureResults([result], closure, rerun, assessment)).toThrow('original failed operation');
+    expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment })).toThrow('original failed operation');
   });
 
   test('Git no-index check correction preserves rejection of invalid input', () => {
@@ -3141,12 +3134,7 @@ describe('review evidence contracts', () => {
       candidateDigest: 'd'.repeat(64),
       behaviorContractDigest: digest(JSON.stringify(repairedManifest)),
     };
-    const closure = buildClosureInput(
-      original,
-      repairedBinding,
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      repairedManifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: repairedBinding, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: repairedManifest });
     const unrelated = bundle([{
       ...record(),
       id: 'provider-b:pass',
@@ -3154,12 +3142,12 @@ describe('review evidence contracts', () => {
       cellIds: ['behavior-b'],
     }]);
     unrelated.manifest = repairedManifest;
-    expect(() => validateClosureResults([{
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-001',
       status: 'closed',
       summary: 'wrong evidence',
       evidenceIds: ['provider-b:pass'],
-    }], closure, unrelated)).toThrow('unrelated to finding behavior cells');
+    }], input: closure, evidence: unrelated })).toThrow('unrelated to finding behavior cells');
   });
 
   test('initial artifact rejects a forged disposition record for an automated cell', () => {
@@ -3333,12 +3321,7 @@ describe('review evidence contracts', () => {
       candidateDigest: 'd'.repeat(64),
       behaviorContractDigest: 'f'.repeat(64),
     };
-    const closure = buildClosureInput(
-      original,
-      repairedBinding,
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      repairedManifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: repairedBinding, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: repairedManifest });
     expect(closure.affectedCellIds).toContain('behavior-b');
     expect(closure.originalBehaviorContractDigest)
       .not.toBe(closure.repairedBehaviorContractDigest);
@@ -3353,12 +3336,7 @@ describe('review evidence contracts', () => {
     original.evidence.binding = original.binding;
     original.evidence.manifest.providers[0]!.applicability = { kind: 'paths', pathPrefixes: [path] };
     const repairedDiff = original.diff.replace('+bad();', '+fixed();');
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: digest(repairedDiff) },
-      repairedDiff,
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: digest(repairedDiff) }, repairedDiff: repairedDiff, repairedManifest: original.evidence.manifest });
     expect(closure.affectedCellIds).toContain('behavior-a');
   });
 
@@ -3377,12 +3355,7 @@ describe('review evidence contracts', () => {
     original.evidence.binding = original.binding;
     original.evidence.manifest.providers[0]!.applicability = { kind: 'paths', pathPrefixes: [path] };
     const repairedDiff = originalDiff.replace('+bad();', '+fixed();');
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: digest(repairedDiff) },
-      repairedDiff,
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: digest(repairedDiff) }, repairedDiff: repairedDiff, repairedManifest: original.evidence.manifest });
     expect(closure.affectedCellIds).toContain('behavior-a');
   });
 
@@ -3393,12 +3366,7 @@ describe('review evidence contracts', () => {
     original.evidence.binding = original.binding;
     original.evidence.manifest.providers[0]!.applicability = { kind: 'paths', pathPrefixes: ['a.ts'] };
     const repairedDiff = original.diff.replace('+bad();', '+fixed();');
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: digest(repairedDiff) },
-      repairedDiff,
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: digest(repairedDiff) }, repairedDiff: repairedDiff, repairedManifest: original.evidence.manifest });
     expect(closure.affectedCellIds).toContain('behavior-a');
   });
 
@@ -3418,12 +3386,7 @@ describe('review evidence contracts', () => {
     original.evidence.binding = original.binding;
     original.evidence.manifest.providers[0]!.applicability = { kind: 'paths', pathPrefixes: [path] };
     const repairedDiff = originalDiff.replace('literal 4', 'literal 5');
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: digest(repairedDiff) },
-      repairedDiff,
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: digest(repairedDiff) }, repairedDiff: repairedDiff, repairedManifest: original.evidence.manifest });
     expect(closure.affectedCellIds).toContain('behavior-a');
   });
 
@@ -3443,12 +3406,7 @@ describe('review evidence contracts', () => {
     original.binding.candidateDigest = digest(originalDiff);
     original.evidence.binding = original.binding;
     original.evidence.manifest.providers[0]!.applicability = { kind: 'paths', pathPrefixes: ['fixed name.ts'] };
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: digest(repairedDiff) },
-      repairedDiff,
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: digest(repairedDiff) }, repairedDiff: repairedDiff, repairedManifest: original.evidence.manifest });
     expect(closure.affectedCellIds).toContain('behavior-a');
   });
 
@@ -3465,7 +3423,7 @@ describe('review evidence contracts', () => {
       ...original.binding,
       candidateDigest: digest(repairedDiff),
     };
-    const closure = buildClosureInput(original, repairedBinding, repairedDiff, original.evidence.manifest);
+    const closure = buildClosureInput({ artifact: original, repairedBinding: repairedBinding, repairedDiff: repairedDiff, repairedManifest: original.evidence.manifest });
     expect(closure.repairDelta).toContain('+fixed-start');
     expect(closure.repairDelta).toContain('+fixed-end');
     expect(closure.repairDelta).not.toContain('context-40');
@@ -3485,12 +3443,7 @@ describe('review evidence contracts', () => {
         path: 'secret-check.mjs', digest: '2'.repeat(64), size: 52, mode: '100644',
       }],
     };
-    const closure = buildClosureInput(
-      original,
-      repairedBinding,
-      original.diff,
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: repairedBinding, repairedDiff: original.diff, repairedManifest: original.evidence.manifest });
     expect(closure.repairDelta).toContain('REDACTED_UNTRACKED_DELTA "secret-check.mjs"');
     expect(closure.repairDelta).toContain('1'.repeat(64));
     expect(closure.repairDelta).toContain('2'.repeat(64));
@@ -3518,12 +3471,7 @@ describe('review evidence contracts', () => {
     expect(expanded.scopeDigest).toBe(original.scopeDigest);
     expect(different.scopeDigest).not.toBe(original.scopeDigest);
     const artifact = initialArtifact();
-    expect(() => buildClosureInput(
-      artifact,
-      { ...artifact.binding, candidateDigest: 'd'.repeat(64), baseDigest: 'f'.repeat(64) },
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      artifact.evidence.manifest,
-    )).toThrow('does not match repository, base, or scope');
+    expect(() => buildClosureInput({ artifact: artifact, repairedBinding: { ...artifact.binding, candidateDigest: 'd'.repeat(64), baseDigest: 'f'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: artifact.evidence.manifest })).toThrow('does not match repository, base, or scope');
   });
 
   test('verified-failure closure cannot replace a failing command behind the same ID', () => {
@@ -3541,24 +3489,19 @@ describe('review evidence contracts', () => {
     };
     original.evidence.manifest.providers[0]!.operations[0] =
       operation('pass', ['false'], 'candidate', 'zero');
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: 'd'.repeat(64) },
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: original.evidence.manifest });
     const rerun = bundle([{
       ...original.evidence.records[0]!,
       status: 'verified-pass',
       commandDigest: '2'.repeat(64),
       replayCommand: ['true'],
     }]);
-    expect(() => validateClosureResults([{
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-001',
       status: 'closed',
       summary: 'command was weakened',
       evidenceIds: ['gate:pass'],
-    }], closure, rerun)).toThrow('preserving contract assessment');
+    }], input: closure, evidence: rerun })).toThrow('preserving contract assessment');
   });
 
   test('verified-failure closure permits a fresh execution identity for the same operation contract', () => {
@@ -3575,12 +3518,7 @@ describe('review evidence contracts', () => {
       commandDigest: '1'.repeat(64),
       executionIdentityDigest: '2'.repeat(64),
     };
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: 'd'.repeat(64) },
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: original.evidence.manifest });
     const rerun = bundle([{
       ...original.evidence.records[0]!,
       status: 'verified-pass',
@@ -3588,12 +3526,12 @@ describe('review evidence contracts', () => {
       executionIdentityDigest: '3'.repeat(64),
       candidateDigest: 'd'.repeat(64),
     }]);
-    expect(validateClosureResults([{
+    expect(validateClosureResults({ results: [{
       findingId: 'F-001',
       status: 'closed',
       summary: 'same operation passes under the repaired runtime',
       evidenceIds: ['gate:pass'],
-    }], closure, rerun)[0]).toMatchObject({ status: 'closed' });
+    }], input: closure, evidence: rerun })[0]).toMatchObject({ status: 'closed' });
   });
 
   test('verified-failure closure cannot change the invocation offset of the failed operation', () => {
@@ -3608,12 +3546,7 @@ describe('review evidence contracts', () => {
       status: 'verified-failure',
       commandDigest: '1'.repeat(64),
     };
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: 'd'.repeat(64) },
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: original.evidence.manifest });
     const rerun = bundle([{
       ...original.evidence.records[0]!,
       status: 'verified-pass',
@@ -3621,15 +3554,15 @@ describe('review evidence contracts', () => {
       candidateDigest: 'd'.repeat(64),
     }]);
 
-    expect(() => validateClosureResults([{
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-001',
       status: 'closed',
       summary: 'same argv passed from a different invocation directory',
       evidenceIds: ['gate:pass'],
-    }], closure, rerun)).toThrow('original failed operation');
-    expect(() => validateClosureResults([{
+    }], input: closure, evidence: rerun })).toThrow('original failed operation');
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-001', status: 'closed', summary: 'Assessment cannot change invocation identity.', evidenceIds: ['gate:pass'],
-    }], closure, rerun, { preserved: true, summary: 'Only prose was corrected.' })).toThrow('original failed operation');
+    }], input: closure, evidence: rerun, contractAssessment: { preserved: true, summary: 'Only prose was corrected.' } })).toThrow('original failed operation');
   });
 
   test('closure is forbidden after an initial zero-finding review', () => {
@@ -3671,12 +3604,11 @@ describe('review evidence contracts', () => {
     const artifact = initialArtifact();
     const repairedBinding = { ...artifact.binding, candidateDigest: '9'.repeat(64) };
     const repairedDiff = `${artifact.diff}\n+${'x'.repeat(700 * 1024)}repair();\n`;
-    const closure = buildClosureInput(artifact, repairedBinding, repairedDiff, artifact.evidence.manifest);
+    const closure = buildClosureInput({ artifact: artifact, repairedBinding: repairedBinding, repairedDiff: repairedDiff, repairedManifest: artifact.evidence.manifest });
     const rules = { bundle: { selected: [], snapshot: [] }, text: 'closure rule' };
     expect(Buffer.byteLength(closure.repairDelta)).toBeGreaterThan(700 * 1024);
     expect(buildClosureReviewPrompt(closure, bundle([record()]), rules)).toContain('repair();');
-    expect(() => buildClosureInput(artifact, repairedBinding,
-      `${artifact.diff}\n+${'x'.repeat(MAX_REVIEW_DIFF_BYTES)}`, artifact.evidence.manifest))
+    expect(() => buildClosureInput({ artifact: artifact, repairedBinding: repairedBinding, repairedDiff: `${artifact.diff}\n+${'x'.repeat(MAX_REVIEW_DIFF_BYTES)}`, repairedManifest: artifact.evidence.manifest }))
       .toThrow('repair delta exceeds');
     const atLimit = { ...closure, repairDelta: 'x'.repeat(MAX_REVIEW_DIFF_BYTES) };
     expect(buildClosureReviewPrompt(atLimit, bundle([record()]), rules))
@@ -4267,13 +4199,13 @@ describe('candidate-bound GitHub review evidence', () => {
       original.findings[0]!.classification = 'verified-failure';
       original.evidence.records[0] = { ...original.evidence.records[0]!, status: 'verified-failure', exitStatus: 1,
         ciProvenance: undefined, candidateDigest: original.binding.candidateDigest, environment: 'host-seatbelt-darwin-snapshot', snapshotDigestBefore: 'f'.repeat(64), snapshotDigestAfter: 'f'.repeat(64), replayCommand: provider.operations[0].argv };
-      const closure = buildClosureInput(original, binding, '', value);
+      const closure = buildClosureInput({ artifact: original, repairedBinding: binding, repairedDiff: '', repairedManifest: value });
       const result = [{ findingId: 'F-001', status: 'closed' as const, summary: 'same operation passed on its CI host', evidenceIds: [evidence.records[0]!.id] }];
-      expect(validateClosureResults(result, closure, evidence)[0]).toMatchObject({ findingId: 'F-001', status: 'closed' });
+      expect(validateClosureResults({ results: result, input: closure, evidence: evidence })[0]).toMatchObject({ findingId: 'F-001', status: 'closed' });
       const missing = structuredClone(evidence); missing.records[0]!.status = 'runtime-incomplete'; missing.records[0]!.fresh = false;
-      expect(() => validateClosureResults(result, closure, missing)).toThrow();
+      expect(() => validateClosureResults({ results: result, input: closure, evidence: missing })).toThrow();
       const weaker = structuredClone(evidence); weaker.manifest.providers[0]!.operations[0]!.argv = ['true'];
-      expect(() => validateClosureResults(result, closure, weaker)).toThrow('preserving contract assessment');
+      expect(() => validateClosureResults({ results: result, input: closure, evidence: weaker })).toThrow('preserving contract assessment');
     } finally { globalThis.fetch = originalFetch; }
   });
   test('subdirectory CI incomplete evidence survives signed artifact readback', async () => {
@@ -4448,4 +4380,33 @@ describe('Python host tool discovery', () => {
     expect(isHostPythonToolPath('/opt/homebrew/opt-poison/python3.14', 'python3.14', home)).toBe(false);
     expect(isHostPythonToolPath('/opt/local/bin-poison/python3.14', 'python3.14', home)).toBe(false);
   });
+});
+
+test.each(['verified-failure', 'runtime-incomplete'] as const)('registered execution repairs %s with original operation proof', (classification) => {
+  const original = initialArtifact();
+  original.evidence.contractResolution = { workspace: { invocationOffset: '' } } as ReviewEvidenceBundle['contractResolution'];
+  original.findings[0]!.classification = classification;
+  original.evidence.records[0]!.status = classification;
+  original.evidence.records[0]!.exitStatus = 1;
+  const rerun = structuredClone(original.evidence);
+  rerun.manifest.providers[0]!.executionContext = { sandboxOwner: 'review-runtime', runner: 'container',
+    container: { image: `sha256:${'a'.repeat(64)}`, user: '1000:1000', environment: {}, tmpfs: [], memoryMb: 512, cpus: 1, workdir: '.' }, services: [] };
+  Object.assign(rerun.manifest.providers[0]!.operations[0]!, { network: 'isolated', evidenceLevel: 'sandboxed-service' });
+  rerun.records[0] = { ...rerun.records[0]!, status: 'verified-pass', exitStatus: 0, commandDigest: '9'.repeat(64) };
+  const trusted = structuredClone(rerun.manifest);
+  const binding = { ...original.binding, behaviorContractDigest: 'a'.repeat(64) };
+  expect(() => buildClosureInput({ artifact: original, repairedBinding: binding, repairedDiff: original.diff, repairedManifest: rerun.manifest })).toThrow('different digest');
+  const closure = buildClosureInput({ artifact: original, repairedBinding: binding, repairedDiff: original.diff, repairedManifest: rerun.manifest, trustedExecutionBaseline: trusted });
+  expect(closure.affectedFindingIds).toEqual(['F-001']);
+  expect(closure.affectedCellIds).toContain(original.evidence.manifest.behaviorMatrix[0]!.id);
+  const result = { findingId: 'F-001', status: 'closed' as const, summary: 'Runtime corrected.', evidenceIds: ['gate:pass'] };
+  const assessment = { preserved: true, summary: 'Original rollback assertions run in the registered isolated runtime.' };
+  expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: undefined, trustedExecutionBaseline: trusted })).toThrow('preserving contract assessment');
+  if (classification === 'verified-failure') expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment })).toThrow('original failed operation');
+  expect(validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment, trustedExecutionBaseline: trusted })).toEqual([result]);
+  rerun.records[0]!.operationId = 'unrelated';
+  expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment, trustedExecutionBaseline: trusted })).toThrow('original failed operation');
+  rerun.records[0]!.operationId = original.evidence.records[0]!.operationId;
+  rerun.records[0]!.fresh = false;
+  expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment, trustedExecutionBaseline: trusted })).toThrow('passing fresh rerun evidence');
 });

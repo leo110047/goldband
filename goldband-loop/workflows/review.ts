@@ -352,19 +352,12 @@ function planEvidence(ctx: WorkflowContext) {
     behaviorContractDigest: binding.behaviorContractDigest,
     manifest,
     baselineManifest: loaded.monotonicExtensions[0]?.baseline,
+    trustedExecutionBaseline: loaded.trustedExecutionBaseline,
     contractResolution: loaded.resolution,
     closureArtifact,
     runId: ctx.runId,
   });
-  let closure: ClosureReviewInput | undefined;
-  try {
-    closure = closureArtifact
-      ? buildClosureInput(closureArtifact, binding, input.diff, manifest)
-      : undefined;
-  } catch (error) {
-    releaseReviewLineage(lineage);
-    throw error;
-  }
+  const closure = prepareClosure(lineage, closureArtifact, binding, input.diff);
   reviewEvidenceRuns.set(ctx.runId, {
     input,
     manifest,
@@ -396,6 +389,22 @@ function planEvidence(ctx: WorkflowContext) {
     },
   });
   return input;
+}
+
+function prepareClosure(
+  lineage: ReviewLineageHandle,
+  artifact: InitialReviewArtifact | undefined,
+  binding: ReviewEvidenceBundle['binding'],
+  diff: string,
+): ClosureReviewInput | undefined {
+  if (!artifact) return undefined;
+  try {
+    return buildClosureInput({ artifact, repairedBinding: binding, repairedDiff: diff,
+      repairedManifest: lineage.manifest, trustedExecutionBaseline: lineage.trustedExecutionBaseline });
+  } catch (error) {
+    releaseReviewLineage(lineage);
+    throw error;
+  }
 }
 
 async function runEvidence(ctx: WorkflowContext) {
@@ -543,12 +552,7 @@ function parseReviewHostResult(parsed: unknown, evidenceState: ReviewEvidenceRun
       evidenceState.contractReview.assessment?.preserved === false
         ? { ...entry, status: 'evidence-incomplete' as const, summary: evidenceState.contractReview.assessment.summary }
         : entry);
-    evidenceState.closureResults = validateClosureResults(
-      results,
-      evidenceState.closure,
-      evidenceState.evidence,
-      evidenceState.contractReview.assessment,
-    );
+    evidenceState.closureResults = validateClosureResults({ results: results, input: evidenceState.closure, evidence: evidenceState.evidence, contractAssessment: evidenceState.contractReview.assessment, trustedExecutionBaseline: evidenceState.lineage?.trustedExecutionBaseline });
     return evidenceState.closure.artifact.findings;
   }
   const coreFindings = findingsSchema.validate(unwrapFindings(parsed));

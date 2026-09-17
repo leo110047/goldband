@@ -1,4 +1,5 @@
 import type { ReviewEvidenceManifest } from './review-evidence';
+import { restoreReviewExecution, reviewExecutionBoundary } from './review-execution-correction';
 
 type Cell = ReviewEvidenceManifest['behaviorMatrix'][number];
 type Operation = ReviewEvidenceManifest['providers'][number]['operations'][number];
@@ -12,11 +13,11 @@ export function reviewOperationBoundary(operation: Operation) {
 }
 
 export type ReviewContractChange = {
-  kind: 'behavior' | 'command';
+  kind: 'behavior' | 'command' | 'execution';
   id: string;
   cellIds: string[];
-  before: Record<string, string | undefined> | string[];
-  after: Record<string, string | undefined> | string[];
+  before: Record<string, unknown> | string[];
+  after: Record<string, unknown> | string[];
 };
 
 export type ReviewContractAssessment = {
@@ -53,7 +54,11 @@ export function preserveReviewContractSemantics(
     .map((operation) => [`${provider.id}:${operation.id}`, operation] as const)));
   for (const change of reviewContractChanges([baseline], current)) {
     if (change.kind === 'behavior') Object.assign(cells.get(change.id)!, change.before);
-    else operations.get(change.id)!.argv = [...change.before as string[]];
+    else if (change.kind === 'command') operations.get(change.id)!.argv = [...change.before as string[]];
+    else {
+      const index = required.providers.findIndex((provider) => provider.id === change.id);
+      required.providers[index] = restoreReviewExecution(baseline.providers.find((provider) => provider.id === change.id)!, required.providers[index]!);
+    }
   }
   return required;
 }
@@ -84,6 +89,9 @@ function contractEntries(manifest: ReviewEvidenceManifest) {
       kind: 'command' as const, id: `${provider.id}:${operation.id}`,
       cellIds: provider.cellIds, value: operation.argv,
     }))),
+    ...manifest.providers.filter((provider) => provider.executionContext.sandboxOwner === 'review-runtime').map((provider) => ({
+      kind: 'execution' as const, id: provider.id, cellIds: provider.cellIds, value: reviewExecutionBoundary(provider),
+    })),
   ];
 }
 
@@ -116,6 +124,6 @@ export function reviewContractChangesPrompt(changes: ReviewContractChange[]): st
     'REVIEW_CONTRACT_CHANGES_START',
     JSON.stringify(changes),
     'REVIEW_CONTRACT_CHANGES_END',
-    'Assess every changed check and behavior description in contractReview. Set preserved=true only when the original safety and acceptance requirements remain covered. Explain the evidence, including why a corrected check accepts valid input and still rejects invalid input. A passing replacement command alone is insufficient. Inspect the check implementation and its regression tests; reject weakened assertions, skipped paths, unconditional success, or unsupported equivalence. If preservation cannot be established, set preserved=false and explain what remains unverified. This is a semantic assessment, not proof that two command digests are identical.',
+    'Assess every changed check, behavior description, and execution environment in contractReview. For execution corrections, verify that the replacement runtime exercises the original operation and preserves its isolation and dependency requirements; registered settings alone do not prove this. Set preserved=true only when the original safety and acceptance requirements remain covered. Explain the evidence, including why a corrected check accepts valid input and still rejects invalid input. A passing replacement command alone is insufficient. Inspect the check implementation and its regression tests; reject weakened assertions, skipped paths, unconditional success, or unsupported equivalence. If preservation cannot be established, set preserved=false and explain what remains unverified. This is a semantic assessment, not proof that two command digests are identical.',
   ].join('\n');
 }

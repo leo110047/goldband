@@ -20,7 +20,9 @@ import type {
   ReviewEvidenceManifest,
 } from '../workflows/review-evidence';
 import { createCandidateBinding } from '../workflows/review-evidence';
-import type { ReviewContractResolution } from '../workflows/review-contract-resolution';
+import { resolveReviewContract, type ReviewContractResolution } from '../workflows/review-contract-resolution';
+import { importReviewContract } from '../workflows/review-contract-store';
+import type { WorkflowContext } from '../workflows/types';
 import { adapterFor } from '../workflows/host-adapter';
 import { reviewContractChanges, validateReviewContractAssessment } from '../workflows/review-contract-changes';
 
@@ -1027,6 +1029,7 @@ function prepare(
     candidateDigest?: string;
     contractResolution?: ReviewContractResolution;
     baselineManifest?: ReviewEvidenceManifest;
+    trustedExecutionBaseline?: ReviewEvidenceManifest;
   } = {},
 ) {
   return prepareReviewLineage({
@@ -1045,6 +1048,7 @@ function prepare(
     behaviorContractDigest: createHash('sha256').update(JSON.stringify(evidenceManifest)).digest('hex'),
     manifest: evidenceManifest,
     baselineManifest: overrides.baselineManifest,
+    trustedExecutionBaseline: overrides.trustedExecutionBaseline,
     contractResolution: overrides.contractResolution ?? {
       schemaVersion: 1,
       repositoryIdentity: {
@@ -1198,3 +1202,60 @@ function stableJsonForTest(value: unknown): string {
   }
   return JSON.stringify(value) ?? 'null';
 }
+
+test('only the active imported baseline authorizes execution repair through signed lineage', () => {
+  const fixture = repository();
+  const before = manifest();
+  const after = structuredClone(before);
+  after.providers[0]!.executionContext = { sandboxOwner: 'review-runtime', runner: 'container',
+    container: { image: `sha256:${'a'.repeat(64)}`, user: '1000:1000', environment: {}, tmpfs: [], memoryMb: 512, cpus: 1, workdir: '.' }, services: [] };
+  after.providers[0]!.operations[0]!.network = 'isolated';
+  const file = join(fixture.repo, 'contract.json');
+  const resolveContract = () => resolveReviewContract({ cwd: fixture.repo,
+    options: { mode: 'mock', goldbandHome: fixture.state } } as WorkflowContext,
+    { source: 'git diff', diff: '', changedFiles: ['deploy.ts'] });
+  writeFileSync(file, JSON.stringify(before));
+  importReviewContract(fixture.repo, fixture.state, file);
+  const baseline = resolveContract();
+  const first = prepare(fixture, before, undefined, { contractResolution: baseline.resolution });
+  const artifact = initialArtifact(before, [{ id: 'D-001', file: 'deploy.ts', severity: 'high',
+    summary: 'Database runtime unavailable', blocking: true, classification: 'runtime-incomplete', behaviorCellIds: ['deployment-safe'] }]);
+  artifact.hostCallCount = 0;
+  finalizeInitialReviewLineage({ handle: first, key, repository: 'repo', baseDigest: 'a'.repeat(64),
+    scopeDigest: 'b'.repeat(64), artifact, artifactFile: join(fixture.state, 'initial.json'), findings: artifact.findings,
+    deterministicComplete: false, runtimeIncomplete: true });
+  releaseReviewLineage(first);
+  const signedBefore = readFileSync(first.file, 'utf8');
+  expect(() => prepare(fixture, after, artifact, { contractResolution: baseline.resolution,
+    trustedExecutionBaseline: baseline.trustedExecutionBaseline })).toThrow('provider contract changed');
+  expect(readFileSync(first.file, 'utf8')).toBe(signedBefore);
+
+  writeFileSync(file, JSON.stringify(after));
+  importReviewContract(fixture.repo, fixture.state, file);
+  const registered = resolveContract();
+  expect(registered.resolution.baseline.kind).toBe('runtime-store');
+  const authority = { contractResolution: registered.resolution, trustedExecutionBaseline: registered.trustedExecutionBaseline };
+  expect(() => prepare(fixture, after, undefined, authority)).toThrow('prior findings/blockers open');
+  const closure = prepare(fixture, after, artifact, authority);
+  expect(closure.predecessor?.unresolvedFindings.map((entry) => entry.findingId)).toEqual(['D-001']);
+  expect(closure.requiredManifest).toEqual(before);
+  const repairedArtifact = initialArtifact(after, artifact.findings);
+  repairedArtifact.hostCallCount = 0;
+  finalizeInitialReviewLineage({ handle: closure, key, repository: 'repo', baseDigest: 'a'.repeat(64),
+    scopeDigest: 'b'.repeat(64), artifact: repairedArtifact, artifactFile: join(fixture.state, 'repaired.json'),
+    findings: repairedArtifact.findings, deterministicComplete: false, runtimeIncomplete: true });
+  releaseReviewLineage(closure);
+  const stillOpen = readReviewLineageForTest(first.file, key)!;
+  expect(stillOpen.requiredManifest).toEqual(before);
+  expect(stillOpen.verdict.completionAuthorized).toBe(false);
+  expect(stillOpen.unresolvedFindings.map((entry) => entry.findingId)).toEqual(['D-001']);
+
+  writeFileSync(join(fixture.repo, 'goldband.review-evidence.json'), JSON.stringify(before));
+  git(fixture.repo, ['add', 'goldband.review-evidence.json']);
+  git(fixture.repo, ['commit', '-qm', 'repository owns the contract']);
+  const shadowed = resolveContract();
+  expect(shadowed.resolution.baseline.kind).toBe('repository');
+  expect(shadowed.trustedExecutionBaseline).toBeUndefined();
+  expect(() => prepare(fixture, after, repairedArtifact, { contractResolution: shadowed.resolution,
+    trustedExecutionBaseline: shadowed.trustedExecutionBaseline })).toThrow('provider contract changed');
+});

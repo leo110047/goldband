@@ -63,6 +63,7 @@ import {
 } from './review-evidence-sandbox';
 import { resolveReviewWorkspace, workspacePath } from './review-workspace';
 import { assertLocalReviewProvider, isReviewLocalMigration, isReviewLocalProvider, REVIEW_LOCAL_LANE, runLocalReviewEvidence } from './review-local-evidence';
+import { isRegisteredExecutionCorrection } from './review-execution-correction';
 import { collectReviewCiEvidence, isReviewCiMigration, isReviewCiProvider, REVIEW_CI_LANE, validateReviewCiProvenance, type ReviewCiProvenance } from './review-ci-evidence';
 import { assertContainerProvider, validateContainerContext, type ContainerEvidenceContext } from './review-container-contract';
 import { runContainerReviewEvidence } from './review-container-evidence';
@@ -1091,19 +1092,21 @@ export function readClosureArtifact(ctx: WorkflowContext): InitialReviewArtifact
   return artifact;
 }
 
-export function buildClosureInput(
-  artifact: InitialReviewArtifact,
-  repairedBinding: CandidateBinding,
-  repairedDiff: string,
-  repairedManifest: ReviewEvidenceManifest,
-): ClosureReviewInput {
+export function buildClosureInput({ artifact, repairedBinding, repairedDiff, repairedManifest, trustedExecutionBaseline }: {
+  artifact: InitialReviewArtifact;
+  repairedBinding: CandidateBinding;
+  repairedDiff: string;
+  repairedManifest: ReviewEvidenceManifest;
+  trustedExecutionBaseline?: ReviewEvidenceManifest;
+}): ClosureReviewInput {
   if (artifact.binding.repository !== repairedBinding.repository ||
       artifact.binding.baseRef !== repairedBinding.baseRef ||
       artifact.binding.baseDigest !== repairedBinding.baseDigest ||
       artifact.binding.scopeDigest !== repairedBinding.scopeDigest) {
     throw new Error('closure provenance does not match repository, base, or scope');
   }
-  const evidenceRefresh = permitsSameCandidateEvidenceRefresh(artifact, repairedBinding);
+  const evidenceRefresh = permitsSameCandidateEvidenceRefresh(artifact, repairedBinding) ||
+    permitsRegisteredExecutionRepair(artifact, repairedManifest, trustedExecutionBaseline);
   if (artifact.binding.candidateDigest === repairedBinding.candidateDigest && !evidenceRefresh) {
     throw new Error('closure requires a repaired candidate with a different digest');
   }
@@ -1150,6 +1153,21 @@ export function buildClosureInput(
   };
 }
 
+function permitsRegisteredExecutionRepair(
+  artifact: InitialReviewArtifact,
+  manifest: ReviewEvidenceManifest,
+  registered?: ReviewEvidenceManifest,
+): boolean {
+  return artifact.findings.some((finding) =>
+    ['verified-failure', 'runtime-incomplete'].includes(finding.classification ?? '') &&
+    artifact.evidence.records.some((record) => finding.evidenceIds?.includes(record.id) &&
+      isRegisteredExecutionCorrection(
+        artifact.evidence.manifest.providers.find((provider) => provider.id === record.providerId),
+        manifest.providers.find((provider) => provider.id === record.providerId),
+        registered?.providers.find((provider) => provider.id === record.providerId),
+      )));
+}
+
 function permitsSameCandidateEvidenceRefresh(
   artifact: InitialReviewArtifact,
   binding: CandidateBinding,
@@ -1176,12 +1194,13 @@ export function initialReviewArtifactDigest(artifact: InitialReviewArtifact): st
   return sha256(stableJson(artifact));
 }
 
-export function validateClosureResults(
-  results: ReviewClosureResult[],
-  input: ClosureReviewInput,
-  evidence: ReviewEvidenceBundle,
-  contractAssessment?: ReviewContractAssessment,
-): ReviewClosureResult[] {
+export function validateClosureResults({ results, input, evidence, contractAssessment, trustedExecutionBaseline }: {
+  results: ReviewClosureResult[];
+  input: ClosureReviewInput;
+  evidence: ReviewEvidenceBundle;
+  contractAssessment?: ReviewContractAssessment;
+  trustedExecutionBaseline?: ReviewEvidenceManifest;
+}): ReviewClosureResult[] {
   const changedChecks = reviewContractChanges([input.artifact.evidence.manifest], evidence.manifest);
   if (changedChecks.length > 0 && results.some((result) => result.status === 'closed') &&
       !contractAssessment?.preserved) {
@@ -1227,7 +1246,7 @@ export function validateClosureResults(
       if (!rerunRecords.every((record) => record?.status === 'verified-pass' && record.fresh)) {
         throw new Error(`closure closed requires passing fresh rerun evidence: ${result.findingId}`);
       }
-      assertVerifiedFailureRepair(finding, input.artifact.evidence, evidence, Boolean(contractAssessment?.preserved));
+      assertVerifiedFailureRepair({ finding: finding, originalEvidence: input.artifact.evidence, evidence: evidence, reviewedCorrection: Boolean(contractAssessment?.preserved), trustedExecutionBaseline: trustedExecutionBaseline });
     }
   }
   for (const findingId of input.affectedFindingIds) {
@@ -1236,21 +1255,29 @@ export function validateClosureResults(
   return results;
 }
 
-function assertVerifiedFailureRepair(
-  finding: ReviewFinding,
-  originalEvidence: ReviewEvidenceBundle,
-  evidence: ReviewEvidenceBundle,
-  reviewedCorrection: boolean,
-): void {
-  if (finding.classification !== 'verified-failure') return;
+function assertVerifiedFailureRepair({ finding, originalEvidence, evidence, reviewedCorrection, trustedExecutionBaseline }: {
+  finding: ReviewFinding;
+  originalEvidence: ReviewEvidenceBundle;
+  evidence: ReviewEvidenceBundle;
+  reviewedCorrection: boolean;
+  trustedExecutionBaseline?: ReviewEvidenceManifest;
+}): void {
+  const executionRepair = finding.classification === 'runtime-incomplete' && originalEvidence.records.some((record) =>
+    finding.evidenceIds?.includes(record.id) && isRegisteredExecutionCorrection(
+      originalEvidence.manifest.providers.find((provider) => provider.id === record.providerId),
+      evidence.manifest.providers.find((provider) => provider.id === record.providerId),
+      trustedExecutionBaseline?.providers.find((provider) => provider.id === record.providerId),
+    ));
+  if (finding.classification !== 'verified-failure' && !executionRepair) return;
   const failedRecords = originalEvidence.records.filter((record) =>
-    finding.evidenceIds?.includes(record.id) && record.status === 'verified-failure');
+    finding.evidenceIds?.includes(record.id) && ['verified-failure', 'runtime-incomplete'].includes(record.status));
   const repaired = failedRecords.length > 0 && failedRecords.every((original) => {
     const rerun = evidence.records.find((record) => record.id === original.id);
     return rerun?.status === 'verified-pass' && rerun.fresh && sameEvidenceOperationContract({
       original, originalManifest: originalEvidence.manifest,
       rerun, rerunManifest: evidence.manifest,
       reviewedCorrection: reviewedCorrection && sameReviewExecutionOffset(originalEvidence, evidence),
+      trustedExecutionBaseline,
     });
   });
   if (!repaired) throw new Error(
@@ -1264,18 +1291,21 @@ function sameReviewExecutionOffset(original: ReviewEvidenceBundle, rerun: Review
   return before !== undefined && before === after;
 }
 
-function sameEvidenceOperationContract({ original, originalManifest, rerun, rerunManifest, reviewedCorrection }: {
+function sameEvidenceOperationContract({ original, originalManifest, rerun, rerunManifest, reviewedCorrection, trustedExecutionBaseline }: {
   original: ReviewEvidenceRecord;
   originalManifest: ReviewEvidenceManifest;
   rerun: ReviewEvidenceRecord;
   rerunManifest: ReviewEvidenceManifest;
   reviewedCorrection: boolean;
+  trustedExecutionBaseline?: ReviewEvidenceManifest;
 }): boolean {
   if (!original.providerId || !original.operationId ||
       original.providerId !== rerun.providerId || original.operationId !== rerun.operationId) return false;
   const originalProvider = originalManifest.providers.find((entry) => entry.id === original.providerId);
   const rerunProvider = rerunManifest.providers.find((entry) => entry.id === rerun.providerId);
   if (isReviewLocalMigration(originalProvider, rerunProvider)) return true;
+  if (reviewedCorrection && isRegisteredExecutionCorrection(originalProvider, rerunProvider,
+    trustedExecutionBaseline?.providers.find((provider) => provider.id === original.providerId))) return true;
   const beforeCommand = originalProvider?.operations.find((operation) => operation.id === original.operationId)?.argv;
   const afterCommand = rerunProvider?.operations.find((operation) => operation.id === rerun.operationId)?.argv;
   const commandCorrected = reviewedCorrection && stableJson(beforeCommand) !== stableJson(afterCommand);
