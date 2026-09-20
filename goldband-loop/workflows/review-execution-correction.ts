@@ -8,6 +8,7 @@ function operationExecution(operation: Operation) {
   return {
     network: operation.network,
     pythonRuntime: operation.pythonRuntime,
+    requiredSystemTools: operation.requiredSystemTools ?? [],
     evidenceLevel: operation.evidenceLevel,
   };
 }

@@ -551,6 +551,7 @@ evidence level，以及改變既有 target、expected exit 或執行權限。
 明確授權 import 正確設定，再以原 `--closure-artifact` 續審。只有本次實際採用的
 runtime-store baseline 能授權此更正；candidate、artifact fallback 或被 repository
 manifest 遮蔽的 store 都不具此權限。新環境須與登記值完全一致，network 限 deny／isolated。
+`requiredSystemTools` 也屬於執行環境；補齊工具仍須與明確登記值完全一致，且須接受同一次 semantic assessment。
 原 provider、涵蓋範圍、operation、target、expected exit、seed、iterations 與執行限制仍保留；
 evidence level 逐 operation 不得降低。更正前後環境會交給同一次 semantic assessment，
 且原失敗操作須有 fresh passing evidence。只改環境時允許相同 candidate，但仍須綁定

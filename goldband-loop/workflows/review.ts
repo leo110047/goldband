@@ -1429,15 +1429,21 @@ export function buildClosureReviewPrompt(
     originalBehaviorContractDigest: closure.originalBehaviorContractDigest,
     repairedBehaviorContractDigest: closure.repairedBehaviorContractDigest,
     affectedCellIds: closure.affectedCellIds,
-    originalFindings: closure.artifact.findings.map((finding) => ({
-      id: finding.id,
-      classification: finding.classification,
-      file: finding.file,
-      line: finding.line,
-      summary: finding.summary,
-      evidenceIds: finding.evidenceIds,
-      behaviorCellIds: reviewFindingCellIds(finding, closure.artifact.evidence, evidence.manifest),
-    })),
+    originalFindings: closure.artifact.findings.map((finding) => {
+      const behaviorCellIds = reviewFindingCellIds(finding, closure.artifact.evidence, evidence.manifest);
+      return {
+        id: finding.id,
+        classification: finding.classification,
+        file: finding.file,
+        line: finding.line,
+        summary: finding.summary,
+        evidenceIds: finding.evidenceIds,
+        behaviorCellIds,
+        relatedEvidenceIds: evidence.records
+          .filter((record) => record.cellIds.some((cellId) => behaviorCellIds.includes(cellId)))
+          .map((record) => record.id),
+      };
+    }),
     originalContractReview: closure.artifact.contractReview,
     rerunEvidence: evidence.records.map(projectClosureEvidenceRecord),
   };
@@ -1446,6 +1452,7 @@ export function buildClosureReviewPrompt(
     '# Scoped Closure Review',
     'Decide only whether each original finding is closed, still-open, a direct repair regression, or evidence-incomplete. Do not rebuild a general findings inventory.',
     'A semantic finding may use project-declared path applicability when its original record omitted behavior cells. Close only with fresh related evidence and inspection of the actual repair; if no declared coverage applies, return evidence-incomplete. Preserve every original finding ID. Corrected checks require the separate contractReview assessment; do not describe a changed command as an identical rerun.',
+    'Use each finding’s relatedEvidenceIds for its result.evidenceIds. Assess additional contract-verification records in contractReview; they do not change a finding’s evidence binding.',
     reviewContractChangesPrompt(contractChanges),
     'APPLICABLE_GOLDBAND_RULES_START',
     rules.text,

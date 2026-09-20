@@ -26,6 +26,23 @@ function fixture() {
 }
 
 describe('registered execution correction boundaries', () => {
+  test('missing sealed system tools require exact registration and semantic assessment', () => {
+    const { before } = fixture();
+    const after = structuredClone(before);
+    after.providers[0]!.operations[0]!.requiredSystemTools = ['mkdir'];
+    expect(() => assertReviewContractBoundary(before, after)).toThrow('provider contract changed');
+    expect(isRegisteredExecutionCorrection(before.providers[0], after.providers[0], undefined)).toBe(false);
+    expect(isRegisteredExecutionCorrection(before.providers[0], after.providers[0], before.providers[0])).toBe(false);
+    expect(isRegisteredExecutionCorrection(before.providers[0], after.providers[0], after.providers[0])).toBe(true);
+    const candidate = structuredClone(after.providers[0]!);
+    candidate.operations[0]!.requiredSystemTools = ['mkdir', 'curl'];
+    expect(isRegisteredExecutionCorrection(before.providers[0], candidate, after.providers[0])).toBe(false);
+    const changes = reviewContractChanges([before], after);
+    expect(changes.map((entry) => entry.kind)).toEqual(['execution']);
+    expect(() => validateReviewContractAssessment(undefined, changes)).toThrow('explicit semantic contract assessment');
+    expect(preserveReviewContractSemantics(before, after)).toEqual(before);
+  });
+
   test('requires exact registered execution and does not authorize a candidate extension', () => {
     const { before, after } = fixture();
     expect(() => assertReviewContractBoundary(before, after)).toThrow('provider contract changed');

@@ -3571,6 +3571,28 @@ describe('review evidence contracts', () => {
       .toThrow('closure is forbidden when initial review has no findings');
   });
 
+  test('closure prompt exposes only related references while retaining contract-assessment evidence', () => {
+    const artifact = initialArtifact();
+    artifact.findings[0]!.behaviorCellIds = ['behavior-a'];
+    artifact.evidence.manifest.behaviorMatrix.push({
+      ...artifact.evidence.manifest.behaviorMatrix[0]!, id: 'behavior-b', providerIds: ['provider-b'],
+    });
+    artifact.evidence.manifest.providers.push({
+      ...artifact.evidence.manifest.providers[0]!, id: 'provider-b', cellIds: ['behavior-b'],
+    });
+    const rerun = structuredClone(artifact.evidence);
+    rerun.records.push({ ...record(), id: 'other:pass', providerId: 'provider-b', cellIds: ['behavior-b'] });
+    const closure = buildClosureInput({ artifact, repairedBinding: { ...artifact.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: rerun.manifest });
+    const prompt = buildClosureReviewPrompt(closure, rerun, { bundle: { selected: [], snapshot: [] }, text: 'closure rule' });
+    const payload = JSON.parse(prompt.split('CLOSURE_INPUT_START\n')[1]!.split('\nCLOSURE_INPUT_END')[0]!);
+    expect(payload.originalFindings[0].relatedEvidenceIds).toEqual(['gate:pass']);
+    expect(payload.rerunEvidence.map((entry: { id: string }) => entry.id)).toContain('other:pass');
+    const result = { findingId: 'F-001', status: 'closed' as const, summary: 'Repaired and verified.', evidenceIds: payload.originalFindings[0].relatedEvidenceIds };
+    expect(validateClosureResults({ results: [result], input: closure, evidence: rerun })).toEqual([result]);
+    expect(() => validateClosureResults({ results: [{ ...result, evidenceIds: ['other:pass'] }], input: closure, evidence: rerun }))
+      .toThrow('unrelated to finding behavior cells');
+  });
+
   test('closure prompt omits verbose initial narratives and stays bounded', () => {
     const artifact = initialArtifact();
     artifact.findings[0]!.failureScenario = 'verbose-initial-scenario-'.repeat(1000);
