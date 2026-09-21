@@ -8,7 +8,7 @@ function operationExecution(operation: Operation) {
   return {
     network: operation.network,
     pythonRuntime: operation.pythonRuntime,
-    requiredSystemTools: operation.requiredSystemTools ?? [],
+    requiredSystemTools: operation.requiredSystemTools,
     evidenceLevel: operation.evidenceLevel,
   };
 }
@@ -16,7 +16,7 @@ function operationExecution(operation: Operation) {
 export function reviewExecutionBoundary(provider: Provider) {
   return {
     executionContext: provider.executionContext,
-    operations: provider.operations.map((operation) => ({ id: operation.id, ...operationExecution(operation) })),
+    operations: provider.operations.map((operation) => ({ id: operation.id, ...operationExecution(operation), requiredSystemTools: operation.requiredSystemTools ?? [] })),
   };
 }
 

@@ -26,6 +26,15 @@ function fixture() {
 }
 
 describe('registered execution correction boundaries', () => {
+  test('restores omitted system tools without inventing a structural contract change', () => {
+    const { before, after } = fixture();
+    delete before.providers[0]!.operations[0]!.requiredSystemTools;
+    expect(isRegisteredExecutionCorrection(before.providers[0], after.providers[0], after.providers[0])).toBe(true);
+    expect(restoreReviewExecution(before.providers[0]!, after.providers[0]!)).toEqual(before.providers[0]!);
+    after.providers[0]!.operations[0]!.expectedExitCode = 42;
+    expect(isRegisteredExecutionCorrection(before.providers[0], after.providers[0], after.providers[0])).toBe(false);
+  });
+
   test('missing sealed system tools require exact registration and semantic assessment', () => {
     const { before } = fixture();
     const after = structuredClone(before);

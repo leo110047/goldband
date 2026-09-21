@@ -1613,7 +1613,9 @@ describe('review evidence contracts', () => {
       expect(rejected.records[0]!.outputSummary).toContain("incompatible with the project's Python requirement");
       expect(rejected.records[0]!.outputSummary).not.toContain('/python-runtime/environment/lib/');
     }
-  });
+  // Up to three complete runtime projections and 10-second supervised operations
+  // must finish before afterEach removes their snapshots on a cold CI host.
+  }, 60_000);
   }
 
   test('copied uv archive links are readable in the real sandbox without ambient cache access', () => {
