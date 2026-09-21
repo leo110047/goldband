@@ -4,6 +4,22 @@
 
 Manifest 合法不代表測試已通過、review 已完成或可以部署。真正的 evidence 仍必須由同一個 candidate-bound runtime 執行並讀回。
 
+## Review input capacity
+
+完整 scoped diff 的容量上限為 **2 MiB（2,097,152 UTF-8 bytes）**，初次收集、
+持久化 initial artifact 的讀取，以及 closure 的 repair delta 都使用同一個
+`MAX_REVIEW_DIFF_BYTES`。Rules 與 evidence 等 prompt metadata 另有 48 KiB 預算。
+此政策取代舊文件中的 256 KiB patch 上限；實作來源為
+[`review-runtime-contract.ts`](../goldband-loop/lib/review-runtime-contract.ts)。
+
+Runtime 透過 stdin 傳送完整審查輸入，不會為了通過容量檢查截斷 diff、排除
+generated files 或改變 scope。超過上限仍明確失敗；closure 繼續驗證原始 scope、
+candidate 與 signed receipt，不能以縮小 diff 代替原範圍結案。
+既有 untracked file 的安全讀取與 redaction 限制仍各自適用。
+
+這是 Goldband 的輸入資源預算，不是模型 context window 的保證；host 自身的
+context 或執行錯誤仍會如實回報。接納較大的 diff 也不表示測試或 review 已通過。
+
 ## Automatic project lookup
 
 日常審查直接執行 `goldband review code --host codex` 或 `--host claude`，
@@ -212,6 +228,87 @@ Global provider 每次都適用，必須說明原因。不要為了省下 path d
 
 如果正式 producer／consumer handoff 不存在，runtime 會回報 `runtime-incomplete`，不會把 nested sandbox failure 當成 candidate failure。
 
+### 隔離容器服務
+
+需要 PostgreSQL、Redis、API、前端或瀏覽器的專案使用 runtime-owned
+`runner: container`，operation 指定 `network: isolated`。這是不同專案共用的
+Docker adapter；服務名稱、語言、版本與測試內容都由 manifest 指定。
+目前需要可經本機 Unix socket 存取的 Linux Docker Engine 28 以上；macOS
+Docker Desktop 已有實測。這不代表原生 Linux／Windows sealed runner 已支援。
+
+每個 operation 都從全新的服務環境開始。將需要共享資料庫狀態的 migration、
+初始化與測試放在同一個專案擁有的腳本中；不同 operations 不共享容器或資料。
+服務按陣列順序啟動，`ready` 成功後才啟動下一個，全部 ready 後才執行測試。
+`timeoutMs` 包含映像檢查、服務啟動、readiness 與測試；清理另有 30 秒上限。
+
+Provider 的 execution context 範例（將映像 ID 換成實際準備好的內容）：
+
+```json
+{
+  "sandboxOwner": "review-runtime",
+  "runner": "container",
+  "container": {
+    "image": "sha256:<64 lowercase hex characters>",
+    "user": "1000:1000",
+    "environment": {"DATABASE_URL": "postgresql://fixture:fixture@database/fixture"},
+    "tmpfs": [],
+    "memoryMb": 1024,
+    "cpus": 2,
+    "workdir": "."
+  },
+  "services": [{
+    "id": "database",
+    "container": {
+      "image": "sha256:<64 lowercase hex characters>",
+      "user": "999:999",
+      "environment": {
+        "POSTGRES_USER": "fixture",
+        "POSTGRES_PASSWORD": "fixture",
+        "POSTGRES_DB": "fixture"
+      },
+      "tmpfs": ["/var/lib/postgresql/data", "/var/run/postgresql"],
+      "memoryMb": 512,
+      "cpus": 1
+    },
+    "argv": ["docker-entrypoint.sh", "postgres"],
+    "ready": ["pg_isready", "-h", "127.0.0.1", "-U", "fixture"]
+  }]
+}
+```
+
+Operation 仍使用既有的 `argv`、exit contract、timeout 與 output bound，例如
+`argv: ["python3", "harness/verify.py"]`，evidence level 可使用
+`sandboxed-service`。容器映像擁有執行器與依賴，因此不能宣告
+`pythonRuntime` 或非空 `requiredSystemTools`。映像需事先依專案 lockfile 建立；
+用 `docker image inspect <image> --format '{{.Id}}'` 取得固定 ID。缺少映像會
+明確阻擋，不會臨時 pull、安裝套件或借用主機的 `.venv`／`node_modules`。
+
+`/workspace` 是完整受審程式碼的唯讀 mount。`workdir` 是相對於 review invocation
+目錄的路徑，省略時為 `.`。`/tmp` 自動提供可寫空間；額外 `tmpfs` 只能是容器內
+的正規絕對路徑，不能覆蓋程式碼或系統隔離路徑。需編譯的專案可在 `/tmp`
+建立衍生輸出或工作副本；原始 `/workspace` 保持唯讀。非 root 的 `uid:gid`、
+`memoryMb`（128–16384）和 `cpus`（1–8）都必填，每個 context 最多八個服務。
+映像宣告的每個 `VOLUME` 必須由相同路徑的明示 `tmpfs` 覆蓋（`/tmp` 已自動提供），
+不能以匿名 volume 增加未受記憶體上限約束的可寫磁碟。
+
+Environment 僅放合成測試設定；不要填入正式憑證。容器不繼承主機環境，
+`GOLDBAND_*` 由 runner 保留。沒有自訂 host mount、Docker socket、host network、
+port publishing 或 privileged 選項。服務只能互連，不能連外或連到既有共用服務。
+這使用 Docker 的 [internal network 與 isolated gateway](https://docs.docker.com/engine/network/port-publishing/#gateway-modes)
+及容器權限限制；Docker daemon 和操作它的主機使用者仍是受信任的平台。
+
+測試非零 exit 是 `verified-failure`；工具／映像／readiness 不可用、逾時、
+服務中途死亡或清理失敗是 `runtime-incomplete`。成功也只證明這份候選程式碼在
+指定映像與合成服務上通過，不代表 live provider 或 production 通過。
+既有 `unsupported` cell 必須保留原 acceptance，接上真正 provider 並完成執行後，
+才有可採用的自動化證據。
+
+Adapter 的跨專案實測位於 `test/review-container-evidence.test.ts`。用
+`test/fixtures/review-containers/Dockerfile` 準備含 PostgreSQL client 與 Chromium
+的測試映像，再以 `GOLDBAND_CONTAINER_TEST_IMAGE`、
+`GOLDBAND_CONTAINER_TEST_POSTGRES_IMAGE` 傳入兩個本機映像 ID，並設定
+`GOLDBAND_REQUIRE_CONTAINER_EVIDENCE=1` 執行該測試。缺少必需映像時會失敗。
+
 ### Goldband 推送前的本機自測
 
 Goldband 的三組 sandbox 自測在推送前使用固定本機 lane：
@@ -297,7 +394,7 @@ Operation 的主要欄位：
 | `authorizationId` | `network: authorized` 時必填；deny 時禁止。 |
 | `evidenceLevel` | `fixture`、`local`、`sandboxed-service`、`live-provider`、`device-platform` 或 `production-readback`。 |
 | `requiredSystemTools` | 可選的 PATH tool names；不會因此放寬任意 filesystem access。 |
-| `pythonRuntime` | Python gate 必填，非 Python operation 才可省略的 runtime contract；目前只接受 Python 3.14、`uv`、`pyproject.toml` 與 `uv.lock`。 |
+| `pythonRuntime` | sealed runner 的 Python gate 必填；專案宣告明確的 `python3.<minor>`、`uv`、`pyproject.toml` 與 `uv.lock`。container runner 由 image 提供 Python，禁止宣告此欄位。 |
 | `seed`、`iterations` | `property-fuzz` operations 必填，用於 replay。 |
 
 Script launcher 必須把 interpreter 寫進 argv，例如：
@@ -315,9 +412,9 @@ TypeScript 啟用 `incremental` 時，`--noEmit` 仍會寫快取；請在原 com
 `--tsBuildInfoFile "$TMPDIR/typecheck.tsbuildinfo"`（須由 shell 展開，不同 project 使用不同檔名）。
 `TS5033` 寫入權限失敗屬於 `runtime-incomplete`，不能充當 RED 通過或程式缺陷證據。
 
-### Python 3.14 + uv runtime
+### Sealed runner 的專案 Python + uv runtime
 
-直接 Python 指令（`python`、`python3`、`python3.14` 等數字版本，以及 `d`／`t`／`w`、`.exe` 變體，不分大小寫）缺少 `pythonRuntime` 時，validator 會在執行前拒絕。只有精確的 `python3.14` 指令與下列契約受支援；其他版本或變體必須改成受支援的宣告，不能只補欄位。
+直接 Python 指令缺少 `pythonRuntime` 時，validator 會在執行前拒絕。專案使用明確的 CPython `python3.<minor>`，例如 `python3.11`、`python3.13` 或 `python3.14`；Goldband 不替專案指定版本，也不把缺少的版本換成另一個版本。未指定 minor 的別名、patch 名稱、debug／free-threaded／Windows 變體不屬於這個 macOS sealed adapter 的契約；其他 runtime 可由 container image 提供。
 
 `requiredSystemTools` 的 Python interpreter 也會被拒絕：該入口只提供通用子工具投影，不能準備 Python environment。請把 Python gate 宣告為獨立 operation。工具不解析 shell 字串或猜測 project scripts；不要藉由 wrapper 取代必要的 Python runtime 宣告。
 
@@ -343,10 +440,12 @@ Python gate 必須明確宣告，不能猜測專案路徑或 lockfile：
 ```
 
 `projectFile` 與 `lockFile` 是 repo-relative normalized paths，必須位於同一個
-project directory。`argv` 第一項必須和 declared interpreter 相同；目前不接受
-其他 Python 版本、resolver 或 online mode。
+project directory。runtime validator 要求 `argv` 第一項和 declared interpreter
+完全相同，再核對實際 CPython major/minor。`uv lock --check` 與 frozen offline
+sync 驗證專案版本需求、lockfile 與可用套件；不接受其他 resolver 或 online mode。
+JSON Schema 驗證各欄位格式，跨欄位的 interpreter 一致性由 runtime validator 驗證。
 
-Runtime 從 `PATH` 第一個可執行的 `python3.14` 與 `uv` 選取 host 工具，
+Runtime 從 `PATH` 第一個符合專案宣告的 interpreter 與 `uv` 選取 host 工具，
 同時驗證入口、父目錄與最終 symlink 目標。支援 macOS system／Python.org
 framework、Homebrew `bin`／`Cellar`／`opt`、MacPorts `bin`／`Library/Frameworks`，
 以及 OS 帳號家目錄下的 `.local/bin`；Python 另支援 `.local/share/uv/python`
@@ -365,7 +464,11 @@ lockfiles 後，把 ambient uv cache clone 到 operation 專屬 writable root，
 identity 綁定 interpreter、uv、兩個 contract files、materialized environment
 與實際安裝到 `site-packages` 的 package name/version、`WHEEL`、`RECORD`、
 installed tree，以及 candidate-local direct source digest。Registry package 另以
-安裝後 `WHEEL` tag 唯一對應 lockfile 的 wheel filename/hash；無法唯一對應會 fail closed；
+安裝後 `WHEEL` tag 唯一對應 lockfile 的 wheel filename/hash。若成功的 frozen
+sync 安裝了原始碼編譯產物、沒有相符預編譯 wheel，則對應唯一的 locked sdist
+filename/hash，即使 lock 也列有其他平台的 wheels；編譯後的 `WHEEL`、`RECORD`
+與 installed tree 仍綁入 identity。多個相符 wheels、缺少 tag 或無法唯一對應
+來源都會 fail closed；錯誤會包含套件名稱／版本，比對錯誤也列出 installed tags。
 未被選用的 ambient cache entry 不作為 identity 或 failure condition。Project 自身不安裝進 environment；gate 從 materialized
 candidate working directory import source。
 
@@ -377,7 +480,13 @@ package directory；native module 本身不得逃出已宣告的 stdlib。
 在 project gate 前，runtime 會用 materialized interpreter 執行 isolated
 bootstrap／stdlib preflight，並拒絕 source checkout 的 `.venv` 或 tool、跨
 repository symlink、editable/local external install、未知的 `.pth`、`.egg-link`、
-`sitecustomize`、`usercustomize` 與 ambient `PYTHONPATH`。缺 interpreter、`uv`、
+`site-packages` 根目錄可載入的 `sitecustomize`／`usercustomize`（包含 `.py`、
+`.pyc`、原生 `.so` 與 package 形式），以及 ambient `PYTHONPATH`。
+套件子目錄中的同名模組不會因檔名被拒絕：Python 不會遞迴搜尋它們，runner
+也不會把其目錄加入啟動搜尋路徑。例如 OpenTelemetry 的
+`opentelemetry/instrumentation/auto_instrumentation/sitecustomize.py` 會原樣保留，
+仍受 lock/artifact identity、symlink 與 sandbox 檢查約束。未知 `.pth`／`.egg-link`
+仍拒絕，不能藉由 path hook 啟用這些子目錄。缺 interpreter、`uv`、
 lockfile、offline artifact，或 environment/bootstrap 完整性失敗，都會產生
 typed `runtime-incomplete`，不執行 project gate，也不啟動 semantic host。只有
 preflight 通過後，gate 的 declared exit mismatch 才是 fresh
@@ -407,7 +516,7 @@ uv cache 後重跑；Linux container 已安裝的套件不能替代它，gate �
 
 `expiresAt` 必須晚於 `approvedAt`。每個 `authorizationId` 必須找到同 ID、且 `operation` 相符的 authorization；每個 authorization 也必須被恰好一個 operation 引用。
 
-一般 sealed review runner 仍是 deny-only；上述固定本機自測 lane 另以 `network: host` 明示主機執行。即使 manifest 與 authorization 格式合法，network operation 也需要 operation-specific external runner；缺少 runner 時會 fail closed。不要把 fixture 或 local green 結果描述成 live／device／production proof。
+一般 sealed review runner 仍是 deny-only；容器服務使用 `network: isolated`；固定本機自測 lane 以 `network: host` 明示主機執行。`network: authorized` 即使 manifest 與 authorization 格式合法，也仍需要 operation-specific external runner；容器服務不授權外部連線。不要把 fixture 或 local green 結果描述成 live／device／production proof。
 
 ## Contract resolution
 
@@ -437,6 +546,16 @@ evidence level，以及改變既有 target、expected exit 或執行權限。
 修正前的命令、digest 與問題紀錄仍保留。不同命令不宣稱是相同命令重跑；只有經審查
 接受的修正、相同操作識別與執行座標、以及 fresh passing evidence 才能結案。
 未執行審查或尚未接受的修正，不會提前覆蓋 lineage 中的既有標準。
+
+已開啟的 review 若需要更正 Goldband 自己管理的 sealed／container 執行環境，可先經
+明確授權 import 正確設定，再以原 `--closure-artifact` 續審。只有本次實際採用的
+runtime-store baseline 能授權此更正；candidate、artifact fallback 或被 repository
+manifest 遮蔽的 store 都不具此權限。新環境須與登記值完全一致，network 限 deny／isolated。
+`requiredSystemTools` 也屬於執行環境；補齊工具仍須與明確登記值完全一致，且須接受同一次 semantic assessment。
+原 provider、涵蓋範圍、operation、target、expected exit、seed、iterations 與執行限制仍保留；
+evidence level 逐 operation 不得降低。更正前後環境會交給同一次 semantic assessment，
+且原失敗操作須有 fresh passing evidence。只改環境時允許相同 candidate，但仍須綁定
+原未解的 deterministic finding。設定匯入不會清除問題或改寫原 signed artifact。
 
 Semantic finding 的驗證關聯由同一個 runtime resolver 處理：優先保留明確的 cell／evidence
 關聯；舊紀錄未提供時，依 finding 的檔案與 project-declared provider applicability 選擇。

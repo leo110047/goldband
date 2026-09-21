@@ -158,7 +158,7 @@ describe("Codex trusted workflow launcher install", () => {
 			expect(existsSync(join(runtimeRoot, "review", "schemas", "review-behavior-matrix.schema.json"))).toBe(true);
 			expect(existsSync(join(runtimeRoot, "review", "schemas", "review-semantic-result.schema.json"))).toBe(true);
 			expect(readFileSync(join(runtimeRoot, "review", "review-evidence-manifest.md"), "utf8"))
-				.toContain("Python 3.14 + uv runtime");
+				.toBe(readFileSync(join(sourceRoot, "..", "docs", "review-evidence-manifest.md"), "utf8"));
 			expect(readFileSync(join(runtimeRoot, "review", "schemas", "review-evidence-manifest.schema.json"), "utf8"))
 				.toContain('"pythonRuntime"');
 			expect(existsSync(join(runtimeRoot, "review", "rules-resolver.js"))).toBe(true);

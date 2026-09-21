@@ -40,6 +40,22 @@ and shared-memory channels rather than relying only on broad operation denies.
 Prompt-redacted untracked files remain content-digest-bound and are copied only
 through the executable snapshot channel.
 
+`workflows/review-container-contract.ts` owns project-declared container settings;
+`workflows/review-container-evidence.ts` owns the Docker broker and lifecycle.
+This runtime-owned runner accepts immutable, already available Linux image IDs,
+non-root users, bounded resources, explicit fixture environment values, private
+tmpfs paths, and ordered service readiness commands. Every operation gets a new
+internal bridge with isolated gateway mode, fresh service containers, and the
+same read-only candidate mount. The broker alone uses the local Docker socket;
+candidate code receives no socket, host credentials, published ports, external
+network, host paths, or arbitrary Docker options. Image preparation belongs to
+the project and happens before evidence execution; evidence never builds or pulls.
+The service recipe and image identities join the existing candidate/execution
+binding and receipt. Setup failure, deadline expiry, changed source, dead services,
+or failed cleanup remain runtime-incomplete. No project or test-suite IDs are
+recognized by the adapter. The ordinary sealed and named self-test lanes retain
+their existing boundaries.
+
 The initial host sees one immutable full diff plus bounded matrix, evidence,
 Rules, and impact projections. It looks for omissions; it does not rerun gates
 or decide whether a command passed. Runtime classification only permits

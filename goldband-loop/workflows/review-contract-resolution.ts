@@ -90,6 +90,7 @@ export type ReviewContractResolution = {
 
 export type ResolvedReviewContract = {
 	manifest: ReviewEvidenceManifest;
+	trustedExecutionBaseline?: ReviewEvidenceManifest;
 	source: string;
 	monotonicExtensions: Array<{
 		baseline: ReviewEvidenceManifest;
@@ -213,9 +214,9 @@ export function resolveReviewContract(
 		if (!baseline) baseline = explicit;
 	}
 
-	const effective = manifest!;
 	return {
-		manifest: effective,
+		manifest: manifest!,
+		trustedExecutionBaseline: registeredExecutionBaseline(baseline!, baselineManifest),
 		source: explicit?.identity ?? candidate?.identity ?? baseline!.identity,
 		monotonicExtensions,
 		resolution: {
@@ -227,11 +228,15 @@ export function resolveReviewContract(
 			...(candidate ? { candidate } : {}),
 			candidateProvenance: inspectCandidateProvenance(workspace.repositoryRoot, baseRef, candidateRead, baselineManifest),
 			...(explicit ? { explicit } : {}),
-			effectiveDigest: digestManifest(effective),
+			effectiveDigest: digestManifest(manifest!),
 			...(shadowedRuntimeStore ? { shadowedRuntimeStore } : {}),
 			...(schemaMigration ? { schemaMigration } : {}),
 		},
 	};
+}
+
+function registeredExecutionBaseline(source: ReviewContractSource, manifest?: ReviewEvidenceManifest) {
+  return source.kind === "runtime-store" ? manifest : undefined;
 }
 
 function readExplicitContract(

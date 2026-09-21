@@ -55,6 +55,7 @@ export const WORKFLOW_TESTS = [
   'test/review-evidence-platform.test.ts',
   'test/review-contract-authoring.test.ts',
   'test/review-lineage.test.ts',
+  'test/review-execution-correction.test.ts',
   'test/work-map.test.ts',
   'test/work-map-store.test.ts',
   'test/work-map-evidence.test.ts',

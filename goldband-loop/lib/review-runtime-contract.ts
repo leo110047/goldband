@@ -1,5 +1,5 @@
-// Initial and closure reviews share bounded input budgets.
-export const MAX_REVIEW_DIFF_BYTES = 256 * 1024;
+// Collection, persisted artifacts, and closure share the same full-patch budget.
+export const MAX_REVIEW_DIFF_BYTES = 2 * 1024 * 1024;
 export const MAX_REVIEW_PROMPT_OVERHEAD_BYTES = 48 * 1024;
 
 export const REVIEW_HOST_EVIDENCE_POLICY = {

@@ -37,6 +37,61 @@
             "else": { "not": { "required": ["transitionBinding"] } }
           },
           {
+            "if": {
+              "properties": {
+                "executionContext": {
+                  "properties": {
+                    "runner": {
+                      "const": "container"
+                    }
+                  },
+                  "required": [
+                    "runner"
+                  ]
+                }
+              },
+              "required": [
+                "executionContext"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operations": {
+                  "items": {
+                    "properties": {
+                      "network": {
+                        "const": "isolated"
+                      },
+                      "requiredSystemTools": {
+                        "maxItems": 0
+                      }
+                    },
+                    "not": {
+                      "required": [
+                        "pythonRuntime"
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "operations": {
+                  "items": {
+                    "properties": {
+                      "network": {
+                        "not": {
+                          "const": "isolated"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
             "if": { "properties": { "kind": { "const": "property-fuzz" } }, "required": ["kind"] },
             "then": {
               "properties": {
@@ -103,6 +158,70 @@
               {
                 "type": "object",
                 "additionalProperties": false,
+                "required": [
+                  "sandboxOwner",
+                  "runner",
+                  "container",
+                  "services"
+                ],
+                "properties": {
+                  "sandboxOwner": {
+                    "const": "review-runtime"
+                  },
+                  "runner": {
+                    "const": "container"
+                  },
+                  "container": {
+                    "$ref": "#/$defs/container"
+                  },
+                  "services": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "container",
+                        "argv",
+                        "ready"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?!runner$)[a-z][a-z0-9-]{0,31}$"
+                        },
+                        "container": {
+                          "$ref": "#/$defs/container"
+                        },
+                        "argv": {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 128,
+                          "prefixItems": [{ "minLength": 1 }],
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[^\\u0000]*$"
+                          }
+                        },
+                        "ready": {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 128,
+                          "prefixItems": [{ "minLength": 1 }],
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[^\\u0000]*$"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
                 "required": ["sandboxOwner", "runner", "lane"],
                 "properties": {
                   "sandboxOwner": { "const": "provider" },
@@ -156,8 +275,8 @@
                 },
                 {
                   "if": {
-                    "properties": { "argv": { "prefixItems": [{ "pattern": "^[Pp][Yy][Tt][Hh][Oo][Nn](?:[0-9]+(?:\\.[0-9]+)*)?(?:[dDtTwW])?(?:\\.[Ee][Xx][Ee])?$" }] } },
-                    "required": ["argv"]
+                    "properties": { "network": { "not": { "const": "isolated" } }, "argv": { "prefixItems": [{ "pattern": "^[Pp][Yy][Tt][Hh][Oo][Nn](?:[0-9]+(?:\\.[0-9]+)*)?(?:[dDtTwW])?(?:\\.[Ee][Xx][Ee])?$" }] } },
+                    "required": ["argv", "network"]
                   },
                   "then": { "required": ["pythonRuntime"] }
                 },
@@ -167,10 +286,10 @@
                     "properties": {
                       "network": { "const": "deny" },
                       "argv": {
-                        "prefixItems": [{ "const": "python3.14" }]
+                        "prefixItems": [{ "type": "string", "pattern": "^python3\\.(?:0|[1-9][0-9]*)$" }]
                       },
                       "requiredSystemTools": {
-                        "items": { "not": { "enum": ["python3.14", "uv"] } }
+                        "items": { "not": { "const": "uv" } }
                       }
                     }
                   }
@@ -184,7 +303,7 @@
                 "expectedExitCode": { "type": "integer", "minimum": 1, "maximum": 255 },
                 "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 900000 },
                 "maxOutputBytes": { "type": "integer", "minimum": 1, "maximum": 65536 },
-                "network": { "enum": ["deny", "authorized", "host"] },
+                "network": { "enum": ["deny", "authorized", "host", "isolated"] },
                 "authorizationId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
                 "evidenceLevel": { "enum": ["fixture", "local", "sandboxed-service", "live-provider", "device-platform", "production-readback"] },
                 "requiredSystemTools": {
@@ -197,7 +316,7 @@
                   "additionalProperties": false,
                   "required": ["interpreter", "resolver", "projectFile", "lockFile"],
                   "properties": {
-                    "interpreter": { "const": "python3.14" },
+                    "interpreter": { "type": "string", "pattern": "^python3\\.(?:0|[1-9][0-9]*)$" },
                     "resolver": { "const": "uv" },
                     "projectFile": { "type": "string", "pattern": "^(?:(?!\\.{1,2}(?:/|$))[^/\\\\]+/)*pyproject\\.toml$" },
                     "lockFile": { "type": "string", "pattern": "^(?:(?!\\.{1,2}(?:/|$))[^/\\\\]+/)*uv\\.lock$" }
@@ -224,6 +343,65 @@
           "approvedBy": { "type": "string", "minLength": 1 },
           "approvedAt": { "type": "string", "format": "date-time" },
           "expiresAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "container": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image",
+        "user",
+        "environment",
+        "tmpfs",
+        "memoryMb",
+        "cpus"
+      ],
+      "properties": {
+        "image": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,8}:[1-9][0-9]{0,8}$"
+        },
+        "environment": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": {
+            "pattern": "^(?!GOLDBAND_)[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^[^\\u0000]*$"
+          }
+        },
+        "tmpfs": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^/(?!workspace(?:/|$)|proc(?:/|$)|sys(?:/|$)|dev(?:/|$)|etc(?:/|$)|tmp(?:/|$))(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/\\s,:\\\\\\u0000]+(?:/[^/\\s,:\\\\\\u0000]+)*$"
+          }
+        },
+        "memoryMb": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 16384
+        },
+        "cpus": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "workdir": {
+          "type": "string",
+          "pattern": "^(?:\\.|(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/\\s,:\\\\\\u0000]+(?:/[^/\\s,:\\\\\\u0000]+)*)$"
         }
       }
     }

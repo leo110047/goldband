@@ -1,4 +1,6 @@
 import { isHostPythonToolPath, localReviewPythonPath, resolveHostPythonTool } from '../workflows/review-python-tools';
+import { LOCAL_PYTHON_TEST_INTERPRETERS } from '../workflows/review-local-evidence';
+import { MAX_REVIEW_DIFF_BYTES } from '../lib/review-runtime-contract';
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -1519,11 +1521,12 @@ describe('review evidence contracts', () => {
     ]);
   });
 
-  test('materializes and executes an explicit Python 3.14 uv runtime against the candidate', async () => {
+  for (const interpreter of LOCAL_PYTHON_TEST_INTERPRETERS) {
+  test.skipIf(interpreter !== 'python3.14' && !Bun.which(interpreter))(`materializes and executes declared ${interpreter} with uv against the candidate`, async () => {
     if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
-    const python = spawnSync('/usr/bin/which', ['python3.14'], { encoding: 'utf8' }).stdout.trim();
+    const python = spawnSync('/usr/bin/which', [interpreter], { encoding: 'utf8' }).stdout.trim();
     const uv = spawnSync('/usr/bin/which', ['uv'], { encoding: 'utf8' }).stdout.trim();
-    if (!hostBoundaryPrerequisite(Boolean(python), 'python3.14 executable')) return;
+    if (!hostBoundaryPrerequisite(Boolean(python), `${interpreter} executable`)) return;
     if (!hostBoundaryPrerequisite(Boolean(uv), 'uv executable')) return;
     const repo = gitFixture();
     const wheel = join(repo, 'vendor', 'fixture_dep-1.0.0-py3-none-any.whl');
@@ -1533,7 +1536,7 @@ describe('review evidence contracts', () => {
       '[project]',
       'name = "python-evidence-fixture"',
       'version = "0.1.0"',
-      'requires-python = ">=3.14,<3.15"',
+      `requires-python = ">=${interpreter.slice(6)},<3.${Number(interpreter.split(".")[1]) + 1}"`,
       'dependencies = ["fixture-dep"]',
       '[tool.uv.sources]',
       'fixture-dep = { path = "vendor/fixture_dep-1.0.0-py3-none-any.whl" }',
@@ -1551,12 +1554,12 @@ describe('review evidence contracts', () => {
     value.providers[0]!.operations[0] = {
       ...operation(
         'python-gate',
-        ['python3.14', '-c', 'import app,fixture_dep; assert app.VALUE == "candidate" and fixture_dep.VALUE == 42; print(app.__file__); print(fixture_dep.__file__)'],
+        [interpreter, '-c', 'import app,fixture_dep; assert app.VALUE == "candidate" and fixture_dep.VALUE == 42; print(app.__file__); print(fixture_dep.__file__)'],
         'candidate',
         'zero',
       ),
       pythonRuntime: {
-        interpreter: 'python3.14',
+        interpreter,
         resolver: 'uv',
         projectFile: 'pyproject.toml',
         lockFile: 'uv.lock',
@@ -1580,25 +1583,40 @@ describe('review evidence contracts', () => {
       repeated = await executeEvidencePlan(
         context(repo), input, validated, createCandidateBinding(repo, input, validated),
       );
+
+      expect(evidence.records[0]).toMatchObject({
+        status: 'verified-pass',
+        exitStatus: 0,
+        fresh: true,
+        environment: 'isolated-darwin-snapshot',
+      });
+      expect(evidence.records[0]!.outputSummary).toContain('/operations/');
+      expect(evidence.records[0]!.outputSummary).toContain('/python-runtime/environment/');
+      expect(evidence.records[0]!.outputSummary).not.toContain(repo);
+      expect(evidence.records[0]!.executionIdentityDigest).toMatch(/^[a-f0-9]{64}$/);
+      expect(repeated.records[0]).toMatchObject({ status: 'verified-pass', fresh: true });
+      expect(repeated.records[0]!.executionIdentityDigest)
+        .toBe(evidence.records[0]!.executionIdentityDigest);
+      if (interpreter === 'python3.11') {
+        // The same installed interpreter must reject incompatible project requirements;
+        // this negative case must not introduce a dependency on another installed version.
+        const projectFile = join(repo, 'pyproject.toml');
+        writeFileSync(projectFile, readFileSync(projectFile, 'utf8').replace('>=3.11,<3.12', '>=3.13,<3.14'));
+        const incompatibleInput = { source: 'git diff', diff: git(repo, ['diff']), changedFiles: ['app.py', 'pyproject.toml'] };
+        const rejected = await executeEvidencePlan(context(repo), incompatibleInput, validated,
+          createCandidateBinding(repo, incompatibleInput, validated));
+        expect(rejected.records[0]!.status, rejected.records[0]!.outputSummary).toBe('runtime-incomplete');
+        expect(rejected.records[0]!.outputSummary).toContain("incompatible with the project's Python requirement");
+        expect(rejected.records[0]!.outputSummary).not.toContain('/python-runtime/environment/lib/');
+      }
     } finally {
       if (previousCache === undefined) delete process.env.UV_CACHE_DIR;
       else process.env.UV_CACHE_DIR = previousCache;
     }
-
-    expect(evidence.records[0]).toMatchObject({
-      status: 'verified-pass',
-      exitStatus: 0,
-      fresh: true,
-      environment: 'isolated-darwin-snapshot',
-    });
-    expect(evidence.records[0]!.outputSummary).toContain('/operations/');
-    expect(evidence.records[0]!.outputSummary).toContain('/python-runtime/environment/');
-    expect(evidence.records[0]!.outputSummary).not.toContain(repo);
-    expect(evidence.records[0]!.executionIdentityDigest).toMatch(/^[a-f0-9]{64}$/);
-    expect(repeated.records[0]).toMatchObject({ status: 'verified-pass', fresh: true });
-    expect(repeated.records[0]!.executionIdentityDigest)
-      .toBe(evidence.records[0]!.executionIdentityDigest);
-  });
+  // Up to three complete runtime projections and 10-second supervised operations
+  // must finish before afterEach removes their snapshots on a cold CI host.
+  }, 60_000);
+  }
 
   test('copied uv archive links are readable in the real sandbox without ambient cache access', () => {
     if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
@@ -1737,6 +1755,13 @@ describe('review evidence contracts', () => {
       expect(changed.records[0]).toMatchObject({ status: 'verified-pass', fresh: true });
       expect(changed.records[0]!.outputSummary).toContain('43');
       expect(changed.records[0]!.executionIdentityDigest).not.toBe(first.records[0]!.executionIdentityDigest);
+      writeFileSync(join(archive, 'fixture_dep-1.0.0.dist-info', 'WHEEL'),
+        'Wheel-Version: 1.0\nTag: cp314-cp314-macosx_26_0_arm64\n');
+      const unmapped = await run();
+      expect(unmapped.records[0]).toMatchObject({ status: 'runtime-incomplete', fresh: false });
+      expect(unmapped.records[0]!.exitStatus).toBeUndefined();
+      expect(unmapped.records[0]!.outputSummary).toContain('fixture-dep==1.0.0');
+      expect(unmapped.records[0]!.outputSummary).toContain('cp314-cp314-macosx_26_0_arm64');
       const external = join(fixture, 'outside-archive');
       renameSync(archive, external);
       for (const target of [external, join(cache, 'missing-archive')]) {
@@ -1796,6 +1821,29 @@ describe('review evidence contracts', () => {
       ),
       'Wheel-Version: 1.0\nTag: py2-none-any\nTag: py3-none-any\n',
     ).filename).toBe('fixture_dep-1.0.0-py2.py3-none-any.whl');
+  });
+
+  test('binds a source-built wheel to its locked sdist even when other platforms have wheels', () => {
+    const sourceHash = `sha256:${'c'.repeat(64)}`;
+    const lockPackage = [
+      '[[package]]', 'name = "watchdog"', 'version = "6.0.0"',
+      `sdist = { url = "https://files.example/watchdog-6.0.0.tar.gz", hash = "${sourceHash}" }`,
+      'wheels = [',
+      `  { url = "https://files.example/watchdog-6.0.0-py3-none-win_amd64.whl", hash = "sha256:${'a'.repeat(64)}" },`,
+      `  { url = "https://files.example/watchdog-6.0.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:${'b'.repeat(64)}" },`,
+      ']',
+    ].join('\n');
+    const metadata = 'Wheel-Version: 1.0\nTag: cp314-cp314-macosx_26_0_arm64\n';
+    expect(selectedUvLockArtifact(lockPackage, metadata)).toEqual({
+      kind: 'sdist', filename: 'watchdog-6.0.0.tar.gz', hash: sourceHash,
+    });
+    expect(selectedUvLockArtifact(lockPackage.replace(sourceHash, `sha256:${'d'.repeat(64)}`), metadata).hash)
+      .toBe(`sha256:${'d'.repeat(64)}`);
+    expect(() => selectedUvLockArtifact(lockPackage.replace(/^sdist = .*\n/m, ''), metadata)).toThrow();
+    expect(() => selectedUvLockArtifact(lockPackage, 'Wheel-Version: 1.0\n')).toThrow('no compatibility tag');
+    const ambiguous = lockPackage.replace('py3-none-win_amd64', 'cp314-cp314-macosx_26_0_arm64')
+      .replace('py3-none-manylinux2014_aarch64', 'cp314-cp314-macosx_26_0_arm64');
+    expect(() => selectedUvLockArtifact(ambiguous, metadata)).toThrow('multiple compatible uv.lock wheels');
   });
 
   test('repository Python provider produces fresh evidence through its declared operation', async () => {
@@ -2076,33 +2124,65 @@ describe('review evidence contracts', () => {
 
     const pth = join(sitePackages, 'ambient.pth');
     writeFileSync(pth, '/outside\n');
-    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo))
+    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo, { interpreter: 'python3.14' }))
       .toThrow('forbidden site customization');
     rmSync(pth);
 
     const directUrl = join(sitePackages, 'package-1.0.dist-info', 'direct_url.json');
     mkdirSync(dirname(directUrl), { recursive: true });
     writeFileSync(directUrl, JSON.stringify({ url: `file://${repo}`, dir_info: { editable: true } }));
-    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo))
+    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo, { interpreter: 'python3.14' }))
       .toThrow('editable install');
     rmSync(dirname(directUrl), { recursive: true, force: true });
 
     writeFileSync(join(sitePackages, 'source-reference.txt'), repo);
-    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo))
+    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo, { interpreter: 'python3.14' }))
       .toThrow('refers to the source checkout');
     rmSync(join(sitePackages, 'source-reference.txt'));
 
     symlinkSync(repo, join(sitePackages, 'escape'));
-    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo))
+    expect(() => validateMaterializedPythonEnvironment(environment, realpathSync(python), repo, { interpreter: 'python3.14' }))
       .toThrow('symlink escape');
   });
 
   test('preserves the recognized distribution-owned coverage startup hook', () => {
     const { environment, python, pth } = coverageStartupFixture();
     const before = readFileSync(pth);
-    expect(validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout'))
+    expect(validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout', { interpreter: 'python3.14' }))
       .toBe(join(environment, 'bin', 'python3.14'));
     expect(readFileSync(pth)).toEqual(before);
+  });
+
+  test.each([
+    'opentelemetry/instrumentation/auto_instrumentation/sitecustomize.py',
+    'another_package/usercustomize.py',
+    'another_package/sitecustomize/__init__.py',
+    'another_package/sitecustomize.pyc',
+  ])('preserves an inert package-internal startup module: %s', (path) => {
+    const { environment, python, pth } = coverageStartupFixture();
+    const module = join(dirname(pth), path);
+    mkdirSync(dirname(module), { recursive: true });
+    writeFileSync(module, 'raise RuntimeError("must not run at startup")\n');
+    const before = readFileSync(module);
+    expect(validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout', { interpreter: 'python3.14' }))
+      .toBe(python);
+    expect(readFileSync(module)).toEqual(before);
+  });
+
+  test.each([
+    'sitecustomize.py', 'usercustomize.py', 'SiteCustomize.PY',
+    'sitecustomize/__init__.py', 'usercustomize/__init__.py',
+    'sitecustomize.pyc', 'usercustomize.pyc',
+    'sitecustomize.so', 'usercustomize.abi3.so',
+    'sitecustomize.cpython-314-darwin.so',
+    'activate-nested.pth', 'activate-nested.egg-link',
+  ])('rejects a startup module or path hook at the site-packages root: %s', (path) => {
+    const { environment, python, pth } = coverageStartupFixture();
+    const hook = join(dirname(pth), path);
+    mkdirSync(dirname(hook), { recursive: true });
+    writeFileSync(hook, 'opentelemetry/instrumentation/auto_instrumentation\n');
+    expect(() => validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout', { interpreter: 'python3.14' }))
+      .toThrow('forbidden site customization');
   });
 
   test('attests a dylib symlink at its actual location behind a directory alias', () => {
@@ -2158,11 +2238,11 @@ describe('review evidence contracts', () => {
     } else {
       writeFileSync(join(dirname(pth), 'unknown.pth'), 'import arbitrary_startup_code\n');
     }
-    expect(() => validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout'))
+    expect(() => validateMaterializedPythonEnvironment(environment, python, '/unrelated-source-checkout', { interpreter: 'python3.14' }))
       .toThrow();
   });
 
-  test('runs a coverage startup hook from an offline wheel through the sealed Python gate', async () => {
+  test('runs coverage startup and preserves inert nested customizations through the sealed Python gate', async () => {
     if (!hostBoundaryPrerequisite(process.platform === 'darwin', 'platform=darwin')) return;
     const python = spawnSync('/usr/bin/which', ['python3.14'], { encoding: 'utf8' }).stdout.trim();
     const uv = spawnSync('/usr/bin/which', ['uv'], { encoding: 'utf8' }).stdout.trim();
@@ -2179,13 +2259,19 @@ describe('review evidence contracts', () => {
     // The fixture module records startup calls; the real upstream .pth bytes
     // must remain active in child interpreters, and inert without either flag.
     writeFileSync(join(repo, 'probe.py'), [
-      'import os, sqlite3, ssl, subprocess, sys',
+      'import builtins, os, sqlite3, ssl, subprocess, sys',
       'assert sqlite3.connect(":memory:").execute("select 42").fetchone() == (42,)',
       'assert ssl.OPENSSL_VERSION',
       'assert "coverage" not in sys.modules',
+      'assert not hasattr(builtins, "nested_startup_hook")',
+      'assert not any("auto_instrumentation" in path for path in sys.path)',
       'for flag in ("COVERAGE_PROCESS_START", "COVERAGE_PROCESS_CONFIG"):',
       '    env = {**os.environ, flag: "fixture"}',
-      '    subprocess.run([sys.executable, "-c", "import coverage; assert coverage.STARTED == \'pth\'"], env=env, check=True)',
+      '    subprocess.run([sys.executable, "-c", "import builtins, coverage; assert coverage.STARTED == \'pth\'; assert not hasattr(builtins, \'nested_startup_hook\')"], env=env, check=True)',
+      'import instrumentation_fixture.auto_instrumentation.sitecustomize',
+      'assert builtins.nested_startup_hook == "site"',
+      'import instrumentation_fixture.auto_instrumentation.usercustomize',
+      'assert builtins.nested_startup_hook == "user"',
       'print("coverage startup preserved")', '',
     ].join('\n'));
     const locked = spawnSync(uv, ['lock', '--project', repo, '--python', python, '--offline', '--no-cache'], { encoding: 'utf8' });
@@ -2897,7 +2983,7 @@ describe('review evidence contracts', () => {
     original.hostCallCount = 0;
     original.findings[0] = { ...original.findings[0]!, classification: 'runtime-incomplete', behaviorCellIds: ['behavior-a'] };
     const build = (artifact: InitialReviewArtifact, binding = artifact.binding) =>
-      buildClosureInput(artifact, binding, artifact.diff, artifact.evidence.manifest);
+      buildClosureInput({ artifact: artifact, repairedBinding: binding, repairedDiff: artifact.diff, repairedManifest: artifact.evidence.manifest });
     expect(build(original)).toMatchObject({ kind: 'evidence-repair', repairDelta: '', affectedCellIds: ['behavior-a'] });
     for (const classification of ['verified-failure', 'coverage-gap', 'semantic-concern'] as const) {
       const mixed = structuredClone(original);
@@ -2918,30 +3004,25 @@ describe('review evidence contracts', () => {
       ...original.binding,
       candidateDigest: 'd'.repeat(64),
     };
-    const closure = buildClosureInput(
-      original,
-      repairedBinding,
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: repairedBinding, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: original.evidence.manifest });
     expect(closure.affectedFindingIds).toEqual(['F-001']);
     expect(closure.repairDelta).not.toContain(original.diff);
-    expect(() => validateClosureResults([{
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-999',
       status: 'closed',
       summary: 'wrong scope',
-    }], closure, original.evidence)).toThrow('non-original finding ID');
-    expect(() => validateClosureResults([{
+    }], input: closure, evidence: original.evidence })).toThrow('non-original finding ID');
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-001',
       status: 'direct-regression',
       summary: 'new failure',
       evidenceIds: ['gate:pass'],
-    }], closure, original.evidence)).toThrow('requires verified rerun evidence');
-    expect(() => validateClosureResults([{
+    }], input: closure, evidence: original.evidence })).toThrow('requires verified rerun evidence');
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-001',
       status: 'closed',
       summary: 'unsupported assertion',
-    }], closure, original.evidence)).toThrow('requires fresh rerun evidence');
+    }], input: closure, evidence: original.evidence })).toThrow('requires fresh rerun evidence');
   });
 
   test('legacy unbound semantic findings use declared path coverage throughout closure', () => {
@@ -2953,11 +3034,10 @@ describe('review evidence contracts', () => {
     const stored = JSON.stringify(original);
     expect(classifyReviewFindings(original.findings, original.evidence)[0]!.behaviorCellIds)
       .toEqual(['behavior-a']);
-    const closure = buildClosureInput(original, { ...original.binding, candidateDigest: 'd'.repeat(64) },
-      'diff --git a/a.ts b/a.ts\n+fixed();', original.evidence.manifest);
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: original.evidence.manifest });
     expect(closure.affectedCellIds).toEqual(['behavior-a']);
     const result = { findingId: 'F-001', status: 'closed' as const, summary: 'Repaired and checked.', evidenceIds: ['gate:pass'] };
-    expect(validateClosureResults([result], closure, original.evidence)).toEqual([result]);
+    expect(validateClosureResults({ results: [result], input: closure, evidence: original.evidence })).toEqual([result]);
     expect(JSON.stringify(original)).toBe(stored);
     const addedGlobal = structuredClone(original.evidence);
     addedGlobal.manifest.providers.push({
@@ -2965,7 +3045,7 @@ describe('review evidence contracts', () => {
       applicability: { kind: 'global', reason: 'Candidate-added broad check.' },
     });
     addedGlobal.records.push({ ...record(), id: 'new-global:pass', providerId: 'new-global', cellIds: ['other-behavior'] });
-    expect(() => validateClosureResults([{ ...result, evidenceIds: ['new-global:pass'] }], closure, addedGlobal))
+    expect(() => validateClosureResults({ results: [{ ...result, evidenceIds: ['new-global:pass'] }], input: closure, evidence: addedGlobal }))
       .toThrow('unrelated to finding behavior cells');
 
     const uncovered = structuredClone(original);
@@ -2975,9 +3055,9 @@ describe('review evidence contracts', () => {
       expect(classifyReviewFindings(uncovered.findings, uncovered.evidence)[0]!.behaviorCellIds).toEqual([]);
     }
     const noCoverage = { ...closure, artifact: uncovered };
-    expect(() => validateClosureResults([result], noCoverage, uncovered.evidence))
+    expect(() => validateClosureResults({ results: [result], input: noCoverage, evidence: uncovered.evidence }))
       .toThrow('no behavior-cell evidence binding');
-    expect(validateClosureResults([{ ...result, status: 'still-open', evidenceIds: [] }], noCoverage, uncovered.evidence))
+    expect(validateClosureResults({ results: [{ ...result, status: 'still-open', evidenceIds: [] }], input: noCoverage, evidence: uncovered.evidence }))
       .toHaveLength(1);
     uncovered.findings[0]!.classification = 'verified-failure';
     expect(reviewFindingCellIds(uncovered.findings[0]!, original.evidence)).toEqual([]);
@@ -2995,28 +3075,27 @@ describe('review evidence contracts', () => {
     rerun.manifest.behaviorMatrix[0]!.expected = 'Valid input passes; invalid input still fails.';
     rerun.manifest.providers[0]!.operations[0]!.argv = ['node', 'corrected-check.js'];
     rerun.records[0] = { ...rerun.records[0]!, status: 'verified-pass', exitStatus: 0, commandDigest: '9'.repeat(64) };
-    const closure = buildClosureInput(original, { ...original.binding, candidateDigest: 'd'.repeat(64) },
-      'diff --git a/a.ts b/a.ts\n+fixed();', rerun.manifest);
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: rerun.manifest });
     const changes = reviewContractChanges([original.evidence.manifest, original.evidence.manifest], rerun.manifest);
     expect(changes.map((change) => change.kind)).toEqual(['behavior', 'command']);
     expect(() => assertReviewContractBoundary(original.evidence.manifest, rerun.manifest)).not.toThrow();
     expect(() => validateReviewContractAssessment(undefined, changes)).toThrow('explicit semantic contract assessment');
     const result = { findingId: 'F-001', status: 'closed' as const, summary: 'Check corrected.', evidenceIds: ['gate:pass'] };
-    expect(() => validateClosureResults([result], closure, rerun)).toThrow('preserving contract assessment');
-    expect(() => validateClosureResults([result], closure, rerun, { preserved: false, summary: 'Invalid cases no longer fail.' }))
+    expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun })).toThrow('preserving contract assessment');
+    expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: { preserved: false, summary: 'Invalid cases no longer fail.' } }))
       .toThrow('preserving contract assessment');
     const assessment = { preserved: true, summary: 'Fixture assessment: valid and invalid cases remain covered.' };
-    expect(validateClosureResults([result], closure, rerun, assessment)).toEqual([result]);
+    expect(validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment })).toEqual([result]);
     rerun.contractResolution!.workspace.invocationOffset = 'other';
-    expect(() => validateClosureResults([result], closure, rerun, assessment)).toThrow('original failed operation');
+    expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment })).toThrow('original failed operation');
     rerun.contractResolution!.workspace.invocationOffset = '';
     rerun.records[0]!.fresh = false;
-    expect(() => validateClosureResults([result], closure, rerun, assessment)).toThrow('passing fresh rerun evidence');
+    expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment })).toThrow('passing fresh rerun evidence');
     rerun.records[0]!.fresh = true;
     rerun.manifest.providers[0]!.operations[0]!.expectedExit = 'nonzero';
     rerun.manifest.providers[0]!.operations[0]!.expectedExitCode = 1;
     expect(() => assertReviewContractBoundary(original.evidence.manifest, rerun.manifest)).toThrow('provider contract changed');
-    expect(() => validateClosureResults([result], closure, rerun, assessment)).toThrow('original failed operation');
+    expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment })).toThrow('original failed operation');
   });
 
   test('Git no-index check correction preserves rejection of invalid input', () => {
@@ -3057,12 +3136,7 @@ describe('review evidence contracts', () => {
       candidateDigest: 'd'.repeat(64),
       behaviorContractDigest: digest(JSON.stringify(repairedManifest)),
     };
-    const closure = buildClosureInput(
-      original,
-      repairedBinding,
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      repairedManifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: repairedBinding, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: repairedManifest });
     const unrelated = bundle([{
       ...record(),
       id: 'provider-b:pass',
@@ -3070,12 +3144,12 @@ describe('review evidence contracts', () => {
       cellIds: ['behavior-b'],
     }]);
     unrelated.manifest = repairedManifest;
-    expect(() => validateClosureResults([{
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-001',
       status: 'closed',
       summary: 'wrong evidence',
       evidenceIds: ['provider-b:pass'],
-    }], closure, unrelated)).toThrow('unrelated to finding behavior cells');
+    }], input: closure, evidence: unrelated })).toThrow('unrelated to finding behavior cells');
   });
 
   test('initial artifact rejects a forged disposition record for an automated cell', () => {
@@ -3114,6 +3188,7 @@ describe('review evidence contracts', () => {
     const state = join(repo, '.state');
     const file = join(repo, 'initial-review.json');
     const { runtimeReceipt: _fixtureReceipt, ...payload } = initialArtifact();
+    payload.diff += 'x'.repeat(MAX_REVIEW_DIFF_BYTES - Buffer.byteLength(payload.diff));
     payload.evidence.manifest = reviewEvidenceManifestSchema.validate(payload.evidence.manifest);
     const binding = createCandidateBinding(repo, {
       source: 'git diff',
@@ -3135,6 +3210,9 @@ describe('review evidence contracts', () => {
       options: { mode: 'mock' as const, goldbandHome: state },
     };
     const issued = writeInitialReviewArtifact(file, payload, receiptContext);
+    expect(Buffer.byteLength(issued.diff)).toBe(MAX_REVIEW_DIFF_BYTES);
+    expect(() => validateInitialReviewArtifact({ ...issued, diff: `${issued.diff}x` }))
+      .toThrow('initial review artifact diff is oversized');
     const forged = {
       ...issued,
       hostCallCount: 1,
@@ -3245,12 +3323,7 @@ describe('review evidence contracts', () => {
       candidateDigest: 'd'.repeat(64),
       behaviorContractDigest: 'f'.repeat(64),
     };
-    const closure = buildClosureInput(
-      original,
-      repairedBinding,
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      repairedManifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: repairedBinding, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: repairedManifest });
     expect(closure.affectedCellIds).toContain('behavior-b');
     expect(closure.originalBehaviorContractDigest)
       .not.toBe(closure.repairedBehaviorContractDigest);
@@ -3265,12 +3338,7 @@ describe('review evidence contracts', () => {
     original.evidence.binding = original.binding;
     original.evidence.manifest.providers[0]!.applicability = { kind: 'paths', pathPrefixes: [path] };
     const repairedDiff = original.diff.replace('+bad();', '+fixed();');
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: digest(repairedDiff) },
-      repairedDiff,
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: digest(repairedDiff) }, repairedDiff: repairedDiff, repairedManifest: original.evidence.manifest });
     expect(closure.affectedCellIds).toContain('behavior-a');
   });
 
@@ -3289,12 +3357,7 @@ describe('review evidence contracts', () => {
     original.evidence.binding = original.binding;
     original.evidence.manifest.providers[0]!.applicability = { kind: 'paths', pathPrefixes: [path] };
     const repairedDiff = originalDiff.replace('+bad();', '+fixed();');
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: digest(repairedDiff) },
-      repairedDiff,
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: digest(repairedDiff) }, repairedDiff: repairedDiff, repairedManifest: original.evidence.manifest });
     expect(closure.affectedCellIds).toContain('behavior-a');
   });
 
@@ -3305,12 +3368,7 @@ describe('review evidence contracts', () => {
     original.evidence.binding = original.binding;
     original.evidence.manifest.providers[0]!.applicability = { kind: 'paths', pathPrefixes: ['a.ts'] };
     const repairedDiff = original.diff.replace('+bad();', '+fixed();');
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: digest(repairedDiff) },
-      repairedDiff,
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: digest(repairedDiff) }, repairedDiff: repairedDiff, repairedManifest: original.evidence.manifest });
     expect(closure.affectedCellIds).toContain('behavior-a');
   });
 
@@ -3330,12 +3388,7 @@ describe('review evidence contracts', () => {
     original.evidence.binding = original.binding;
     original.evidence.manifest.providers[0]!.applicability = { kind: 'paths', pathPrefixes: [path] };
     const repairedDiff = originalDiff.replace('literal 4', 'literal 5');
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: digest(repairedDiff) },
-      repairedDiff,
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: digest(repairedDiff) }, repairedDiff: repairedDiff, repairedManifest: original.evidence.manifest });
     expect(closure.affectedCellIds).toContain('behavior-a');
   });
 
@@ -3355,12 +3408,7 @@ describe('review evidence contracts', () => {
     original.binding.candidateDigest = digest(originalDiff);
     original.evidence.binding = original.binding;
     original.evidence.manifest.providers[0]!.applicability = { kind: 'paths', pathPrefixes: ['fixed name.ts'] };
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: digest(repairedDiff) },
-      repairedDiff,
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: digest(repairedDiff) }, repairedDiff: repairedDiff, repairedManifest: original.evidence.manifest });
     expect(closure.affectedCellIds).toContain('behavior-a');
   });
 
@@ -3377,7 +3425,7 @@ describe('review evidence contracts', () => {
       ...original.binding,
       candidateDigest: digest(repairedDiff),
     };
-    const closure = buildClosureInput(original, repairedBinding, repairedDiff, original.evidence.manifest);
+    const closure = buildClosureInput({ artifact: original, repairedBinding: repairedBinding, repairedDiff: repairedDiff, repairedManifest: original.evidence.manifest });
     expect(closure.repairDelta).toContain('+fixed-start');
     expect(closure.repairDelta).toContain('+fixed-end');
     expect(closure.repairDelta).not.toContain('context-40');
@@ -3397,12 +3445,7 @@ describe('review evidence contracts', () => {
         path: 'secret-check.mjs', digest: '2'.repeat(64), size: 52, mode: '100644',
       }],
     };
-    const closure = buildClosureInput(
-      original,
-      repairedBinding,
-      original.diff,
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: repairedBinding, repairedDiff: original.diff, repairedManifest: original.evidence.manifest });
     expect(closure.repairDelta).toContain('REDACTED_UNTRACKED_DELTA "secret-check.mjs"');
     expect(closure.repairDelta).toContain('1'.repeat(64));
     expect(closure.repairDelta).toContain('2'.repeat(64));
@@ -3430,12 +3473,7 @@ describe('review evidence contracts', () => {
     expect(expanded.scopeDigest).toBe(original.scopeDigest);
     expect(different.scopeDigest).not.toBe(original.scopeDigest);
     const artifact = initialArtifact();
-    expect(() => buildClosureInput(
-      artifact,
-      { ...artifact.binding, candidateDigest: 'd'.repeat(64), baseDigest: 'f'.repeat(64) },
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      artifact.evidence.manifest,
-    )).toThrow('does not match repository, base, or scope');
+    expect(() => buildClosureInput({ artifact: artifact, repairedBinding: { ...artifact.binding, candidateDigest: 'd'.repeat(64), baseDigest: 'f'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: artifact.evidence.manifest })).toThrow('does not match repository, base, or scope');
   });
 
   test('verified-failure closure cannot replace a failing command behind the same ID', () => {
@@ -3453,24 +3491,19 @@ describe('review evidence contracts', () => {
     };
     original.evidence.manifest.providers[0]!.operations[0] =
       operation('pass', ['false'], 'candidate', 'zero');
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: 'd'.repeat(64) },
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: original.evidence.manifest });
     const rerun = bundle([{
       ...original.evidence.records[0]!,
       status: 'verified-pass',
       commandDigest: '2'.repeat(64),
       replayCommand: ['true'],
     }]);
-    expect(() => validateClosureResults([{
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-001',
       status: 'closed',
       summary: 'command was weakened',
       evidenceIds: ['gate:pass'],
-    }], closure, rerun)).toThrow('preserving contract assessment');
+    }], input: closure, evidence: rerun })).toThrow('preserving contract assessment');
   });
 
   test('verified-failure closure permits a fresh execution identity for the same operation contract', () => {
@@ -3487,12 +3520,7 @@ describe('review evidence contracts', () => {
       commandDigest: '1'.repeat(64),
       executionIdentityDigest: '2'.repeat(64),
     };
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: 'd'.repeat(64) },
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: original.evidence.manifest });
     const rerun = bundle([{
       ...original.evidence.records[0]!,
       status: 'verified-pass',
@@ -3500,12 +3528,12 @@ describe('review evidence contracts', () => {
       executionIdentityDigest: '3'.repeat(64),
       candidateDigest: 'd'.repeat(64),
     }]);
-    expect(validateClosureResults([{
+    expect(validateClosureResults({ results: [{
       findingId: 'F-001',
       status: 'closed',
       summary: 'same operation passes under the repaired runtime',
       evidenceIds: ['gate:pass'],
-    }], closure, rerun)[0]).toMatchObject({ status: 'closed' });
+    }], input: closure, evidence: rerun })[0]).toMatchObject({ status: 'closed' });
   });
 
   test('verified-failure closure cannot change the invocation offset of the failed operation', () => {
@@ -3520,12 +3548,7 @@ describe('review evidence contracts', () => {
       status: 'verified-failure',
       commandDigest: '1'.repeat(64),
     };
-    const closure = buildClosureInput(
-      original,
-      { ...original.binding, candidateDigest: 'd'.repeat(64) },
-      'diff --git a/a.ts b/a.ts\n+fixed();',
-      original.evidence.manifest,
-    );
+    const closure = buildClosureInput({ artifact: original, repairedBinding: { ...original.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: original.evidence.manifest });
     const rerun = bundle([{
       ...original.evidence.records[0]!,
       status: 'verified-pass',
@@ -3533,21 +3556,43 @@ describe('review evidence contracts', () => {
       candidateDigest: 'd'.repeat(64),
     }]);
 
-    expect(() => validateClosureResults([{
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-001',
       status: 'closed',
       summary: 'same argv passed from a different invocation directory',
       evidenceIds: ['gate:pass'],
-    }], closure, rerun)).toThrow('original failed operation');
-    expect(() => validateClosureResults([{
+    }], input: closure, evidence: rerun })).toThrow('original failed operation');
+    expect(() => validateClosureResults({ results: [{
       findingId: 'F-001', status: 'closed', summary: 'Assessment cannot change invocation identity.', evidenceIds: ['gate:pass'],
-    }], closure, rerun, { preserved: true, summary: 'Only prose was corrected.' })).toThrow('original failed operation');
+    }], input: closure, evidence: rerun, contractAssessment: { preserved: true, summary: 'Only prose was corrected.' } })).toThrow('original failed operation');
   });
 
   test('closure is forbidden after an initial zero-finding review', () => {
     const artifact = { ...initialArtifact(), findings: [] };
     expect(() => validateInitialReviewArtifact(artifact))
       .toThrow('closure is forbidden when initial review has no findings');
+  });
+
+  test('closure prompt exposes only related references while retaining contract-assessment evidence', () => {
+    const artifact = initialArtifact();
+    artifact.findings[0]!.behaviorCellIds = ['behavior-a'];
+    artifact.evidence.manifest.behaviorMatrix.push({
+      ...artifact.evidence.manifest.behaviorMatrix[0]!, id: 'behavior-b', providerIds: ['provider-b'],
+    });
+    artifact.evidence.manifest.providers.push({
+      ...artifact.evidence.manifest.providers[0]!, id: 'provider-b', cellIds: ['behavior-b'],
+    });
+    const rerun = structuredClone(artifact.evidence);
+    rerun.records.push({ ...record(), id: 'other:pass', providerId: 'provider-b', cellIds: ['behavior-b'] });
+    const closure = buildClosureInput({ artifact, repairedBinding: { ...artifact.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: rerun.manifest });
+    const prompt = buildClosureReviewPrompt(closure, rerun, { bundle: { selected: [], snapshot: [] }, text: 'closure rule' });
+    const payload = JSON.parse(prompt.split('CLOSURE_INPUT_START\n')[1]!.split('\nCLOSURE_INPUT_END')[0]!);
+    expect(payload.originalFindings[0].relatedEvidenceIds).toEqual(['gate:pass']);
+    expect(payload.rerunEvidence.map((entry: { id: string }) => entry.id)).toContain('other:pass');
+    const result = { findingId: 'F-001', status: 'closed' as const, summary: 'Repaired and verified.', evidenceIds: payload.originalFindings[0].relatedEvidenceIds };
+    expect(validateClosureResults({ results: [result], input: closure, evidence: rerun })).toEqual([result]);
+    expect(() => validateClosureResults({ results: [{ ...result, evidenceIds: ['other:pass'] }], input: closure, evidence: rerun }))
+      .toThrow('unrelated to finding behavior cells');
   });
 
   test('closure prompt omits verbose initial narratives and stays bounded', () => {
@@ -3582,14 +3627,19 @@ describe('review evidence contracts', () => {
   test('closure shares the initial input budget and rejects oversized delta or metadata', () => {
     const artifact = initialArtifact();
     const repairedBinding = { ...artifact.binding, candidateDigest: '9'.repeat(64) };
-    const repairedDiff = `${artifact.diff}\n${'+repair();\n'.repeat(9000)}`;
-    const closure = buildClosureInput(artifact, repairedBinding, repairedDiff, artifact.evidence.manifest);
+    const repairedDiff = `${artifact.diff}\n+${'x'.repeat(700 * 1024)}repair();\n`;
+    const closure = buildClosureInput({ artifact: artifact, repairedBinding: repairedBinding, repairedDiff: repairedDiff, repairedManifest: artifact.evidence.manifest });
     const rules = { bundle: { selected: [], snapshot: [] }, text: 'closure rule' };
-    expect(Buffer.byteLength(closure.repairDelta)).toBeGreaterThan(64 * 1024);
+    expect(Buffer.byteLength(closure.repairDelta)).toBeGreaterThan(700 * 1024);
     expect(buildClosureReviewPrompt(closure, bundle([record()]), rules)).toContain('repair();');
-    expect(() => buildClosureInput(artifact, repairedBinding,
-      `${artifact.diff}\n${'+repair();\n'.repeat(30000)}`, artifact.evidence.manifest))
+    expect(() => buildClosureInput({ artifact: artifact, repairedBinding: repairedBinding, repairedDiff: `${artifact.diff}\n+${'x'.repeat(MAX_REVIEW_DIFF_BYTES)}`, repairedManifest: artifact.evidence.manifest }))
       .toThrow('repair delta exceeds');
+    const atLimit = { ...closure, repairDelta: 'x'.repeat(MAX_REVIEW_DIFF_BYTES) };
+    expect(buildClosureReviewPrompt(atLimit, bundle([record()]), rules))
+      .toContain(`REPAIR_DELTA_START\n${atLimit.repairDelta}\nREPAIR_DELTA_END`);
+    expect(() => buildClosureReviewPrompt(
+      { ...atLimit, repairDelta: `${atLimit.repairDelta}x` }, bundle([record()]), rules))
+      .toThrow('shared input budget');
     expect(() => buildClosureReviewPrompt(closure, bundle([record()]),
       { ...rules, text: 'x'.repeat(49 * 1024) })).toThrow('shared input budget');
   });
@@ -3741,6 +3791,7 @@ function writeFixtureWheel(python: string, output: string): void {
     'p=sys.argv[1]',
     'z=zipfile.ZipFile(p,"w",compression=zipfile.ZIP_DEFLATED)',
     'z.writestr("fixture_dep/__init__.py","VALUE = 42\\n")',
+    'z.writestr("fixture_dep/instrumentation/sitecustomize.py","raise RuntimeError(123)\\n")',
     'z.writestr("fixture_dep-1.0.0.dist-info/METADATA","Metadata-Version: 2.1\\nName: fixture-dep\\nVersion: 1.0.0\\n")',
     'z.writestr("fixture_dep-1.0.0.dist-info/WHEEL","Wheel-Version: 1.0\\nGenerator: goldband-test\\nRoot-Is-Purelib: true\\nTag: py3-none-any\\n")',
     'z.writestr("fixture_dep-1.0.0.dist-info/RECORD","")',
@@ -3777,6 +3828,8 @@ function writeCoverageStartupWheel(python: string, output: string): void {
   const files = {
     'a1_coverage.pth': pth.toString('utf8'),
     'coverage/__init__.py': 'STARTED = None\ndef process_startup(*, slug):\n    global STARTED\n    STARTED = slug\n',
+    'instrumentation_fixture/auto_instrumentation/sitecustomize.py': 'import builtins\nbuiltins.nested_startup_hook = "site"\n',
+    'instrumentation_fixture/auto_instrumentation/usercustomize.py': 'import builtins\nbuiltins.nested_startup_hook = "user"\n',
     'coverage-7.15.4.dist-info/METADATA': 'Metadata-Version: 2.1\nName: coverage\nVersion: 7.15.4\n',
     'coverage-7.15.4.dist-info/WHEEL': 'Wheel-Version: 1.0\nGenerator: goldband-test\nRoot-Is-Purelib: true\nTag: py3-none-any\n',
     'coverage-7.15.4.dist-info/RECORD': coverageStartupRecord(pth),
@@ -4170,13 +4223,13 @@ describe('candidate-bound GitHub review evidence', () => {
       original.findings[0]!.classification = 'verified-failure';
       original.evidence.records[0] = { ...original.evidence.records[0]!, status: 'verified-failure', exitStatus: 1,
         ciProvenance: undefined, candidateDigest: original.binding.candidateDigest, environment: 'host-seatbelt-darwin-snapshot', snapshotDigestBefore: 'f'.repeat(64), snapshotDigestAfter: 'f'.repeat(64), replayCommand: provider.operations[0].argv };
-      const closure = buildClosureInput(original, binding, '', value);
+      const closure = buildClosureInput({ artifact: original, repairedBinding: binding, repairedDiff: '', repairedManifest: value });
       const result = [{ findingId: 'F-001', status: 'closed' as const, summary: 'same operation passed on its CI host', evidenceIds: [evidence.records[0]!.id] }];
-      expect(validateClosureResults(result, closure, evidence)[0]).toMatchObject({ findingId: 'F-001', status: 'closed' });
+      expect(validateClosureResults({ results: result, input: closure, evidence: evidence })[0]).toMatchObject({ findingId: 'F-001', status: 'closed' });
       const missing = structuredClone(evidence); missing.records[0]!.status = 'runtime-incomplete'; missing.records[0]!.fresh = false;
-      expect(() => validateClosureResults(result, closure, missing)).toThrow();
+      expect(() => validateClosureResults({ results: result, input: closure, evidence: missing })).toThrow();
       const weaker = structuredClone(evidence); weaker.manifest.providers[0]!.operations[0]!.argv = ['true'];
-      expect(() => validateClosureResults(result, closure, weaker)).toThrow('preserving contract assessment');
+      expect(() => validateClosureResults({ results: result, input: closure, evidence: weaker })).toThrow('preserving contract assessment');
     } finally { globalThis.fetch = originalFetch; }
   });
   test('subdirectory CI incomplete evidence survives signed artifact readback', async () => {
@@ -4244,6 +4297,8 @@ describe('Python host tool discovery', () => {
     ['uv', '.local/bin/uv'], ['python3.14', '.local/bin/python3.14'],
     ['python3.14', '.local/share/uv/python/cpython-3.14/bin/python3.14'],
     ['python3.14', '.pyenv/versions/3.14.0/bin/python3.14'],
+    ['python3.11', '.pyenv/versions/3.11.0/bin/python3.11'],
+    ['python3.13', '.local/share/uv/python/cpython-3.13/bin/python3.13'],
   ] as const)('accepts the supported native %s at %s', (command, location) => {
     const { home, repository } = pythonToolFixture(); const tool = nativeToolFixture(join(home, location));
     expect(resolveHostPythonTool(command, repository, { home, path: dirname(tool) })).toBe(tool);
@@ -4298,11 +4353,21 @@ describe('Python host tool discovery', () => {
     expect(() => resolveHostPythonTool('uv', repository, { home, path: home })).toThrow('executable is unavailable: uv');
   });
 
-  test('local self-tests preserve selected directories, including user installations', () => {
+  test.each(['python3.11', 'python3.13', 'python3.14'])('local self-tests preserve selected %s directories, including user installations', (interpreter) => {
     const { home, repository } = pythonToolFixture();
-    const python = nativeToolFixture(join(home, '.pyenv/versions/3.14.0/bin/python3.14')); const uv = nativeToolFixture(join(home, '.local/bin/uv'));
-    expect(localReviewPythonPath(repository, { home, path: `${dirname(python)}:${dirname(uv)}` })).toEqual([dirname(python), dirname(uv)]);
-    expect(localReviewPythonPath(repository, { home, path: home })).toEqual([]);
+    const python = nativeToolFixture(join(home, '.pyenv/versions', interpreter, 'bin', interpreter)); const uv = nativeToolFixture(join(home, '.local/bin/uv'));
+    expect(localReviewPythonPath(repository, [interpreter], { home, path: `${dirname(python)}:${dirname(uv)}` })).toEqual([dirname(python), dirname(uv)]);
+    expect(localReviewPythonPath(repository, [interpreter], { home, path: home })).toEqual([]);
+  });
+
+  test('unused versions cannot block self-tests, while a selected version still cannot be shadowed', () => {
+    const { home, repository } = pythonToolFixture();
+    const unrelated = nativeToolFixture(join(repository, '.venv/bin/python3.12'));
+    const selected = nativeToolFixture(join(home, '.pyenv/versions/3.13/bin/python3.13'));
+    const environment = { home, path: `${dirname(unrelated)}:${dirname(selected)}` };
+    expect(localReviewPythonPath(repository, ['python3.13'], environment)).toEqual([dirname(selected)]);
+    nativeToolFixture(join(repository, '.venv/bin/python3.13'));
+    expect(() => localReviewPythonPath(repository, ['python3.13'], environment)).toThrow('source checkout');
   });
 
   test('a fresh runtime cannot gain trust through a caller-controlled HOME', () => {
@@ -4339,4 +4404,33 @@ describe('Python host tool discovery', () => {
     expect(isHostPythonToolPath('/opt/homebrew/opt-poison/python3.14', 'python3.14', home)).toBe(false);
     expect(isHostPythonToolPath('/opt/local/bin-poison/python3.14', 'python3.14', home)).toBe(false);
   });
+});
+
+test.each(['verified-failure', 'runtime-incomplete'] as const)('registered execution repairs %s with original operation proof', (classification) => {
+  const original = initialArtifact();
+  original.evidence.contractResolution = { workspace: { invocationOffset: '' } } as ReviewEvidenceBundle['contractResolution'];
+  original.findings[0]!.classification = classification;
+  original.evidence.records[0]!.status = classification;
+  original.evidence.records[0]!.exitStatus = 1;
+  const rerun = structuredClone(original.evidence);
+  rerun.manifest.providers[0]!.executionContext = { sandboxOwner: 'review-runtime', runner: 'container',
+    container: { image: `sha256:${'a'.repeat(64)}`, user: '1000:1000', environment: {}, tmpfs: [], memoryMb: 512, cpus: 1, workdir: '.' }, services: [] };
+  Object.assign(rerun.manifest.providers[0]!.operations[0]!, { network: 'isolated', evidenceLevel: 'sandboxed-service' });
+  rerun.records[0] = { ...rerun.records[0]!, status: 'verified-pass', exitStatus: 0, commandDigest: '9'.repeat(64) };
+  const trusted = structuredClone(rerun.manifest);
+  const binding = { ...original.binding, behaviorContractDigest: 'a'.repeat(64) };
+  expect(() => buildClosureInput({ artifact: original, repairedBinding: binding, repairedDiff: original.diff, repairedManifest: rerun.manifest })).toThrow('different digest');
+  const closure = buildClosureInput({ artifact: original, repairedBinding: binding, repairedDiff: original.diff, repairedManifest: rerun.manifest, trustedExecutionBaseline: trusted });
+  expect(closure.affectedFindingIds).toEqual(['F-001']);
+  expect(closure.affectedCellIds).toContain(original.evidence.manifest.behaviorMatrix[0]!.id);
+  const result = { findingId: 'F-001', status: 'closed' as const, summary: 'Runtime corrected.', evidenceIds: ['gate:pass'] };
+  const assessment = { preserved: true, summary: 'Original rollback assertions run in the registered isolated runtime.' };
+  expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: undefined, trustedExecutionBaseline: trusted })).toThrow('preserving contract assessment');
+  if (classification === 'verified-failure') expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment })).toThrow('original failed operation');
+  expect(validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment, trustedExecutionBaseline: trusted })).toEqual([result]);
+  rerun.records[0]!.operationId = 'unrelated';
+  expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment, trustedExecutionBaseline: trusted })).toThrow('original failed operation');
+  rerun.records[0]!.operationId = original.evidence.records[0]!.operationId;
+  rerun.records[0]!.fresh = false;
+  expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment, trustedExecutionBaseline: trusted })).toThrow('passing fresh rerun evidence');
 });

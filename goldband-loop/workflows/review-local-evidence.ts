@@ -9,6 +9,8 @@ import type { CandidateBinding, ReviewEvidenceManifest, ReviewEvidenceRecord } f
 
 type Provider = ReviewEvidenceManifest['providers'][number];
 export const REVIEW_LOCAL_LANE = REVIEW_HOST_EVIDENCE_POLICY.reviewLocalEvidenceLane;
+// Goldband's own regression matrix; project Python versions come from their manifests.
+export const LOCAL_PYTHON_TEST_INTERPRETERS = ['python3.11', 'python3.13', 'python3.14'] as const;
 
 export function isReviewLocalProvider(provider: Provider): boolean {
   return provider.kind === 'project-gate' && provider.lifecycle === 'persistent' &&
@@ -144,7 +146,8 @@ function localPrerequisiteDiagnostics() {
 function localPythonPrerequisites(options: LocalOperation): { directories: string[]; error?: string } {
   if (!['review-evidence-tests', 'installed-runtime-tests'].includes(options.provider.id)) return { directories: [] };
   try {
-    return { directories: localReviewPythonPath(options.binding.repository) };
+    const interpreters = options.provider.id === 'review-evidence-tests' ? LOCAL_PYTHON_TEST_INTERPRETERS : ['python3.14'];
+    return { directories: localReviewPythonPath(options.binding.repository, interpreters) };
   } catch (error) {
     return { directories: [], error: `required review host boundary prerequisite is unavailable: ${error instanceof Error ? error.message : String(error)}` };
   }

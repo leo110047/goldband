@@ -21,6 +21,7 @@ import type {
 import { initialReviewArtifactDigest } from './review-evidence';
 import { isReviewLocalMigration } from './review-local-evidence';
 import { isReviewCiMigration } from './review-ci-evidence';
+import { isRegisteredExecutionCorrection } from './review-execution-correction';
 import type { ReviewContractResolution } from './review-contract-resolution';
 import { preserveReviewContractSemantics, reviewOperationBoundary } from './review-contract-changes';
 import type { ReviewClosureResult, ReviewFinding } from './types';
@@ -121,6 +122,7 @@ export type ReviewLineageHandle = {
   scopeLocks: Array<{ lockFile: string; ownerToken: string }>;
   predecessor?: ReviewLineagePayload;
   manifest: ReviewEvidenceManifest;
+  trustedExecutionBaseline?: ReviewEvidenceManifest;
   requiredManifest: ReviewEvidenceManifest;
   contractResolution: ReviewContractResolution;
   policy: ReviewPolicy;
@@ -161,6 +163,7 @@ export function prepareReviewLineage(options: {
   behaviorContractDigest: string;
   manifest: ReviewEvidenceManifest;
   baselineManifest?: ReviewEvidenceManifest;
+  trustedExecutionBaseline?: ReviewEvidenceManifest;
   contractResolution: ReviewContractResolution;
   closureArtifact?: InitialReviewArtifact;
   runId: string;
@@ -214,15 +217,11 @@ export function prepareReviewLineage(options: {
     if (!predecessor && options.closureArtifact) throw new Error('closure requires its authoritative signed lineage');
     if (predecessor) {
       assertLineageAdmission(predecessor, options, policyDigest, inheritedOverlap || id !== requestedId);
-      const appliedWaiverIds = assertMonotonicContract(
-        predecessor.requiredManifest,
-        options.manifest,
-        predecessor.unresolvedFindings,
-        policy,
-      );
+      const appliedWaiverIds = assertMonotonicContract({ predecessor: predecessor.requiredManifest, current: options.manifest, unresolved: predecessor.unresolvedFindings, policy: policy, trustedExecutionBaseline: closureExecutionBaseline(options) });
       enforceMinimumEvidenceLevels(options.manifest, policy);
       return {
         id, file, lockFile, ownerToken: options.runId, scopeLocks,
+        trustedExecutionBaseline: closureExecutionBaseline(options),
         predecessor, manifest: options.manifest, requiredManifest: predecessor.requiredManifest, contractResolution: options.contractResolution, policy,
         policyDigest, acceptanceDigest: predecessor.acceptanceDigest,
         scopeSummary: [...(predecessor.scopeSummary ?? options.scopeSummary)],
@@ -247,6 +246,10 @@ export function prepareReviewLineage(options: {
     releaseReviewLineage({ lockFile, ownerToken: options.runId, scopeLocks });
     throw error;
   }
+}
+
+function closureExecutionBaseline(options: Pick<Parameters<typeof prepareReviewLineage>[0], 'closureArtifact' | 'trustedExecutionBaseline'>) {
+  return options.closureArtifact ? options.trustedExecutionBaseline : undefined;
 }
 
 function assertLineageAdmission(
@@ -459,12 +462,13 @@ export function reviewPolicyIdentity(cwd: string, baseRef: string): string {
   return sha256(stableJson(readBaseReviewPolicy(cwd, baseRef)));
 }
 
-function assertMonotonicContract(
-  predecessor: ReviewEvidenceManifest,
-  current: ReviewEvidenceManifest,
-  unresolved: UnresolvedFinding[],
-  policy: ReviewPolicy,
-): string[] {
+function assertMonotonicContract({ predecessor, current, unresolved, policy, trustedExecutionBaseline }: {
+  predecessor: ReviewEvidenceManifest;
+  current: ReviewEvidenceManifest;
+  unresolved: UnresolvedFinding[];
+  policy: ReviewPolicy;
+  trustedExecutionBaseline?: ReviewEvidenceManifest;
+}): string[] {
   const applied = new Set<string>();
   const currentCells = new Map(current.behaviorMatrix.map((cell) => [cell.id, cell]));
   const predecessorProviders = new Map(predecessor.providers.map((provider) => [provider.id, provider]));
@@ -476,7 +480,8 @@ function assertMonotonicContract(
     for (const providerId of cell.providerIds) {
       const before = predecessorProviders.get(providerId);
       const after = currentProviders.get(providerId);
-      if (providerContractWeakened(before, after)) {
+      const registered = trustedExecutionBaseline?.providers.find((provider) => provider.id === providerId);
+      if (providerContractRequiresWaiver(before, after, registered)) {
         authorizeOrThrow(policy, cell.id, 'provider-contract', applied, 'required provider contract changed');
       }
     }
@@ -512,6 +517,14 @@ function assertBehaviorCellNotWeaker(
   if (before.providerIds.some((providerId) => !after.providerIds.includes(providerId))) {
     authorizeOrThrow(policy, before.id, 'provider-contract', applied, 'required provider was detached');
   }
+}
+
+function providerContractRequiresWaiver(
+  before: ReviewEvidenceManifest['providers'][number] | undefined,
+  after: ReviewEvidenceManifest['providers'][number] | undefined,
+  registered: ReviewEvidenceManifest['providers'][number] | undefined,
+): boolean {
+  return providerContractWeakened(before, after) && !isRegisteredExecutionCorrection(before, after, registered);
 }
 
 function providerContractWeakened(
@@ -560,7 +573,7 @@ export function assertReviewContractBoundary(
   baseline: ReviewEvidenceManifest,
   effective: ReviewEvidenceManifest,
 ): void {
-  assertMonotonicContract(baseline, effective, [], emptyPolicy());
+  assertMonotonicContract({ predecessor: baseline, current: effective, unresolved: [], policy: emptyPolicy() });
 }
 
 function authorizeOrThrow(
