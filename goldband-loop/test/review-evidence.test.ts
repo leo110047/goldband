@@ -1583,35 +1583,35 @@ describe('review evidence contracts', () => {
       repeated = await executeEvidencePlan(
         context(repo), input, validated, createCandidateBinding(repo, input, validated),
       );
+
+      expect(evidence.records[0]).toMatchObject({
+        status: 'verified-pass',
+        exitStatus: 0,
+        fresh: true,
+        environment: 'isolated-darwin-snapshot',
+      });
+      expect(evidence.records[0]!.outputSummary).toContain('/operations/');
+      expect(evidence.records[0]!.outputSummary).toContain('/python-runtime/environment/');
+      expect(evidence.records[0]!.outputSummary).not.toContain(repo);
+      expect(evidence.records[0]!.executionIdentityDigest).toMatch(/^[a-f0-9]{64}$/);
+      expect(repeated.records[0]).toMatchObject({ status: 'verified-pass', fresh: true });
+      expect(repeated.records[0]!.executionIdentityDigest)
+        .toBe(evidence.records[0]!.executionIdentityDigest);
+      if (interpreter === 'python3.11') {
+        // The same installed interpreter must reject incompatible project requirements;
+        // this negative case must not introduce a dependency on another installed version.
+        const projectFile = join(repo, 'pyproject.toml');
+        writeFileSync(projectFile, readFileSync(projectFile, 'utf8').replace('>=3.11,<3.12', '>=3.13,<3.14'));
+        const incompatibleInput = { source: 'git diff', diff: git(repo, ['diff']), changedFiles: ['app.py', 'pyproject.toml'] };
+        const rejected = await executeEvidencePlan(context(repo), incompatibleInput, validated,
+          createCandidateBinding(repo, incompatibleInput, validated));
+        expect(rejected.records[0]!.status, rejected.records[0]!.outputSummary).toBe('runtime-incomplete');
+        expect(rejected.records[0]!.outputSummary).toContain("incompatible with the project's Python requirement");
+        expect(rejected.records[0]!.outputSummary).not.toContain('/python-runtime/environment/lib/');
+      }
     } finally {
       if (previousCache === undefined) delete process.env.UV_CACHE_DIR;
       else process.env.UV_CACHE_DIR = previousCache;
-    }
-
-    expect(evidence.records[0]).toMatchObject({
-      status: 'verified-pass',
-      exitStatus: 0,
-      fresh: true,
-      environment: 'isolated-darwin-snapshot',
-    });
-    expect(evidence.records[0]!.outputSummary).toContain('/operations/');
-    expect(evidence.records[0]!.outputSummary).toContain('/python-runtime/environment/');
-    expect(evidence.records[0]!.outputSummary).not.toContain(repo);
-    expect(evidence.records[0]!.executionIdentityDigest).toMatch(/^[a-f0-9]{64}$/);
-    expect(repeated.records[0]).toMatchObject({ status: 'verified-pass', fresh: true });
-    expect(repeated.records[0]!.executionIdentityDigest)
-      .toBe(evidence.records[0]!.executionIdentityDigest);
-    if (interpreter === 'python3.11') {
-      // The same installed interpreter must reject incompatible project requirements;
-      // this negative case must not introduce a dependency on another installed version.
-      const projectFile = join(repo, 'pyproject.toml');
-      writeFileSync(projectFile, readFileSync(projectFile, 'utf8').replace('>=3.11,<3.12', '>=3.13,<3.14'));
-      const incompatibleInput = { source: 'git diff', diff: git(repo, ['diff']), changedFiles: ['app.py', 'pyproject.toml'] };
-      const rejected = await executeEvidencePlan(context(repo), incompatibleInput, validated,
-        createCandidateBinding(repo, incompatibleInput, validated));
-      expect(rejected.records[0]!.status, rejected.records[0]!.outputSummary).toBe('runtime-incomplete');
-      expect(rejected.records[0]!.outputSummary).toContain("incompatible with the project's Python requirement");
-      expect(rejected.records[0]!.outputSummary).not.toContain('/python-runtime/environment/lib/');
     }
   // Up to three complete runtime projections and 10-second supervised operations
   // must finish before afterEach removes their snapshots on a cold CI host.
