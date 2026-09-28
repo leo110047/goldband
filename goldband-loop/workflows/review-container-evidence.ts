@@ -18,7 +18,7 @@ type Session = {
   snapshotRoot: string; executionOffset: string;
 };
 type Result = { exitCode: number; reason: string; stdout: string; stderr: string };
-const POLICY = 'docker-isolated-services-v1';
+const POLICY = 'docker-isolated-services-v2';
 const LABEL = 'dev.goldband.review-run';
 
 /** Only the broker sees the Docker socket. Candidate commands execute inside disposable containers. */
@@ -176,7 +176,7 @@ function containerArgs(session: Session, name: string, spec: EvidenceContainer):
     '--log-driver', 'local', '--log-opt', 'max-size=1m', '--log-opt', 'max-file=1', '--log-opt', 'compress=false',
     '--network', session.network, '--dns', '127.0.0.1', '--workdir', `/workspace${cwd ? `/${cwd}` : ''}`,
     '--mount', `type=bind,source=${session.snapshotRoot},target=/workspace,readonly,bind-recursive=disabled`,
-    '--tmpfs', `/tmp:rw,nosuid,nodev,size=${spec.memoryMb}m,mode=1777`,
+    '--tmpfs', `/tmp:rw,exec,nosuid,nodev,size=${spec.memoryMb}m,mode=1777`,
     ...spec.tmpfs.flatMap((path) => ['--tmpfs', `${path}:rw,nosuid,nodev,size=${spec.memoryMb}m,uid=${uid},gid=${gid},mode=700`]),
     ...Object.entries(spec.environment).flatMap(([key, value]) => ['--env', `${key}=${value}`]),
     '--env', `${EVIDENCE_SANDBOX_ACTIVE_ENV}=1`, '--env', `${EVIDENCE_TEMP_ROOT_ENV}=/tmp`,
