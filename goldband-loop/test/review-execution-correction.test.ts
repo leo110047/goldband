@@ -26,6 +26,36 @@ function fixture() {
 }
 
 describe('registered execution correction boundaries', () => {
+  test('accepts a registered timeout increase while preserving semantic assessment', () => {
+    const { before } = fixture();
+    const after = structuredClone(before);
+    after.providers[0]!.operations[0]!.timeoutMs = 1200000;
+    expect(() => reviewEvidenceManifestSchema.validate(after)).not.toThrow();
+    expect(() => assertReviewContractBoundary(before, after)).toThrow('provider contract changed');
+    expect(isRegisteredExecutionCorrection(before.providers[0], after.providers[0], undefined)).toBe(false);
+    expect(isRegisteredExecutionCorrection(before.providers[0], after.providers[0], before.providers[0])).toBe(false);
+    expect(isRegisteredExecutionCorrection(before.providers[0], after.providers[0], after.providers[0])).toBe(true);
+    const changes = reviewContractChanges([before], after);
+    expect(changes.map((entry) => entry.kind)).toEqual(['execution']);
+    expect(() => validateReviewContractAssessment(undefined, changes)).toThrow('explicit semantic contract assessment');
+    expect(preserveReviewContractSemantics(before, after)).toEqual(before);
+    const candidate = structuredClone(after.providers[0]!);
+    candidate.operations[0]!.timeoutMs = 1100000;
+    expect(isRegisteredExecutionCorrection(before.providers[0], candidate, after.providers[0])).toBe(false);
+    after.providers[0]!.operations[0]!.timeoutMs = 5000;
+    expect(isRegisteredExecutionCorrection(before.providers[0], after.providers[0], after.providers[0])).toBe(false);
+  });
+
+  test('bounds operation timeouts at twenty minutes', () => {
+    const { before } = fixture();
+    before.providers[0]!.operations[0]!.timeoutMs = 1200000;
+    expect(() => reviewEvidenceManifestSchema.validate(before)).not.toThrow();
+    for (const timeoutMs of [99, 1200001, 1200000.5]) {
+      before.providers[0]!.operations[0]!.timeoutMs = timeoutMs;
+      expect(() => reviewEvidenceManifestSchema.validate(before)).toThrow('operation.timeoutMs');
+    }
+  });
+
   test('restores omitted system tools without inventing a structural contract change', () => {
     const { before, after } = fixture();
     delete before.providers[0]!.operations[0]!.requiredSystemTools;

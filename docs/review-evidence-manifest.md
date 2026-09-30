@@ -240,6 +240,7 @@ Docker Desktop 已有實測。這不代表原生 Linux／Windows sealed runner �
 初始化與測試放在同一個專案擁有的腳本中；不同 operations 不共享容器或資料。
 服務按陣列順序啟動，`ready` 成功後才啟動下一個，全部 ready 後才執行測試。
 `timeoutMs` 包含映像檢查、服務啟動、readiness 與測試；清理另有 30 秒上限。
+單一步驟最高 20 分鐘。延長已登錄的時間預算可作為 execution correction 進入複審，仍須語意審查確認；未登錄的修改、縮短時間或其他驗證條件變更不因此獲准。
 
 Provider 的 execution context 範例（將映像 ID 換成實際準備好的內容）：
 
@@ -388,7 +389,7 @@ Operation 的主要欄位：
 | `target` | `candidate`，或 transition regression provider 的 `base`。 |
 | `argv` | 非空 argument array。第一項必須是由 `PATH` 解析的 command name，不能含 `/` 或 `\\`。 |
 | `expectedExit` | `zero` 或 `nonzero`。後者必須提供 exact `expectedExitCode`。 |
-| `timeoutMs` | `100` 至 `900000`。 |
+| `timeoutMs` | `100` 至 `1200000`。 |
 | `maxOutputBytes` | `1` 至 `65536`。 |
 | `network` | `deny` 或 `authorized`。 |
 | `authorizationId` | `network: authorized` 時必填；deny 時禁止。 |

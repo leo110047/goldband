@@ -1203,13 +1203,18 @@ function stableJsonForTest(value: unknown): string {
   return JSON.stringify(value) ?? 'null';
 }
 
-test('only the active imported baseline authorizes execution repair through signed lineage', () => {
+test.each(['container', 'timeout'] as const)('only the active imported baseline authorizes %s repair through signed lineage', (kind) => {
   const fixture = repository();
   const before = manifest();
   const after = structuredClone(before);
   after.providers[0]!.executionContext = { sandboxOwner: 'review-runtime', runner: 'container',
     container: { image: `sha256:${'a'.repeat(64)}`, user: '1000:1000', environment: {}, tmpfs: [], memoryMb: 512, cpus: 1, workdir: '.' }, services: [] };
   after.providers[0]!.operations[0]!.network = 'isolated';
+  if (kind === 'timeout') {
+    after.providers[0]!.executionContext = structuredClone(before.providers[0]!.executionContext);
+    after.providers[0]!.operations[0]!.network = before.providers[0]!.operations[0]!.network;
+    after.providers[0]!.operations[0]!.timeoutMs = 1200000;
+  }
   const file = join(fixture.repo, 'contract.json');
   const resolveContract = () => resolveReviewContract({ cwd: fixture.repo,
     options: { mode: 'mock', goldbandHome: fixture.state } } as WorkflowContext,
