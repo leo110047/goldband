@@ -1253,6 +1253,8 @@ function verifyAutomaticClosureDedup(
 function createContinuationRepository(fixture: string, originalRepo: string, name: string): string {
   const repo = join(fixture, name);
   expect(spawnSync('git', ['clone', '-q', originalRepo, repo]).status).toBe(0);
+  expect(spawnSync('git', ['config', 'user.name', 'Goldband Test'], { cwd: repo }).status).toBe(0);
+  expect(spawnSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: repo }).status).toBe(0);
   writeFileSync(join(repo, 'goldband.review-evidence.json'), readFileSync(join(originalRepo, 'goldband.review-evidence.json')));
   expect(spawnSync('git', ['add', 'goldband.review-evidence.json'], { cwd: repo }).status).toBe(0);
   expect(spawnSync('git', ['-c', 'user.name=Goldband Test', '-c', 'user.email=test@example.invalid',

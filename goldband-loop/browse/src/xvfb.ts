@@ -379,7 +379,9 @@ async function waitForXvfbStop(
 ): Promise<XvfbOwnership> {
   const deadline = Date.now() + timeoutMs;
   let status = probe();
-  while (status === 'owned' && Date.now() < deadline) {
+  // Shutdown can race the separate liveness and identity reads. Keep polling
+  // an unknown snapshot; the caller still rejects it at the deadline.
+  while ((status === 'owned' || status === 'unknown') && Date.now() < deadline) {
     await sleep(25);
     status = probe();
   }
