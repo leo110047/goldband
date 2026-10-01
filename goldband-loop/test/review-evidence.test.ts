@@ -1,6 +1,6 @@
 import { isHostPythonToolPath, localReviewPythonPath, resolveHostPythonTool } from '../workflows/review-python-tools';
 import { LOCAL_PYTHON_TEST_INTERPRETERS } from '../workflows/review-local-evidence';
-import { MAX_REVIEW_DIFF_BYTES } from '../lib/review-runtime-contract';
+import { MAX_REVIEW_DIFF_BYTES, MAX_REVIEW_PROMPT_OVERHEAD_BYTES } from '../lib/review-runtime-contract';
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -3593,6 +3593,73 @@ describe('review evidence contracts', () => {
     expect(validateClosureResults({ results: [result], input: closure, evidence: rerun })).toEqual([result]);
     expect(() => validateClosureResults({ results: [{ ...result, evidenceIds: ['other:pass'] }], input: closure, evidence: rerun }))
       .toThrow('unrelated to finding behavior cells');
+  });
+
+  test('closure prompt carries RED exit contract and bounded execution diagnostics', () => {
+    const artifact = initialArtifact();
+    const rerun = structuredClone(artifact.evidence);
+    const provider = rerun.manifest.providers[0]!;
+    provider.operations[0]!.target = 'base';
+    provider.operations[0]!.expectedExit = 'nonzero';
+    provider.operations[0]!.expectedExitCode = 1;
+    const red = rerun.records[0]!;
+    red.exitStatus = 1;
+    red.outputSummary = ['REGRESSION_ASSERTION: missing slot', 'x'.repeat(5000), 'END_OF_DIAGNOSTIC'].join('\n');
+    const closure = buildClosureInput({ artifact, repairedBinding: { ...artifact.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: rerun.manifest });
+    const prompt = buildClosureReviewPrompt(closure, rerun, { bundle: { selected: [], snapshot: [] }, text: 'closure rule' });
+    const payload = JSON.parse(prompt.split('CLOSURE_INPUT_START\n')[1]!.split('\nCLOSURE_INPUT_END')[0]!);
+    const projected = payload.rerunEvidence[0];
+    expect(projected.status).toBe('verified-pass');
+    expect(projected.exitStatus).toBe(1);
+    expect(projected.operation).toMatchObject({ target: 'base', expectedExit: 'nonzero', expectedExitCode: 1, network: 'deny', executionContext: provider.executionContext });
+    expect(projected.executionIdentityDigest).toBe(red.executionIdentityDigest);
+    expect(projected.snapshotDigestBefore).toBe(red.snapshotDigestBefore);
+    expect(projected.snapshotDigestAfter).toBe(red.snapshotDigestAfter);
+    expect(projected.outputDigest).toBe(red.outputDigest);
+    expect(projected.outputSummary).toContain('REGRESSION_ASSERTION: missing slot');
+    expect(projected.outputSummary).toContain('END_OF_DIAGNOSTIC');
+    expect(projected.outputSummary.length).toBeLessThan(2100);
+  });
+
+  test.each([
+    { count: 16, diagnostic: 'x'.repeat(4096) },
+    { count: 32, diagnostic: 'x'.repeat(4096) },
+    { count: 16, diagnostic: '診斷🙂"\\\n'.repeat(256) },
+  ])('closure keeps $count execution diagnostics within the shared byte budget', ({ count, diagnostic }) => {
+    const artifact = initialArtifact();
+    const provider = artifact.evidence.manifest.providers[0]!;
+    provider.operations = Array.from({ length: count }, (_, index) =>
+      operation(index === 0 ? 'pass' : `check-${index}`, ['true'], 'candidate', 'zero'));
+    artifact.evidence.records = provider.operations.map((entry, index) => ({
+      ...record(),
+      id: index === 0 ? 'gate:pass' : `${provider.id}:${entry.id}`,
+      operationId: entry.id,
+      outputSummary: index === 0 ? 'short diagnostic\ncomplete' : `BEGIN_${index}\n${diagnostic}\nEND_${index}`,
+    }));
+    expect(reviewEvidenceManifestSchema.validate(artifact.evidence.manifest).providers).toHaveLength(1);
+    const rerun = structuredClone(artifact.evidence);
+    const closure = buildClosureInput({ artifact, repairedBinding: { ...artifact.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: rerun.manifest });
+    const prompt = buildClosureReviewPrompt(closure, rerun, { bundle: { selected: [], snapshot: [] }, text: 'closure rule' });
+    expect(Buffer.byteLength(prompt) - Buffer.byteLength(closure.repairDelta)).toBeLessThanOrEqual(MAX_REVIEW_PROMPT_OVERHEAD_BYTES);
+    const payload = JSON.parse(prompt.split('CLOSURE_INPUT_START\n')[1]!.split('\nCLOSURE_INPUT_END')[0]!);
+    expect(payload.rerunEvidence).toHaveLength(count);
+    for (const [index, projected] of payload.rerunEvidence.entries()) {
+      const original = rerun.records[index]!;
+      expect(projected).toMatchObject({
+        id: original.id, status: original.status, exitStatus: original.exitStatus,
+        commandDigest: original.commandDigest, outputDigest: original.outputDigest,
+        executionIdentityDigest: original.executionIdentityDigest,
+        snapshotDigestBefore: original.snapshotDigestBefore, snapshotDigestAfter: original.snapshotDigestAfter,
+        operation: { target: 'candidate', expectedExit: 'zero', network: 'deny' },
+      });
+      if (index === 0) expect(projected.outputSummary).toBe(original.outputSummary);
+      else {
+        expect(projected.outputSummary).toContain(`BEGIN_${index}`);
+        expect(projected.outputSummary).toContain(`END_${index}`);
+        expect(projected.outputSummary).toContain('[output truncated]');
+        expect(projected.outputSummary).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u);
+      }
+    }
   });
 
   test('closure prompt omits verbose initial narratives and stays bounded', () => {

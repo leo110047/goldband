@@ -1429,26 +1429,12 @@ export function buildClosureReviewPrompt(
     originalBehaviorContractDigest: closure.originalBehaviorContractDigest,
     repairedBehaviorContractDigest: closure.repairedBehaviorContractDigest,
     affectedCellIds: closure.affectedCellIds,
-    originalFindings: closure.artifact.findings.map((finding) => {
-      const behaviorCellIds = reviewFindingCellIds(finding, closure.artifact.evidence, evidence.manifest);
-      return {
-        id: finding.id,
-        classification: finding.classification,
-        file: finding.file,
-        line: finding.line,
-        summary: finding.summary,
-        evidenceIds: finding.evidenceIds,
-        behaviorCellIds,
-        relatedEvidenceIds: evidence.records
-          .filter((record) => record.cellIds.some((cellId) => behaviorCellIds.includes(cellId)))
-          .map((record) => record.id),
-      };
-    }),
+    originalFindings: closure.artifact.findings.map((finding) =>
+      projectClosureFinding(finding, closure.artifact.evidence, evidence)),
     originalContractReview: closure.artifact.contractReview,
-    rerunEvidence: evidence.records.map(projectClosureEvidenceRecord),
+    rerunEvidence: evidence.records.map((record) => projectClosureEvidenceRecord(record, evidence.manifest)),
   };
-  const payloadText = JSON.stringify(payload);
-  const prompt = [
+  const prefix = [
     '# Scoped Closure Review',
     'Decide only whether each original finding is closed, still-open, a direct repair regression, or evidence-incomplete. Do not rebuild a general findings inventory.',
     'A semantic finding may use project-declared path applicability when its original record omitted behavior cells. Close only with fresh related evidence and inspection of the actual repair; if no declared coverage applies, return evidence-incomplete. Preserve every original finding ID. Corrected checks require the separate contractReview assessment; do not describe a changed command as an identical rerun.',
@@ -1458,12 +1444,26 @@ export function buildClosureReviewPrompt(
     rules.text,
     'APPLICABLE_GOLDBAND_RULES_END',
     'CLOSURE_INPUT_START',
-    payloadText,
+  ];
+  const suffix = [
     'CLOSURE_INPUT_END',
     'REPAIR_DELTA_START',
     closure.repairDelta,
     'REPAIR_DELTA_END',
-  ].join('\n');
+  ];
+  const fixedOverheadBytes = [...prefix, ...suffix].reduce(
+    (bytes, part) => bytes + Buffer.byteLength(part), prefix.length + suffix.length,
+  ) - Buffer.byteLength(closure.repairDelta);
+  const outputBytesPerRecord = Math.max(0, Math.floor(
+    (MAX_REVIEW_PROMPT_OVERHEAD_BYTES - fixedOverheadBytes - Buffer.byteLength(JSON.stringify(payload))) /
+    Math.max(1, payload.rerunEvidence.length),
+  ));
+  for (const [index, projected] of payload.rerunEvidence.entries()) {
+    projected.outputSummary = boundClosureEvidenceOutput(evidence.records[index]!.outputSummary,
+      outputBytesPerRecord + Buffer.byteLength(JSON.stringify(projected.outputSummary)) - 2);
+  }
+  const payloadText = JSON.stringify(payload);
+  const prompt = [...prefix, payloadText, ...suffix].join('\n');
   if (prompt.includes(`DIFF_START\n${closure.artifact.diff}\nDIFF_END`)) {
     throw new Error('closure prompt must not contain the original full diff');
   }
@@ -1866,18 +1866,71 @@ function projectEvidenceRecord(record: ReviewEvidenceBundle['records'][number]) 
   };
 }
 
-function projectClosureEvidenceRecord(record: ReviewEvidenceBundle['records'][number]) {
+function projectClosureFinding(
+  finding: ReviewFinding,
+  originalEvidence: ReviewEvidenceBundle,
+  evidence: ReviewEvidenceBundle,
+) {
+  const behaviorCellIds = reviewFindingCellIds(finding, originalEvidence, evidence.manifest);
   return {
-    id: record.id,
-    cellIds: record.cellIds,
-    status: record.status,
-    commandDigest: record.commandDigest,
-    exitStatus: record.exitStatus,
-    environment: record.environment,
-    ciProvenance: record.ciProvenance,
-    outputDigest: record.outputDigest,
-    fresh: record.fresh,
+    id: finding.id,
+    classification: finding.classification,
+    file: finding.file,
+    line: finding.line,
+    summary: finding.summary,
+    evidenceIds: finding.evidenceIds,
+    behaviorCellIds,
+    relatedEvidenceIds: evidence.records
+      .filter((record) => record.cellIds.some((cellId) => behaviorCellIds.includes(cellId)))
+      .map((record) => record.id),
   };
+}
+
+function projectClosureEvidenceRecord(
+  record: ReviewEvidenceBundle['records'][number],
+  manifest: ReviewEvidenceManifest,
+) {
+  const provider = manifest.providers.find((entry) => entry.id === record.providerId);
+  const operation = provider?.operations.find((entry) => entry.id === record.operationId);
+  // Reserve a truncation marker before sharing the remaining prompt budget among outputs.
+  return {
+    ...projectEvidenceRecord(record),
+    operationId: record.operationId,
+    executionIdentityDigest: record.executionIdentityDigest,
+    snapshotDigestBefore: record.snapshotDigestBefore,
+    snapshotDigestAfter: record.snapshotDigestAfter,
+    baseDigest: record.baseDigest,
+    scopeDigest: record.scopeDigest,
+    outputSummary: '\n[output truncated]\n',
+    operation: operation ? {
+      target: operation.target,
+      expectedExit: operation.expectedExit,
+      expectedExitCode: operation.expectedExitCode,
+      network: operation.network,
+      pythonRuntime: operation.pythonRuntime,
+      executionContext: provider?.executionContext,
+    } : undefined,
+  };
+}
+
+function boundClosureEvidenceOutput(value: string, maxJsonBytes: number): string {
+  const budget = Math.min(2048, maxJsonBytes);
+  const jsonBytes = (text: string) => Buffer.byteLength(JSON.stringify(text)) - 2;
+  if (jsonBytes(value) <= budget) return value;
+  const characters = Array.from(value);
+  const summary = (length: number) => [
+    characters.slice(0, Math.ceil(length / 2)).join(''),
+    '[output truncated]',
+    characters.slice(characters.length - Math.floor(length / 2)).join(''),
+  ].join('\n');
+  let low = 0;
+  let high = characters.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (jsonBytes(summary(middle)) <= budget) low = middle;
+    else high = middle - 1;
+  }
+  return summary(low);
 }
 
 function recordReviewHostUsage(
