@@ -3595,6 +3595,32 @@ describe('review evidence contracts', () => {
       .toThrow('unrelated to finding behavior cells');
   });
 
+  test('closure prompt carries RED exit contract and bounded execution diagnostics', () => {
+    const artifact = initialArtifact();
+    const rerun = structuredClone(artifact.evidence);
+    const provider = rerun.manifest.providers[0]!;
+    provider.operations[0]!.target = 'base';
+    provider.operations[0]!.expectedExit = 'nonzero';
+    provider.operations[0]!.expectedExitCode = 1;
+    const red = rerun.records[0]!;
+    red.exitStatus = 1;
+    red.outputSummary = ['REGRESSION_ASSERTION: missing slot', 'x'.repeat(5000), 'END_OF_DIAGNOSTIC'].join('\n');
+    const closure = buildClosureInput({ artifact, repairedBinding: { ...artifact.binding, candidateDigest: 'd'.repeat(64) }, repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: rerun.manifest });
+    const prompt = buildClosureReviewPrompt(closure, rerun, { bundle: { selected: [], snapshot: [] }, text: 'closure rule' });
+    const payload = JSON.parse(prompt.split('CLOSURE_INPUT_START\n')[1]!.split('\nCLOSURE_INPUT_END')[0]!);
+    const projected = payload.rerunEvidence[0];
+    expect(projected.status).toBe('verified-pass');
+    expect(projected.exitStatus).toBe(1);
+    expect(projected.operation).toMatchObject({ target: 'base', expectedExit: 'nonzero', expectedExitCode: 1, network: 'deny', executionContext: provider.executionContext });
+    expect(projected.executionIdentityDigest).toBe(red.executionIdentityDigest);
+    expect(projected.snapshotDigestBefore).toBe(red.snapshotDigestBefore);
+    expect(projected.snapshotDigestAfter).toBe(red.snapshotDigestAfter);
+    expect(projected.outputDigest).toBe(red.outputDigest);
+    expect(projected.outputSummary).toContain('REGRESSION_ASSERTION: missing slot');
+    expect(projected.outputSummary).toContain('END_OF_DIAGNOSTIC');
+    expect(projected.outputSummary.length).toBeLessThan(2100);
+  });
+
   test('closure prompt omits verbose initial narratives and stays bounded', () => {
     const artifact = initialArtifact();
     artifact.findings[0]!.failureScenario = 'verbose-initial-scenario-'.repeat(1000);

@@ -1445,7 +1445,7 @@ export function buildClosureReviewPrompt(
       };
     }),
     originalContractReview: closure.artifact.contractReview,
-    rerunEvidence: evidence.records.map(projectClosureEvidenceRecord),
+    rerunEvidence: evidence.records.map((record) => projectClosureEvidenceRecord(record, evidence.manifest)),
   };
   const payloadText = JSON.stringify(payload);
   const prompt = [
@@ -1866,17 +1866,34 @@ function projectEvidenceRecord(record: ReviewEvidenceBundle['records'][number]) 
   };
 }
 
-function projectClosureEvidenceRecord(record: ReviewEvidenceBundle['records'][number]) {
+function projectClosureEvidenceRecord(
+  record: ReviewEvidenceBundle['records'][number],
+  manifest: ReviewEvidenceManifest,
+) {
+  const provider = manifest.providers.find((entry) => entry.id === record.providerId);
+  const operation = provider?.operations.find((entry) => entry.id === record.operationId);
+  // A passing RED receipt proves the declared expected failure. Keep its bounded output
+  // and isolated execution identity available to the reviewer alongside that exit contract.
+  const outputSummary = record.outputSummary.length <= 2048
+    ? record.outputSummary
+    : [record.outputSummary.slice(0, 1024), '[output truncated]', record.outputSummary.slice(-1024)].join('\n');
   return {
-    id: record.id,
-    cellIds: record.cellIds,
-    status: record.status,
-    commandDigest: record.commandDigest,
-    exitStatus: record.exitStatus,
-    environment: record.environment,
-    ciProvenance: record.ciProvenance,
-    outputDigest: record.outputDigest,
-    fresh: record.fresh,
+    ...projectEvidenceRecord(record),
+    operationId: record.operationId,
+    executionIdentityDigest: record.executionIdentityDigest,
+    snapshotDigestBefore: record.snapshotDigestBefore,
+    snapshotDigestAfter: record.snapshotDigestAfter,
+    baseDigest: record.baseDigest,
+    scopeDigest: record.scopeDigest,
+    outputSummary,
+    operation: operation ? {
+      target: operation.target,
+      expectedExit: operation.expectedExit,
+      expectedExitCode: operation.expectedExitCode,
+      network: operation.network,
+      pythonRuntime: operation.pythonRuntime,
+      executionContext: provider?.executionContext,
+    } : undefined,
   };
 }
 
