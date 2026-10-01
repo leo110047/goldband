@@ -28,6 +28,35 @@ import { WorkMapStore } from "../workflows/work-map-store";
 const sourceRoot = resolve(import.meta.dir, "..");
 const bunPath = process.execPath;
 
+const installedReviewHostScript = [
+	"#!/usr/bin/env bash",
+	"set -euo pipefail",
+	'output=""',
+	'while [ "$#" -gt 0 ]; do',
+	'  if [ "$1" = "-o" ]; then output="$2"; shift 2; continue; fi',
+	"  shift",
+	"done",
+	'test -n "$output"',
+	'if [ -n "${GOLDBAND_TEST_HOST_CALL_LOG:-}" ]; then printf "%s\\n" codex >> "$GOLDBAND_TEST_HOST_CALL_LOG"; fi',
+	'if [ -n "${GOLDBAND_TEST_MUTATE_POLICY:-}" ]; then printf "\\nPolicy changed during host call.\\n" >> "$GOLDBAND_TEST_MUTATE_POLICY"; fi',
+	'prompt="$(cat)"',
+	'if printf \'%s\' "$prompt" | grep -q CLOSURE_INPUT_START; then',
+	'  if [ "${GOLDBAND_TEST_CLOSURE_STILL_OPEN:-}" = "1" ]; then',
+	'    printf \'%s\\n\' \'{"results":[{"findingId":"S-001","status":"still-open","summary":"repair still incomplete","evidenceIds":["installed-gate:pass"]}]}\' > "$output"',
+	'    exit 0',
+	'  fi',
+	'  printf \'%s\\n\' \'{"contractReview":{"preserved":true,"summary":"Fixture assessment confirms declared static coverage replaces unavailable evidence."},"results":[{"findingId":"S-001","status":"closed","summary":"repair verified","evidenceIds":["installed-gate:pass"]}]}\' > "$output"',
+	'elif [ "${GOLDBAND_TEST_CLEAN_REVIEW:-}" = "1" ]; then',
+	'  printf \'%s\\n\' \'{"contractReview":{"preserved":true,"summary":"Fixture assessment confirms declared static coverage replaces unavailable evidence."},"findings":[]}\' > "$output"',
+	'elif [ "${GOLDBAND_TEST_HIGH_CONCERN:-}" = "1" ]; then',
+	'  printf \'%s\\n\' \'{"findings":[{"id":"F-001","file":"review-me.txt","line":1,"severity":"high","summary":"managed fixture concern","evidence":"fixture semantic observation","failureScenario":"fixture path","suggestedVerification":"rerun installed gate","classification":"semantic-concern","blocking":false,"evidenceIds":["installed-gate:pass"],"behaviorCellIds":["installed-review"]}]}\' > "$output"',
+	'elif [ "${GOLDBAND_EVIDENCE_SANDBOX_ACTIVE:-}" = "1" ]; then',
+	'  printf \'%s\\n\' \'{"contractReview":{"preserved":true,"summary":"Fixture assessment confirms declared static coverage replaces unavailable evidence."},"findings":[{"id":"F-001","file":"review-me.txt","line":1,"severity":"medium","summary":"fixture finding","evidence":"fixture semantic observation","failureScenario":"fixture path","suggestedVerification":"inspect installed phases","classification":"semantic-concern","blocking":false,"evidenceIds":["cell:installed-review:unsupported"],"behaviorCellIds":["installed-review"]}]}\' > "$output"',
+	'else',
+	'  printf \'%s\\n\' \'{"contractReview":{"preserved":true,"summary":"Fixture assessment confirms declared static coverage replaces unavailable evidence."},"findings":[{"id":"F-001","file":"review-me.txt","line":1,"severity":"medium","summary":"fixture finding","evidence":"fixture semantic observation","failureScenario":"fixture path","suggestedVerification":"rerun installed gate","classification":"semantic-concern","blocking":false,"evidenceIds":["installed-gate:pass"],"behaviorCellIds":["installed-review"]}]}\' > "$output"',
+	'fi',
+].join("\n");
+
 function spawnInstalledRuntime(
 	command: string,
 	args: string[],
@@ -57,37 +86,7 @@ describe("Codex trusted workflow launcher install", () => {
 			const fakeCodex = join(trustedBin, "codex");
 			const fakeClaude = join(trustedBin, "claude");
 			const fakeBrowser = join(trustedBin, "browse");
-			writeFileSync(
-				fakeCodex,
-				[
-					"#!/usr/bin/env bash",
-					"set -euo pipefail",
-					'output=""',
-					'while [ "$#" -gt 0 ]; do',
-					'  if [ "$1" = "-o" ]; then output="$2"; shift 2; continue; fi',
-					"  shift",
-					"done",
-					'test -n "$output"',
-					'if [ -n "${GOLDBAND_TEST_HOST_CALL_LOG:-}" ]; then printf "%s\\n" codex >> "$GOLDBAND_TEST_HOST_CALL_LOG"; fi',
-					'if [ -n "${GOLDBAND_TEST_MUTATE_POLICY:-}" ]; then printf "\\nPolicy changed during host call.\\n" >> "$GOLDBAND_TEST_MUTATE_POLICY"; fi',
-					'prompt="$(cat)"',
-					'if printf \'%s\' "$prompt" | grep -q CLOSURE_INPUT_START; then',
-					'  if [ "${GOLDBAND_TEST_CLOSURE_STILL_OPEN:-}" = "1" ]; then',
-					'    printf \'%s\\n\' \'{"results":[{"findingId":"S-001","status":"still-open","summary":"repair still incomplete","evidenceIds":["installed-gate:pass"]}]}\' > "$output"',
-					'    exit 0',
-					'  fi',
-					'  printf \'%s\\n\' \'{"contractReview":{"preserved":true,"summary":"Fixture assessment confirms declared static coverage replaces unavailable evidence."},"results":[{"findingId":"S-001","status":"closed","summary":"repair verified","evidenceIds":["installed-gate:pass"]}]}\' > "$output"',
-					'elif [ "${GOLDBAND_TEST_CLEAN_REVIEW:-}" = "1" ]; then',
-					'  printf \'%s\\n\' \'{"contractReview":{"preserved":true,"summary":"Fixture assessment confirms declared static coverage replaces unavailable evidence."},"findings":[]}\' > "$output"',
-					'elif [ "${GOLDBAND_TEST_HIGH_CONCERN:-}" = "1" ]; then',
-					'  printf \'%s\\n\' \'{"findings":[{"id":"F-001","file":"review-me.txt","line":1,"severity":"high","summary":"managed fixture concern","evidence":"fixture semantic observation","failureScenario":"fixture path","suggestedVerification":"rerun installed gate","classification":"semantic-concern","blocking":false,"evidenceIds":["installed-gate:pass"],"behaviorCellIds":["installed-review"]}]}\' > "$output"',
-					'elif [ "${GOLDBAND_EVIDENCE_SANDBOX_ACTIVE:-}" = "1" ]; then',
-					'  printf \'%s\\n\' \'{"contractReview":{"preserved":true,"summary":"Fixture assessment confirms declared static coverage replaces unavailable evidence."},"findings":[{"id":"F-001","file":"review-me.txt","line":1,"severity":"medium","summary":"fixture finding","evidence":"fixture semantic observation","failureScenario":"fixture path","suggestedVerification":"inspect installed phases","classification":"semantic-concern","blocking":false,"evidenceIds":["cell:installed-review:unsupported"],"behaviorCellIds":["installed-review"]}]}\' > "$output"',
-					'else',
-					'  printf \'%s\\n\' \'{"contractReview":{"preserved":true,"summary":"Fixture assessment confirms declared static coverage replaces unavailable evidence."},"findings":[{"id":"F-001","file":"review-me.txt","line":1,"severity":"medium","summary":"fixture finding","evidence":"fixture semantic observation","failureScenario":"fixture path","suggestedVerification":"rerun installed gate","classification":"semantic-concern","blocking":false,"evidenceIds":["installed-gate:pass"],"behaviorCellIds":["installed-review"]}]}\' > "$output"',
-					'fi',
-				].join("\n"),
-			);
+			writeFileSync(fakeCodex, installedReviewHostScript);
 			chmodSync(fakeCodex, 0o755);
 			writeFileSync(
 				fakeClaude,
@@ -673,8 +672,6 @@ describe("Codex trusted workflow launcher install", () => {
 				hostCallCount: 1,
 				results: [{ findingId: "S-001", status: "closed" }],
 					});
-				verifyAutomaticClosureDedup(runInstalledReview, fixture, repo, stateRoot, hostCallLog);
-				verifyAutomaticManagedContinuation(runInstalledReview, fixture, repo, stateRoot);
 				}
 
 				const repairRepo = join(fixture, "pre-semantic-repair-repo");
@@ -1061,6 +1058,18 @@ describe("Codex trusted workflow launcher install", () => {
 		}
 	}, 30_000);
 
+	test("automatically resumes and deduplicates signed partial closure", () => {
+		withInstalledContinuationFixture(({ run, fixture, repo, stateRoot, hostCallLog }) => {
+			verifyAutomaticClosureDedup(run, fixture, repo, stateRoot, hostCallLog);
+		});
+	}, 30_000);
+
+	test("automatically resumes a managed review with verified repair", () => {
+		withInstalledContinuationFixture(({ run, fixture, repo, stateRoot }) => {
+			verifyAutomaticManagedContinuation(run, fixture, repo, stateRoot);
+		});
+	}, 30_000);
+
 	test("rejects a trusted runtime inside the writable source", () => {
 		const fixture = mkdtempSync(join(tmpdir(), "goldband-codex-review-reject-"));
 		try {
@@ -1220,6 +1229,51 @@ describe("Codex trusted workflow launcher install", () => {
 		}
 	});
 });
+
+function withInstalledContinuationFixture(verify: (context: {
+  run: (cwd: string, args: string[], env?: NodeJS.ProcessEnv) => ReturnType<typeof spawnSync>;
+  fixture: string; repo: string; stateRoot: string; hostCallLog: string;
+}) => void) {
+  const fixture = mkdtempSync(join(tmpdir(), 'goldband-installed-continuation-'));
+  try {
+    const emptyHome = join(fixture, 'home');
+    mkdirSync(emptyHome);
+    const fakeCodex = join(fixture, 'codex-host');
+    writeFileSync(fakeCodex, installedReviewHostScript);
+    chmodSync(fakeCodex, 0o755);
+    const runtimeRoot = join(fixture, 'runtime');
+    installCodexReviewLauncher({ sourceRoot, runtimeRoot, bunPath, codexPath: fakeCodex,
+      browserPath: fakeCodex, ruleFile: join(fixture, 'rules', 'review.rules'),
+      markerFile: join(fixture, 'skill', '.workflow-launcher.json'),
+      bundleBrowserServer: (_bun, _entry, outputDirectory) => {
+        mkdirSync(outputDirectory, { recursive: true });
+        writeFileSync(join(outputDirectory, 'server.js'), '// fixture\n');
+      } });
+    const repo = join(fixture, 'repo');
+    mkdirSync(repo);
+    const git = (args: string[]) => {
+      const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+      expect(result.status, result.stderr).toBe(0);
+    };
+    git(['init', '-q']);
+    git(['config', 'user.name', 'Goldband Test']);
+    git(['config', 'user.email', 'test@example.invalid']);
+    writeFileSync(join(repo, 'review-me.txt'), 'baseline\n');
+    writeFileSync(join(repo, 'goldband.review-evidence.json'), JSON.stringify(installedReviewEvidenceManifest()));
+    git(['add', 'review-me.txt']);
+    git(['commit', '-qm', 'continuation fixture baseline']);
+    const stateRoot = join(fixture, 'state');
+    const hostCallLog = join(fixture, 'host-calls.log');
+    const run = (cwd: string, args: string[], env: NodeJS.ProcessEnv = {}) => spawnInstalledRuntime(
+      join(runtimeRoot, 'bin', 'goldband'), ['review', 'code', ...args], {
+        cwd, encoding: 'utf8', env: { ...process.env, HOME: emptyHome,
+          GOLDBAND_HOME: stateRoot, GOLDBAND_TEST_HOST_CALL_LOG: hostCallLog, ...env },
+      });
+    verify({ run, fixture, repo, stateRoot, hostCallLog });
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+}
 
 function verifyAutomaticClosureDedup(
   run: (cwd: string, args: string[], env?: NodeJS.ProcessEnv) => ReturnType<typeof spawnSync>,
