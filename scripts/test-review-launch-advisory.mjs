@@ -110,7 +110,7 @@ try {
 
   const failed = spawnSync(
     'bun',
-    ['goldband-loop/bin/goldband.ts', 'review', 'code'],
+    ['goldband-loop/bin/goldband.ts', 'review', 'code', '--host', 'invalid'],
     {
       cwd: root,
       encoding: 'utf8',

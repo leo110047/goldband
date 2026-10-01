@@ -22,6 +22,17 @@ export function assertInstalledWorkflowDistribution(home, loopDir) {
     { role: 'codex-execpolicy-rule', path: marker.ruleFile },
   ]);
   assert.equal(result.ok, true, result.detail ?? result.status);
+  const entry = path.join(runtimeRoot, 'bin', 'goldband');
+  assert.ok(
+    fs.statSync(entry).mode & 0o111,
+    'installed review entrypoint must be executable',
+  );
+  const help = spawnSync(entry, ['review', 'code', '--help'], {
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  assert.equal(help.status, 0, `installed review help failed: ${help.stderr}`);
+  assert.match(help.stdout, /resolved automatically/);
   const dispatch = declaredDispatchContract(loopDir);
   for (const action of dispatch.trustedLauncher) {
     const probe = spawnSync(

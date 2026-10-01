@@ -141,7 +141,7 @@ describe("review receipt authority provisioning", () => {
 			writeFileSync(join(repo, "candidate.txt"), "review me\n");
 		const reviewArgs = [
 			join(runtimeRoot, "bin", "goldband"),
-			"review", "code", "--host", "claude",
+			"review", "code",
 		];
 		const reviewOptions = {
 			cwd: repo,

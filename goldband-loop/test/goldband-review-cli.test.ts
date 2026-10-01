@@ -444,6 +444,22 @@ describe("goldband review code launcher", () => {
 		]);
 	});
 
+	test("resolves installed host and managed task without caller-owned IDs", () => {
+		const context = { host: "codex" as const, workMap: { workId: "work-a", ticketId: "ticket-a" } };
+		expect(buildReviewRuntimeArgs([], context)).toEqual([
+			"review", "code", "--mode", "real", "--host", "codex",
+			"--work-id", "work-a", "--ticket-id", "ticket-a",
+		]);
+		for (const args of [["--semantic-only"], ["--staged"], ["--base", "origin/main"]]) {
+			const resolved = buildReviewRuntimeArgs(args, context);
+			expect(resolved).not.toContain("--work-id");
+			expect(resolved).not.toContain("--ticket-id");
+			expect(resolved).toContain(args[0]!);
+		}
+		expect(() => buildReviewRuntimeArgs(["--work-id", "incomplete"], context))
+			.toThrow("must be supplied together");
+	});
+
 	test("forwards one evidence manifest and one scoped closure artifact", () => {
 		expect(buildReviewRuntimeArgs([
 			"--host", "codex",

@@ -72,6 +72,14 @@ Codex:       $goldband system health
 
 包含執行驗證的程式碼審查需要先為目標專案設定驗證契約；純語意 `--semantic-only` 不需要。請從[審查入門](docs/review-evidence-manifest.md#quick-start)開始。需要本機隔離執行測試的正式審查目前僅支援 macOS；Linux／Windows 缺少這類證據時會回報未完成。測試或安裝成功也不代表審查、部署已完成。
 
+日常使用 `/goldband review code`（Claude）或 `$goldband review code`（Codex）即可。
+Agent 呼叫 installed entrypoint，程式自動解析 host、Git 專案、驗證契約、預設範圍、
+managed task IDs 與修復後複查；無須讀 launcher JSON 或手填 artifact 路徑。
+預設包含執行驗證；使用者明確要求只看程式時才加 `--semantic-only`。
+既有未解決審查有唯一且有效的簽署紀錄時，同一命令會接續 evidence repair／closure；
+有多個符合紀錄、紀錄無效、加入原審查未涵蓋的檔案或必要設定不足時會明確阻擋。
+候選與契約未變時不重複啟動 reviewer。
+
 Claude／Codex 的 Python 審查 gate 必須宣告 `pythonRuntime`：目前只支援 macOS Python 3.14 + uv，且 candidate 需有 `pyproject.toml`、`uv.lock` 與完整離線依賴；缺少條件會阻擋執行。主機工具支援系統、Homebrew（含 `opt`）、MacPorts，以及標準使用者 uv／Python 與 pyenv 實際版本目錄；shell shim 不受支援，詳見 [Python runtime 安裝位置](docs/review-evidence-manifest.md#python-314--uv-runtime)。
 
 ## 更新與移除
@@ -132,7 +140,7 @@ Claude／Codex 各自安裝的 authority 延續既有隔離邊界，去重與 pr
 
 ### Project review evidence
 
-`goldband review code --host codex` (or `--host claude`) discovers the current
+The installed `goldband review code` entrypoint discovers the current
 Git project's registered contract automatically in `~/.goldband/review-contracts`.
 Agents do not need to supply a manifest path. Use `goldband review contract inspect`
 to read the exact project identity, registry entry, and configuration status;

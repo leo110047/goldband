@@ -68,7 +68,17 @@ Codex:       $goldband system health
 
 See the [workflow catalog](docs/generated/capabilities.md) for other actions.
 
-Code review requires a verification contract for the target project; begin with the [review quick start](docs/review-evidence-manifest.md#quick-start). Formal review requiring locally sandboxed test execution currently supports macOS only; Linux/Windows report incomplete when this evidence is unavailable. Successful installation or tests do not imply that review or deployment is complete.
+Review with `/goldband review code` in Claude or `$goldband review code` in Codex.
+The installed entrypoint resolves the host, Git project, contract, default scope,
+managed task IDs and repair continuation. Agents do not assemble launcher JSON
+or supply artifact paths. The default includes execution evidence; use
+`--semantic-only` for explicitly requested code inspection. A unique valid signed
+record resumes evidence repair or closure. Ambiguous or invalid records and
+newly changed files outside the original review and missing prerequisites block
+clearly; unchanged candidates and contracts do not
+start another reviewer.
+
+Review with execution evidence requires a verification contract for the target project; begin with the [review quick start](docs/review-evidence-manifest.md#quick-start). Pure semantic review does not require one. Formal review requiring locally sandboxed test execution currently supports macOS only; Linux/Windows report incomplete when this evidence is unavailable. Successful installation or tests do not imply that review or deployment is complete.
 
 Python review gates in Claude/Codex require `pythonRuntime`: macOS Python 3.14 + uv, candidate `pyproject.toml`/`uv.lock`, and complete offline dependencies. Missing prerequisites block execution.
 

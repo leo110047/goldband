@@ -48,18 +48,38 @@ real browser QA remains unsupported until its checks consume the typed
 `browser/session` evidence contract.
 
 Interactive Codex and Claude `$goldband review code` invocations must enter this
-runtime. Claude uses `bin/goldband review code --host claude`. Codex reads the
-installer-owned `~/.codex/skills/goldband/.workflow-launcher.json` and executes
-its exact `argvPrefix` followed by `review code --host codex`. The installed
+runtime. Claude uses `<installed-skill-root>/bin/goldband review code`. Codex uses
+`~/.codex/goldband/workflow-runtime/bin/goldband review code`. The installed
+executable pins Bun and the Codex review host; agents do not assemble commands
+from `.workflow-launcher.json`. That marker remains installer-owned metadata for
+distribution checks and other launcher consumers. The installed
 launcher is a materialized snapshot outside the reviewed workspace, and its
-machine-local rule allows only that exact Codex review prefix. The caller must
+machine-local rule allows the exact installed review entrypoint and legacy pinned
+Codex review prefix. The caller must
 not substitute a workspace path or request sandbox escalation. A missing
 marker, runtime, or rule is an installation failure and requires reinstall.
 The trusted snapshot also pins the installed Codex CLI by absolute path, so a
 reviewed repository cannot replace the nested reviewer through `PATH`.
 
-The launcher forces real mode and defaults to the whole current worktree when
-the user does not name a narrower scope. It rejects specialist fan-out and
+The launcher forces real mode. Without an explicit scope, it resolves the current
+valid managed lease's Work Map IDs, or reviews the whole current worktree.
+Explicit scopes and semantic-only mode do not inherit a managed task. Invalid
+existing managed markers fail rather than silently becoming standalone reviews.
+The installed configuration supplies the host; explicit host flags remain
+available to advanced callers of the underlying launcher. The Codex executable
+pins its host and rejects an additional caller-supplied host.
+Real review finds a unique signed unresolved lineage for the same repository,
+base, collection scope and overlapping files, or the same managed task. It then
+validates the authoritative artifact and receipt through the existing closure
+path. Repaired candidates automatically enter evidence repair or closure;
+ambiguous records require an explicit selection. Unchanged candidate and
+contract pairs stop before providers or host dispatch. Deliberate retries after
+an environment correction can still supply `--closure-artifact` explicitly.
+Newly changed files outside the original review block automatic closure before
+execution; closure only reassesses the original findings. Those additional
+changes need separate review, or an explicit artifact selection for a deliberate
+review limited to the original findings.
+The launcher rejects specialist fan-out and
 `--loop`, marks the child environment as an active review, and atomically leases
 the canonical repository plus normalized scope before starting the single host
 call. Child prompts contain semantic judgment inputs; read-only tools, approval,

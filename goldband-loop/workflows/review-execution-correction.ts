@@ -7,6 +7,7 @@ const LEVELS: EvidenceLevel[] = ['fixture', 'local', 'sandboxed-service', 'live-
 function operationExecution(operation: Operation) {
   return {
     network: operation.network,
+    timeoutMs: operation.timeoutMs,
     pythonRuntime: operation.pythonRuntime,
     requiredSystemTools: operation.requiredSystemTools,
     evidenceLevel: operation.evidenceLevel,
@@ -45,7 +46,8 @@ export function isRegisteredExecutionCorrection(
   if (stable(withoutCommands(before)) !== stable(withoutCommands(restoreReviewExecution(before, after)))) return false;
   return before.operations.every((operation) => {
     const successor = after.operations.find((entry) => entry.id === operation.id)!;
-    return LEVELS.indexOf(successor.evidenceLevel) >= LEVELS.indexOf(operation.evidenceLevel);
+    return successor.timeoutMs >= operation.timeoutMs &&
+      LEVELS.indexOf(successor.evidenceLevel) >= LEVELS.indexOf(operation.evidenceLevel);
   });
 }
 

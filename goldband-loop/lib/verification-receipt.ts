@@ -664,6 +664,15 @@ function resolveVerificationContext(cwd: string, env: NodeJS.ProcessEnv) {
 	};
 }
 
+/** Missing markers mean ordinary Git work; malformed existing markers still fail. */
+export function findManagedLeaseForWorktree(cwd: string): ManagedWorktreeLease | undefined {
+	const root = fs.realpathSync(cwd);
+	const gitDir = gitRaw(["rev-parse", "--git-dir"], root, 1024).toString("utf8").trim();
+	const marker = path.join(path.resolve(root, gitDir), MANAGED_MARKER);
+	if (!fs.lstatSync(marker, { throwIfNoEntry: false })) return undefined;
+	return readManagedLeaseForWorktree(cwd);
+}
+
 export function readManagedLeaseForWorktree(
 	cwd: string,
 ): ManagedWorktreeLease {

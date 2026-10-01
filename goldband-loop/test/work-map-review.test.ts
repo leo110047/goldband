@@ -7,6 +7,7 @@ import * as path from "node:path";
 import { createManagedWorktree } from "../lib/managed-worktree";
 import {
 	readAndValidateAnalysisArtifact,
+	findManagedLeaseForWorktree,
 	recordAnalysisArtifact,
 	recordVerification,
 } from "../lib/verification-receipt";
@@ -26,6 +27,17 @@ afterEach(() => {
 });
 
 describe("Work Map review readback", () => {
+	test("discovers managed task IDs from a valid lease and fails on a malformed marker", () => {
+		const { store, repo, state } = fixture();
+		store.create(input(), "codex");
+		expect(findManagedLeaseForWorktree(repo)).toBeUndefined();
+		const lease = createManagedWorktree({ name: "automatic-review", repoRoot: repo, stateRoot: state, ticketId: "ticket-a" });
+		const nested = path.join(lease.worktreePath, "nested");
+		fs.mkdirSync(nested);
+		expect(findManagedLeaseForWorktree(nested)?.workMap).toMatchObject({ workId: "work-a", ticketId: "ticket-a" });
+		fs.writeFileSync(path.join(lease.worktreeGitDir, "goldband-managed-worktree.json"), "{}");
+		expect(() => findManagedLeaseForWorktree(nested)).toThrow("valid managed worktree marker");
+	});
 	test("semantic-only artifact cannot complete an implemented Work Map ticket", () => {
 		const { store } = fixture();
 		const created = store.create(input(), "codex");

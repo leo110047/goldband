@@ -22,8 +22,18 @@ context 或執行錯誤仍會如實回報。接納較大的 diff 也不表示測
 
 ## Automatic project lookup
 
-日常審查直接執行 `goldband review code --host codex` 或 `--host claude`，
-不需要 Agent 提供設定檔路徑。Goldband 以目前 Git common directory 識別專案，
+日常審查在目標 Git 專案呼叫 installed entrypoint：Codex 使用
+`~/.codex/goldband/workflow-runtime/bin/goldband review code`；Claude 使用
+`<installed-skill-root>/bin/goldband review code`。
+Host、預設範圍、managed task IDs 與唯一有效的修復後複查紀錄由程式解析，
+不需要 Agent 讀 launcher JSON、提供設定檔或 closure artifact 路徑。
+明確指定範圍與 `--semantic-only` 不會自動綁定 managed task。
+候選與契約沒有變更時不重複呼叫 reviewer；修正環境後要刻意重試，可明確使用
+`--closure-artifact <path>`。多個符合的未解決紀錄必須明確選擇。
+新增原審查未涵蓋的檔案時，自動 closure 會先阻擋，因為它只重判舊 findings。
+新增變更需另外審查；明確指定 artifact 代表刻意只複查舊 findings。
+完整審查仍要求真實 contract；缺少設定不會自動切換純語意或建立假契約。
+Goldband 以目前 Git common directory 識別專案，
 自動讀取 `~/.goldband/review-contracts/<repository-hash>.json` 的登記內容。
 若設定了 Goldband state root，registry 也使用該位置。沙箱改用暫存目錄存放
 執行結果時，設定仍從原本的 durable registry 讀取。
@@ -240,6 +250,7 @@ Docker Desktop 已有實測。這不代表原生 Linux／Windows sealed runner �
 初始化與測試放在同一個專案擁有的腳本中；不同 operations 不共享容器或資料。
 服務按陣列順序啟動，`ready` 成功後才啟動下一個，全部 ready 後才執行測試。
 `timeoutMs` 包含映像檢查、服務啟動、readiness 與測試；清理另有 30 秒上限。
+單一步驟最高 20 分鐘。延長已登錄的時間預算可作為 execution correction 進入複審，仍須語意審查確認；未登錄的修改、縮短時間或其他驗證條件變更不因此獲准。
 
 Provider 的 execution context 範例（將映像 ID 換成實際準備好的內容）：
 
@@ -388,7 +399,7 @@ Operation 的主要欄位：
 | `target` | `candidate`，或 transition regression provider 的 `base`。 |
 | `argv` | 非空 argument array。第一項必須是由 `PATH` 解析的 command name，不能含 `/` 或 `\\`。 |
 | `expectedExit` | `zero` 或 `nonzero`。後者必須提供 exact `expectedExitCode`。 |
-| `timeoutMs` | `100` 至 `900000`。 |
+| `timeoutMs` | `100` 至 `1200000`。 |
 | `maxOutputBytes` | `1` 至 `65536`。 |
 | `network` | `deny` 或 `authorized`。 |
 | `authorizationId` | `network: authorized` 時必填；deny 時禁止。 |

@@ -302,6 +302,30 @@ describe('cleanupXvfbStrict', () => {
     expect(signalled).toBe(false);
   });
 
+  test('waits for confirmed exit after a transient unknown shutdown probe', async () => {
+    const statuses: Array<'owned' | 'unknown' | 'dead'> = ['owned', 'unknown', 'dead'];
+    const signals: Array<NodeJS.Signals | number> = [];
+    await cleanupXvfbStrict(state, {
+      probeOwnership: () => statuses.shift() ?? 'dead',
+      kill: (_pid, signal) => { signals.push(signal); },
+      sleep: async () => {},
+      timeoutMs: 100,
+    });
+    expect(signals).toEqual(['SIGTERM']);
+  });
+
+  test('rejects persistent unknown shutdown without sending SIGKILL', async () => {
+    let signalled = false;
+    const signals: Array<NodeJS.Signals | number> = [];
+    await expect(cleanupXvfbStrict(state, {
+      probeOwnership: () => signalled ? 'unknown' : 'owned',
+      kill: (_pid, signal) => { signalled = true; signals.push(signal); },
+      sleep: async () => {},
+      timeoutMs: 0,
+    })).rejects.toThrow('Cannot confirm Xvfb 4242 stopped after SIGTERM');
+    expect(signals).toEqual(['SIGTERM']);
+  });
+
   test('rejects when the process remains alive after SIGKILL', async () => {
     const signals: Array<NodeJS.Signals | number> = [];
     await expect(cleanupXvfbStrict(state, {

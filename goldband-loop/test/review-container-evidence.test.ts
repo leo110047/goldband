@@ -152,6 +152,27 @@ async function execute(repo: string, value: ReturnType<typeof fixture>) {
 
 const integrationImage = process.env.GOLDBAND_CONTAINER_TEST_IMAGE;
 const postgresImage = process.env.GOLDBAND_CONTAINER_TEST_POSTGRES_IMAGE;
+
+test.skipIf(!integrationImage)('loads native libraries from the private container build directory', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'review-container-native-')); roots.push(root);
+  const value = fixture(integrationImage!);
+  value.providers[0]!.operations[0]!.argv = ['python3', '-c', `
+import ctypes, pathlib, shutil, tempfile
+ctypes.CDLL('libc.so.6')
+source = next(line.split()[-1] for line in pathlib.Path('/proc/self/maps').read_text().splitlines() if line.endswith('/libc.so.6'))
+with tempfile.TemporaryDirectory() as build:
+    library = pathlib.Path(build) / 'native.so'
+    shutil.copyfile(source, library)
+    assert ctypes.CDLL(str(library)).abs(-17) == 17
+print('PASS native library load from private build directory')
+`];
+  const evidence = await execute(project(root, 'native-project'), value);
+  const result = evidence.records[0]!;
+  expect(result.status, result.outputSummary).toBe('verified-pass');
+  expect(result.snapshotDigestBefore).toBe(result.snapshotDigestAfter);
+  expect(result.outputSummary).toContain('PASS native library load');
+}, 30000);
+
 if (process.env.GOLDBAND_REQUIRE_CONTAINER_EVIDENCE === '1' && (!integrationImage || !postgresImage)) {
   throw new Error('required container evidence prerequisites are missing: provide prepared test and PostgreSQL image IDs');
 }

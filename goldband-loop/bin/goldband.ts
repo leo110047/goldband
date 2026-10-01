@@ -23,6 +23,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { findManagedLeaseForWorktree } from "../lib/verification-receipt";
 import {
 	abortCreatedManagedWorktree,
 	createManagedWorktree,
@@ -110,8 +111,12 @@ type TrustedLauncherHandlers = {
 function printUsage(stream: Pick<Console, "log">): void {
 	stream.log("Usage:");
 	stream.log(
-		"  goldband review code --host <claude|codex> [--work-id <id> --ticket-id <id>] [--semantic-only] [--evidence-manifest <file>] [--closure-artifact <initial-review-artifact>] [--staged|--worktree|--base <ref>|--diff-file <file>] [--include-untracked] [--review-host-timeout-seconds <60-1800>] [--review-pass-timeout-seconds <60-1800>] [--review-claude-max-budget-usd <0.01-100.00>]",
+		"  goldband review code [--semantic-only] [--staged|--worktree|--base <ref>|--diff-file <file>]",
 	);
+	stream.log("    Host, project contract, managed task and repaired-review continuation are resolved automatically.");
+	stream.log("    Default: review the managed task or current worktree with execution evidence. --semantic-only: inspect code without executing checks.");
+	stream.log("    Advanced: --host <claude|codex> --work-id <id> --ticket-id <id> --evidence-manifest <file> --closure-artifact <file> --include-untracked");
+	stream.log("    Budgets: --review-host-timeout-seconds <60-1800> --review-pass-timeout-seconds <60-1800> --review-claude-max-budget-usd <0.01-100.00>");
 	stream.log(
 		"  goldband review contract help",
 		"  goldband review contract init [--output <path>]",
@@ -237,9 +242,16 @@ function assertSemanticReviewArgs(args: string[]): void {
   }
 }
 
-export function buildReviewRuntimeArgs(args: string[]): string[] {
+type ReviewLaunchContext = { host?: ReviewHost; workMap?: { workId: string; ticketId: string } };
+
+export function buildReviewRuntimeArgs(args: string[], context: ReviewLaunchContext = {}): string[] {
 	assertSemanticReviewArgs(args);
-	return parseReviewRuntimeArgs(args);
+	const ownsScope = args.some((arg) => [...REVIEW_SCOPE_FLAGS, "--work-id", "--ticket-id", "--semantic-only"].includes(arg));
+	const resolved = context.workMap && !ownsScope
+		? [...args, "--work-id", context.workMap.workId, "--ticket-id", context.workMap.ticketId]
+		: args;
+	return parseReviewRuntimeArgs(context.host && !resolved.includes("--host")
+		? ["--host", context.host, ...resolved] : resolved);
 }
 
 function parseReviewRuntimeArgs(args: string[]): string[] {
@@ -395,11 +407,16 @@ function installedSourceRoot(runtimeRoot: string): string | undefined {
 
 function reviewCode(args: string[]): number {
 	assertReviewNotNested(process.env);
+	if (args.includes("--help") || args.includes("-h")) {
+		printUsage(console);
+		return 0;
+	}
 	const runtimeFile = resolveWorkflowRuntimeFile();
-	const runtimeArgs = buildReviewRuntimeArgs(args);
+	const entryFile = fileURLToPath(import.meta.url);
+	const trustedRuntime = readTrustedRuntimeConfig(entryFile);
+	const runtimeArgs = resolveReviewLaunchArgs(args, entryFile, trustedRuntime?.config);
 	const reviewEnvironment = prepareReviewProcessEnvironment(process.env);
 	runtimeArgs.push("--goldband-home", reviewEnvironment.evidenceRoot);
-	const trustedRuntime = readTrustedRuntimeConfig(fileURLToPath(import.meta.url));
 	if (trustedRuntime) {
 		reviewEnvironment.env[REVIEW_RECEIPT_TRUSTED_CONFIG_ENV] =
 			trustedRuntime.configFile;
@@ -441,6 +458,21 @@ function reviewCode(args: string[]): number {
 	} finally {
 		releaseReviewExecutionLease(lease);
 	}
+}
+
+function resolveReviewLaunchArgs(args: string[], entryFile: string, config?: Record<string, unknown>): string[] {
+	const configuredHost = config?.runtimeHost;
+	if (config && configuredHost !== "codex" && configuredHost !== "claude") {
+		throw new Error("installed review runtime has no valid host; reinstall Goldband workflows");
+	}
+	const context: ReviewLaunchContext = {
+		host: configuredHost as ReviewHost | undefined ??
+			(args.includes("--host") ? undefined : inferPlanHost(entryFile, process.env)),
+	};
+	const validatedArgs = buildReviewRuntimeArgs(args, context);
+	if (args.some((arg) => [...REVIEW_SCOPE_FLAGS, "--work-id", "--ticket-id", "--semantic-only"].includes(arg))) return validatedArgs;
+	const lease = findManagedLeaseForWorktree(process.cwd());
+	return lease?.workMap ? buildReviewRuntimeArgs(args, { ...context, workMap: lease.workMap }) : validatedArgs;
 }
 
 function reviewContract(args: string[]): number {

@@ -1618,7 +1618,7 @@ function validateEvidenceOperation(value: unknown, executionContext: EvidenceExe
   const requiredSystemTools = validateRequiredSystemTools(item.requiredSystemTools);
   const pythonRuntime = operationPythonRuntime(item, argv, network, executionContext);
   validatePythonSystemToolOwnership(pythonRuntime, requiredSystemTools);
-  const timeoutMs = boundedInteger(item.timeoutMs, 'evidence operation.timeoutMs', 100, 15 * 60 * 1000);
+  const timeoutMs = boundedInteger(item.timeoutMs, 'evidence operation.timeoutMs', 100, 20 * 60 * 1000);
   const maxOutputBytes = boundedInteger(item.maxOutputBytes, 'evidence operation.maxOutputBytes', 1, MAX_REVIEW_EVIDENCE_OUTPUT_BYTES);
   const expectedExitCode = item.expectedExitCode === undefined
     ? undefined

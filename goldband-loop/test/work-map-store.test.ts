@@ -5,7 +5,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
-	rmdirSync,
+	renameSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
@@ -624,8 +624,9 @@ describe("WorkMapStore", () => {
 		writeFileSync(start, "");
 		await waitForFile(calling);
 		writeFileSync(primary.activePath, primaryPointer);
-		rmSync(lockOwner);
-		rmdirSync(lock);
+		const releasedLock = `${lock}.released-test-owner`;
+		renameSync(lock, releasedLock);
+		rmSync(releasedLock, { recursive: true, force: true });
 
 		const exitCode = await worker.exited;
 		const workerError = await new Response(worker.stderr).text();

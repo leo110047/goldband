@@ -76,6 +76,18 @@ function starlarkString(value: string): string {
 	return JSON.stringify(value);
 }
 
+function shellArgument(value: string): string {
+	return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function installEntry(stageRoot: string, runtimeRoot: string, bunPath: string, launcherEntry: string): void {
+	bundle(bunPath, launcherEntry, join(stageRoot, "bin", "goldband.js"));
+	const command = `${shellArgument(bunPath)} ${shellArgument(join(runtimeRoot, "bin", "goldband.js"))}`;
+	writeFileSync(join(stageRoot, "bin", "goldband"),
+		`#!/bin/sh\nif [ "\${1:-}" = review ] && [ "\${2:-}" = code ]; then\n  shift 2\n  exec ${command} review code --host codex "$@"\nfi\nexec ${command} "$@"\n`,
+		{ mode: 0o700 });
+}
+
 export function renderCodexReviewRule(marker: CodexReviewLauncherMarker): string {
 	const [bunPath, launcherPath] = marker.argvPrefix;
 	const reviewPattern = [
@@ -118,6 +130,12 @@ export function renderCodexReviewRule(marker: CodexReviewLauncherMarker): string
 		`    pattern = [${reviewPattern}],`,
 		'    decision = "allow",',
 		'    justification = "Run Goldband-owned read-only typed code review without an approval prompt",',
+		")",
+		"",
+		"prefix_rule(",
+		`    pattern = [${starlarkString(join(marker.runtimeRoot, "bin", "goldband"))}, "review", "code"],`,
+		'    decision = "allow",',
+		'    justification = "Run the installed Goldband review entrypoint with its configured host",',
 		")",
 		"",
 		...browserRules,
@@ -265,7 +283,7 @@ export function installCodexReviewLauncher(
 	recoverInterruptedRuntimeSwap(runtimeRoot, backupRoot);
 	rmSync(stageRoot, { recursive: true, force: true });
 	try {
-		bundle(bunPath, launcherEntry, join(stageRoot, "bin", "goldband.js"));
+		installEntry(stageRoot, runtimeRoot, bunPath, launcherEntry);
 		bundle(bunPath, runtimeEntry, join(stageRoot, "workflows", "run.ts"));
 		bundle(
 			bunPath,

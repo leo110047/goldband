@@ -256,3 +256,7 @@ process.stdout.write(`${value.mode}\t${value.repository || ""}`);
         echo -e "  ${YELLOW}[blocked]${NC} Work Map tracker: $mode ($repository), auth unavailable"
     fi
 }
+codex_review_entrypoint_allows() {
+    local codex_path="$1" rule="$2" runtime_root="$3"
+    [ -x "$runtime_root/bin/goldband" ] && codex_workflow_policy_allows "$codex_path" "$rule" "$runtime_root/bin/goldband" review code
+}

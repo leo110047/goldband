@@ -325,8 +325,8 @@ process.stdout.write([config.bunExecutable, config.codexExecutable, config.brows
         GOLDBAND_STATUS_EXIT_CODE=2
         return 0
     fi
-    if ! codex_workflow_policy_allows "$codex_path" "$rule" "$bun_path" "$launcher_path" review code --host codex; then
-        echo -e "  ${RED}[stale]${NC} trusted Codex workflow launcher — pinned Codex does not match the review allow rule"
+    if ! codex_workflow_policy_allows "$codex_path" "$rule" "$bun_path" "$launcher_path" review code --host codex || ! codex_review_entrypoint_allows "$codex_path" "$rule" "$runtime_root"; then
+        echo -e "  ${RED}[stale]${NC} trusted Codex workflow launcher — pinned runtime or review entrypoint does not match review allow rules"
         GOLDBAND_STATUS_EXIT_CODE=2
         return 0
     fi

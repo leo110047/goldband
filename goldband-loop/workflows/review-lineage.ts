@@ -14,6 +14,7 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type {
+  CandidateBinding,
   EvidenceLevel,
   InitialReviewArtifact,
   ReviewEvidenceManifest,
@@ -140,11 +141,56 @@ export function reviewLineageScopeDigest(
   authority: { workId: string; ticketId: string } | { changedFiles: string[] },
 ): string {
   return 'workId' in authority
-    ? sha256(stableJson({ candidateScopeDigest, workMap: authority }))
+    ? sha256(stableJson({ candidateScopeDigest,
+      workMap: { workId: authority.workId, ticketId: authority.ticketId } }))
     : sha256(stableJson({
       candidateScopeDigest,
       changedFiles: [...new Set(authority.changedFiles)].sort(),
     }));
+}
+
+/** Resolve a continuation only from the installed authority's signed records. */
+export function findReviewContinuation(options: {
+  storeRoot: string;
+  key: Buffer;
+  binding: Omit<CandidateBinding, 'behaviorContractDigest'>;
+  workMap?: { workId: string; ticketId: string };
+}): { artifactFile: string; lastCandidateDigest: string; lastBehaviorContractDigest: string } | undefined {
+  const root = join(options.storeRoot, 'review-lineages');
+  const stat = lstatSync(root, { throwIfNoEntry: false });
+  if (!stat) return undefined;
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('unsafe review lineage store');
+  const matches: ReviewLineagePayload[] = [];
+  for (const name of readdirSync(root).filter((name) => name.endsWith('.json')).sort()) {
+    const lineage = readSignedLineage(join(root, name), options.key);
+    if (lineage && continuationMatches(lineage, options)) matches.push(lineage);
+  }
+  if (matches.length > 1) {
+    throw new Error('review continuation is ambiguous; select the intended --closure-artifact or a narrower review scope');
+  }
+  const lineage = matches[0];
+  if (!lineage) return undefined;
+  const scope = verifiedArtifactScope(lineage);
+  if (!scope) throw new Error(openFindingsMessage(lineage));
+  const reviewedFiles = new Set(scope.changedFiles);
+  const newFiles = options.binding.changedFiles.filter((file) => !reviewedFiles.has(file));
+  if (newFiles.length) {
+    throw new Error(`automatic closure would leave new files unreviewed: ${newFiles.join(', ')}. Review these changes separately; use --closure-artifact ${lineage.authoritativeArtifact!.file} only for a deliberate review limited to the original findings.`);
+  }
+  return { artifactFile: lineage.authoritativeArtifact!.file,
+    lastCandidateDigest: lineage.lastCandidateDigest,
+    lastBehaviorContractDigest: lineage.lastBehaviorContractDigest };
+}
+
+function continuationMatches(lineage: ReviewLineagePayload, options: Parameters<typeof findReviewContinuation>[0]): boolean {
+  const { binding, workMap } = options;
+  if (!lineage.unresolvedFindings.length || lineage.repository !== binding.repository ||
+      lineage.baseDigest !== binding.baseDigest) return false;
+  if (workMap) return lineage.scopeDigest === reviewLineageScopeDigest(binding.scopeDigest, workMap);
+  if ((lineage.collectionScopeDigest ?? lineage.scopeDigest) !== binding.scopeDigest) return false;
+  if (!binding.changedFiles.length) return true;
+  const scope = lineage.scopeSummary ?? verifiedArtifactScope(lineage)?.changedFiles;
+  return scope ? scopesOverlap(scope, binding.changedFiles) : lineage.lastCandidateDigest === binding.candidateDigest;
 }
 
 export function prepareReviewLineage(options: {

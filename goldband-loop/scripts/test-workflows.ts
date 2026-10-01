@@ -39,6 +39,8 @@ export const MACOS_REVIEW_HOST_TEST_NAMES = [
   'Work Map review readback > review rejects a code candidate changed after the model pass',
   'Work Map review readback > verified deterministic failure remains blocking after semantic normalization',
   'Codex trusted workflow launcher install > materializes review and browser owners with exact allow rules outside source',
+  'Codex trusted workflow launcher install > automatically resumes and deduplicates signed partial closure',
+  'Codex trusted workflow launcher install > automatically resumes a managed review with verified repair',
   'workflow runtime > core compatibility workflows emit evidence in mock mode',
   'workflow runtime > review/code typed flow renders validated report',
   'workflow runtime > CLI warns when max-iterations is provided without loop',
