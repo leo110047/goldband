@@ -148,13 +148,13 @@ const reviewCodeContract = contracts.get(
 );
 assert.match(
   reviewCodeContract,
-  /bin\/goldband review code --host claude/,
+  /Claude: <skill-root>\/bin\/goldband review code/,
   'review/code must launch the real typed runtime from interactive Claude invocations',
 );
 assert.match(
   reviewCodeContract,
-  /\.workflow-launcher\.json and execute its exact argvPrefix plus review code --host codex/,
-  'review/code must use the installed trusted Codex launcher prefix',
+  /Codex: ~\/\.codex\/goldband\/workflow-runtime\/bin\/goldband review code/,
+  'review/code must use the installed executable without asking agents to assemble launcher JSON',
 );
 assert.doesNotMatch(
   reviewCodeContract,
@@ -218,8 +218,8 @@ assert.match(
 );
 assert.match(
   reviewCodeContract,
-  /Missing marker, runtime, or rule is an install failure/,
-  'review/code must fail closed when the trusted launcher installation is incomplete',
+  /Missing runtime or rule is an install failure/,
+  'review/code must fail closed when the installed executable or native rule is missing',
 );
 assert.ok(
   Buffer.byteLength(reviewCodeContract) <= 1024,

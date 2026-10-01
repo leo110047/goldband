@@ -38,6 +38,7 @@ import {
   classifyReviewFindings,
   closureResultsSchema,
   createCandidateBinding,
+  createReviewCandidateBinding,
   createReviewArtifactPath,
   executeEvidencePlan,
   initialReviewArtifactDigest,
@@ -68,6 +69,7 @@ import {
   assertReviewContractBoundary,
   finalizeClosureReviewLineage,
   finalizeInitialReviewLineage,
+  findReviewContinuation,
   prepareReviewLineage,
   releaseReviewLineage,
   reviewLineageScopeDigest,
@@ -286,13 +288,36 @@ function collectImpactContext(ctx: WorkflowContext) {
   return collectReviewImpactContext(ctx, input, timeBudget);
 }
 
-function planEvidence(ctx: WorkflowContext) {
-  const input = reviewInputSchema.validate(ctx.input);
-  const workMapBinding = ctx.options.workId
-    ? loadWorkMapReviewBinding(ctx, input.diff)
-    : undefined;
-  if (workMapBinding) workMapReviewBindings.set(ctx.runId, workMapBinding);
-  const closureArtifact = readClosureArtifact(ctx);
+function resolveReviewClosureArtifact(ctx: WorkflowContext, input: ReviewDiffInput, workMap?: WorkMapReviewBinding) {
+  const explicit = ctx.options.closureArtifactFile;
+  let automatic: ReturnType<typeof findReviewContinuation>;
+  if (!explicit && ctx.options.mode === 'real') {
+    const authority = reviewLineageAuthority(ctx);
+    automatic = findReviewContinuation({
+      storeRoot: authority.receiptRoot, key: authority.key,
+      binding: createReviewCandidateBinding(resolveReviewWorkspace(ctx.cwd).repositoryRoot, input, ctx.options.base),
+      workMap,
+    });
+  }
+  const artifactContext = automatic
+    ? { ...ctx, options: { ...ctx.options, closureArtifactFile: automatic.artifactFile } }
+    : ctx;
+  return { artifact: readClosureArtifact(artifactContext), automatic };
+}
+
+function assertChangedContinuation(closure: ReturnType<typeof resolveReviewClosureArtifact>, binding: ReturnType<typeof createCandidateBinding>): void {
+  if (closure.automatic &&
+      binding.candidateDigest === closure.automatic.lastCandidateDigest &&
+      binding.behaviorContractDigest === closure.automatic.lastBehaviorContractDigest) {
+    throw new Error(`review candidate and contract are unchanged; reuse the previous report. For a deliberate environment retry, pass --closure-artifact ${closure.automatic.artifactFile}`);
+  }
+}
+
+function loadEvidenceReviewContext(ctx: WorkflowContext, input: ReturnType<typeof reviewInputSchema.validate>, workMapBinding?: WorkMapReviewBinding) {
+  const workspace = resolveReviewWorkspace(ctx.cwd);
+  const authority = reviewLineageAuthority(ctx);
+  const continuation = resolveReviewClosureArtifact(ctx, input, workMapBinding);
+  const closureArtifact = continuation.artifact;
   if (!closureArtifact && input.impact.changedFiles.length === 0) {
     throw new Error(
       'review/code initial candidate is empty; no authoritative lineage was created',
@@ -301,12 +326,20 @@ function planEvidence(ctx: WorkflowContext) {
   if (closureArtifact && workMapBinding) {
     assertWorkMapClosureCausality(closureArtifact, workMapBinding);
   }
-  const workspace = resolveReviewWorkspace(ctx.cwd);
   const loaded = resolveReviewContract(ctx, input, closureArtifact);
   for (const extension of loaded.monotonicExtensions ?? []) {
     assertReviewContractBoundary(extension.baseline, extension.effective);
   }
   const binding = createCandidateBinding(workspace.repositoryRoot, input, loaded.manifest, ctx.options.base);
+  assertChangedContinuation(continuation, binding);
+  return { workspace, authority, closureArtifact, loaded, binding };
+}
+
+function planEvidence(ctx: WorkflowContext) {
+  const input = reviewInputSchema.validate(ctx.input);
+  const workMapBinding = ctx.options.workId ? loadWorkMapReviewBinding(ctx, input.diff) : undefined;
+  if (workMapBinding) workMapReviewBindings.set(ctx.runId, workMapBinding);
+  const { workspace, authority, closureArtifact, loaded, binding } = loadEvidenceReviewContext(ctx, input, workMapBinding);
   const manifest = loaded.manifest.providers.some((provider) => provider.lifecycle === 'transition')
     ? validateTransitionReviewEvidenceManifest(loaded.manifest, binding)
     : loaded.manifest;
@@ -335,7 +368,6 @@ function planEvidence(ctx: WorkflowContext) {
     baseDigest: binding.baseDigest,
     scopeDigest: lineageScopeDigest,
   }));
-  const authority = reviewLineageAuthority(ctx);
   const lineage = prepareReviewLineage({
     cwd: workspace.repositoryRoot,
     storeRoot: authority.receiptRoot,

@@ -24,9 +24,13 @@ _goldband_prelaunch_update() {
 
 _goldband_runtime_bin() {
   local candidate
-  for candidate in \
-    "$HOME/.codex/skills/goldband/bin/goldband" \
-    "$HOME/.claude/skills/goldband/bin/goldband"
+  local candidates=("$HOME/.codex/goldband/workflow-runtime/bin/goldband" "$HOME/.claude/skills/goldband/bin/goldband")
+  if [ -n "${CLAUDECODE:-}${CLAUDE_PLUGIN_ROOT:-}" ]; then
+    candidates=("$HOME/.claude/skills/goldband/bin/goldband")
+  elif [ -n "${CODEX_THREAD_ID:-}${CODEX_HOME:-}" ]; then
+    candidates=("$HOME/.codex/goldband/workflow-runtime/bin/goldband")
+  fi
+  for candidate in "${candidates[@]}"
   do
     if [ -x "$candidate" ]; then
       printf '%s\n' "$candidate"

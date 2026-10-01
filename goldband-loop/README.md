@@ -67,9 +67,15 @@ without running evidence, changing the store, or granting completion authority.
 The effective contract declares behavior cells and typed provider commands; the
 runtime executes each operation in its own read-only,
 default-deny read/write/network snapshot, verifies the pre/post tree digest, and requires reciprocal provider/cell
-ownership plus an exact RED exit code before one semantic host call. After a finding is repaired, pass the initial JSON
-artifact through `--closure-artifact` with the same review scope to run one
-repair-delta-only closure call. Closure also accepts a repaired manifest and
+ownership plus an exact RED exit code before one semantic host call. After a
+finding is repaired, repeat the installed `goldband review code` entrypoint with
+the same scope. It finds the unique signed unresolved lineage, validates its
+authoritative artifact and receipt, and runs one repair-delta-only closure call.
+Ambiguous records require an explicit `--closure-artifact` selection. Additional
+changed files outside the original review block automatic closure because they
+need separate review. Unchanged
+candidates and contracts stop before another provider or host call.
+Closure also accepts a repaired manifest and
 reruns newly added or modified affected cells; `closed` requires fresh passing
 evidence. Installed-runtime receipt plus Work Map requested-changes readback rejects
 caller-edited, cross-scope, or prior-attempt initial artifacts. The same OS user remains

@@ -742,12 +742,11 @@
         97,
         22,
         17,
-        16,
-        15
+        16
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
         168,
-        91,
+        77,
         74,
         71,
         62,

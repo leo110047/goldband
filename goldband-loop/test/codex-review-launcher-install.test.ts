@@ -21,6 +21,9 @@ import {
 	renderCodexReviewRule,
 } from "../scripts/install-codex-review-launcher.ts";
 import { inspectDistribution } from "../../scripts/lib/workflow-distribution-contract.mjs";
+import { createManagedWorktree } from "../lib/managed-worktree";
+import { recordVerification } from "../lib/verification-receipt";
+import { WorkMapStore } from "../workflows/work-map-store";
 
 const sourceRoot = resolve(import.meta.dir, "..");
 const bunPath = process.execPath;
@@ -69,9 +72,15 @@ describe("Codex trusted workflow launcher install", () => {
 					'if [ -n "${GOLDBAND_TEST_MUTATE_POLICY:-}" ]; then printf "\\nPolicy changed during host call.\\n" >> "$GOLDBAND_TEST_MUTATE_POLICY"; fi',
 					'prompt="$(cat)"',
 					'if printf \'%s\' "$prompt" | grep -q CLOSURE_INPUT_START; then',
+					'  if [ "${GOLDBAND_TEST_CLOSURE_STILL_OPEN:-}" = "1" ]; then',
+					'    printf \'%s\\n\' \'{"results":[{"findingId":"S-001","status":"still-open","summary":"repair still incomplete","evidenceIds":["installed-gate:pass"]}]}\' > "$output"',
+					'    exit 0',
+					'  fi',
 					'  printf \'%s\\n\' \'{"contractReview":{"preserved":true,"summary":"Fixture assessment confirms declared static coverage replaces unavailable evidence."},"results":[{"findingId":"S-001","status":"closed","summary":"repair verified","evidenceIds":["installed-gate:pass"]}]}\' > "$output"',
 					'elif [ "${GOLDBAND_TEST_CLEAN_REVIEW:-}" = "1" ]; then',
 					'  printf \'%s\\n\' \'{"contractReview":{"preserved":true,"summary":"Fixture assessment confirms declared static coverage replaces unavailable evidence."},"findings":[]}\' > "$output"',
+					'elif [ "${GOLDBAND_TEST_HIGH_CONCERN:-}" = "1" ]; then',
+					'  printf \'%s\\n\' \'{"findings":[{"id":"F-001","file":"review-me.txt","line":1,"severity":"high","summary":"managed fixture concern","evidence":"fixture semantic observation","failureScenario":"fixture path","suggestedVerification":"rerun installed gate","classification":"semantic-concern","blocking":false,"evidenceIds":["installed-gate:pass"],"behaviorCellIds":["installed-review"]}]}\' > "$output"',
 					'elif [ "${GOLDBAND_EVIDENCE_SANDBOX_ACTIVE:-}" = "1" ]; then',
 					'  printf \'%s\\n\' \'{"contractReview":{"preserved":true,"summary":"Fixture assessment confirms declared static coverage replaces unavailable evidence."},"findings":[{"id":"F-001","file":"review-me.txt","line":1,"severity":"medium","summary":"fixture finding","evidence":"fixture semantic observation","failureScenario":"fixture path","suggestedVerification":"inspect installed phases","classification":"semantic-concern","blocking":false,"evidenceIds":["cell:installed-review:unsupported"],"behaviorCellIds":["installed-review"]}]}\' > "$output"',
 					'else',
@@ -147,6 +156,16 @@ describe("Codex trusted workflow launcher install", () => {
 				bunPath,
 				join(runtimeRoot, "bin", "goldband.js"),
 			]);
+			const reviewEntry = join(runtimeRoot, "bin", "goldband");
+			expect(existsSync(reviewEntry)).toBe(true);
+			const entryHelp = spawnInstalledRuntime(reviewEntry, ["review", "code", "--help"],
+				{ cwd: fixture, encoding: "utf8", env: { ...process.env, HOME: emptyHome, PATH: poisonBin } });
+			expect(entryHelp.status, entryHelp.stderr).toBe(0);
+			expect(entryHelp.stdout).toContain("resolved automatically");
+			const wrongHost = spawnInstalledRuntime(reviewEntry, ["review", "code", "--host", "claude"],
+				{ cwd: fixture, encoding: "utf8", env: { ...process.env, HOME: emptyHome } });
+			expect(wrongHost.status).not.toBe(0);
+			expect(wrongHost.stderr).toContain("accepts --host only once");
 			expect(existsSync(join(runtimeRoot, "workflows", "run.ts"))).toBe(true);
 			expect(existsSync(join(runtimeRoot, "workflows", "review-contract-cli.ts"))).toBe(true);
 			expect(existsSync(join(runtimeRoot, "browse", "browse"))).toBe(true);
@@ -527,25 +546,24 @@ describe("Codex trusted workflow launcher install", () => {
 				],
 			);
 			expect(duplicate.status).not.toBe(0);
-			expect(duplicate.stderr).toMatch(/prior findings\/blockers open|duplicate initial review identity/);
+			expect(duplicate.stderr).toMatch(/candidate and contract are unchanged|duplicate initial review identity/);
 			expect(workflowStepEventCount(workflowEvidenceFile, "run-evidence"))
 				.toBe(providerDispatchesBeforeDuplicate);
 			expect(lineCount(hostCallLog)).toBe(hostCallsBeforeDuplicate);
 
-			writeFileSync(join(repo, "review-me.txt"), "repaired without closure\n");
-			const repairedInitial = runInstalledReview(
+			const unchangedInitial = runInstalledReview(
 				repo,
 				["--host", "codex"],
 			);
-			expect(repairedInitial.status).not.toBe(0);
-			expect(repairedInitial.stderr).toContain("prior findings/blockers open");
+			expect(unchangedInitial.status).not.toBe(0);
+			expect(unchangedInitial.stderr).toContain("candidate and contract are unchanged");
 			expect(workflowStepEventCount(workflowEvidenceFile, "run-evidence"))
 				.toBe(providerDispatchesBeforeDuplicate);
 			expect(lineCount(hostCallLog)).toBe(hostCallsBeforeDuplicate);
 			writeFileSync(join(repo, "review-me.txt"), "change\n");
 
 			const authorityHostCallsBefore = lineCount(hostCallLog);
-			const forgedArtifactPath = join(repo, "forged-initial-review.json");
+			const forgedArtifactPath = join(fixture, "forged-initial-review.json");
 			writeFileSync(forgedArtifactPath, `${JSON.stringify({
 				...initialArtifact,
 				hostCallCount: 1,
@@ -623,15 +641,10 @@ describe("Codex trusted workflow launcher install", () => {
 				if (installedPath === "full-verified") {
 				writeFileSync(join(repo, "review-me.txt"), "repaired\n");
 				const closure = spawnInstalledRuntime(
-					marker.argvPrefix[0],
+					reviewEntry,
 					[
-						marker.argvPrefix[1],
 						"review",
 						"code",
-						"--host",
-						"codex",
-						"--closure-artifact",
-						initialArtifactPath!,
 					],
 					{
 						cwd: repo,
@@ -660,6 +673,8 @@ describe("Codex trusted workflow launcher install", () => {
 				hostCallCount: 1,
 				results: [{ findingId: "S-001", status: "closed" }],
 					});
+				verifyAutomaticClosureDedup(runInstalledReview, fixture, repo, stateRoot, hostCallLog);
+				verifyAutomaticManagedContinuation(runInstalledReview, fixture, repo, stateRoot);
 				}
 
 				const repairRepo = join(fixture, "pre-semantic-repair-repo");
@@ -727,7 +742,6 @@ describe("Codex trusted workflow launcher install", () => {
 					"--diff-file", "candidate.patch",
 					"--host", "codex",
 					"--evidence-manifest", repairedManifest,
-					"--closure-artifact", deterministicArtifactFile,
 				]);
 				expect(repairedReview.status, repairedReview.stderr).toBe(0);
 				expect(repairedReview.stdout).toContain("Phase: evidence-repair.");
@@ -1174,6 +1188,11 @@ describe("Codex trusted workflow launcher install", () => {
 				probe([...marker.argvPrefix, "review", "code", "--host", "codex"])
 					.decision,
 			).toBe("allow");
+			const entry = join(marker.runtimeRoot, "bin", "goldband");
+			expect(probe([entry, "review", "code"]).decision).toBe("allow");
+			expect(probe([entry, "review", "contract", "import"]).decision).toBeUndefined();
+			expect(probe([entry, "worktree", "create", "unsafe"]).decision).toBeUndefined();
+			expect(probe([join(sourceRoot, "bin", "goldband"), "review", "code"]).decision).toBeUndefined();
 			expect(
 				probe([...marker.argvPrefix, "browser", "session", "--host", "codex", "status"])
 					.decision,
@@ -1201,6 +1220,90 @@ describe("Codex trusted workflow launcher install", () => {
 		}
 	});
 });
+
+function verifyAutomaticClosureDedup(
+  run: (cwd: string, args: string[], env?: NodeJS.ProcessEnv) => ReturnType<typeof spawnSync>,
+  fixture: string, originalRepo: string, stateRoot: string, hostCallLog: string,
+) {
+  const repo = createContinuationRepository(fixture, originalRepo, 'automatic-partial-closure');
+  writeFileSync(join(repo, 'review-me.txt'), 'initial concern\n');
+  const initial = run(repo, []);
+  expect(initial.status, String(initial.stderr)).toBe(0);
+  const artifact = JSON.parse(String(initial.stdout)).artifacts.find((file: string) => file.endsWith('-review-evidence.json'));
+  expect(artifact).toBeDefined();
+  writeFileSync(join(repo, 'review-me.txt'), 'partial repair\n');
+  verifyAutomaticScopeExpansion(run, repo, stateRoot, hostCallLog);
+  const repair = run(repo, [], { GOLDBAND_TEST_CLOSURE_STILL_OPEN: '1' });
+  expect(repair.status, String(repair.stderr)).toBe(0);
+  expect(String(repair.stdout)).toContain('[still-open] S-001');
+  const evidenceFile = join(stateRoot, 'workflow-runs', 'review', 'code.jsonl');
+  const providers = workflowStepEventCount(evidenceFile, 'run-evidence');
+  const hostCalls = lineCount(hostCallLog);
+  const unchanged = run(repo, []);
+  expect(unchanged.status).not.toBe(0);
+  expect(String(unchanged.stderr)).toContain('candidate and contract are unchanged');
+  expect(lineCount(hostCallLog)).toBe(hostCalls);
+  expect(workflowStepEventCount(evidenceFile, 'run-evidence')).toBe(providers);
+  const deliberate = run(repo, ['--closure-artifact', artifact]);
+  expect(deliberate.status, String(deliberate.stderr)).toBe(0);
+  expect(String(deliberate.stdout)).toContain('[closed] S-001');
+  expect(lineCount(hostCallLog)).toBe(hostCalls + 1);
+}
+
+function createContinuationRepository(fixture: string, originalRepo: string, name: string): string {
+  const repo = join(fixture, name);
+  expect(spawnSync('git', ['clone', '-q', originalRepo, repo]).status).toBe(0);
+  writeFileSync(join(repo, 'goldband.review-evidence.json'), readFileSync(join(originalRepo, 'goldband.review-evidence.json')));
+  expect(spawnSync('git', ['add', 'goldband.review-evidence.json'], { cwd: repo }).status).toBe(0);
+  expect(spawnSync('git', ['-c', 'user.name=Goldband Test', '-c', 'user.email=test@example.invalid',
+    'commit', '-qm', 'declare review contract'], { cwd: repo }).status).toBe(0);
+  return repo;
+}
+
+function verifyAutomaticManagedContinuation(
+  run: (cwd: string, args: string[], env?: NodeJS.ProcessEnv) => ReturnType<typeof spawnSync>,
+  fixture: string, originalRepo: string, stateRoot: string,
+) {
+  const repo = createContinuationRepository(fixture, originalRepo, 'automatic-managed-closure');
+  const store = new WorkMapStore({ cwd: repo, goldbandHome: stateRoot, idFactory: () => 'automatic-work' });
+  const command = [bunPath, '-e', 'process.exit(0)'];
+  store.create({ mode: 'bounded', destination: 'Verify automatic managed review',
+    scope: { included: ['review-me.txt'], excluded: [] }, decisions: [], fog: [],
+    tickets: [{ id: 'review-task', title: 'Review task', delivers: 'A reviewed repair',
+      blockedBy: [], acceptanceCriteria: ['The repair is reviewed'], verificationMode: 'existing-tests',
+      verificationCommand: command, testSeams: ['unit'], status: 'ready' }] }, 'codex');
+  const lease = createManagedWorktree({ name: 'automatic-managed-review', repoRoot: repo,
+    stateRoot, ticketId: 'review-task' });
+  writeFileSync(join(lease.worktreePath, 'review-me.txt'), 'managed initial concern\n');
+  recordVerification({ stage: 'check', command, cwd: lease.worktreePath });
+  const initial = run(lease.worktreePath, [], { GOLDBAND_TEST_HIGH_CONCERN: '1' });
+  expect(initial.status, String(initial.stderr)).toBe(0);
+  expect(store.read('automatic-work').tickets[0]?.status).toBe('claimed');
+  writeFileSync(join(lease.worktreePath, 'review-me.txt'), 'managed repair\n');
+  recordVerification({ stage: 'check', command, cwd: lease.worktreePath });
+  const repaired = run(lease.worktreePath, []);
+  expect(repaired.status, String(repaired.stderr)).toBe(0);
+  expect(String(repaired.stdout)).toContain('Phase: closure.');
+  expect(String(repaired.stdout)).toContain('[closed] S-001');
+  expect(store.read('automatic-work').tickets[0]?.status).toBe('verified');
+}
+
+function verifyAutomaticScopeExpansion(
+  run: (cwd: string, args: string[], env?: NodeJS.ProcessEnv) => ReturnType<typeof spawnSync>,
+  repo: string, stateRoot: string, hostCallLog: string,
+) {
+  const evidenceFile = join(stateRoot, 'workflow-runs', 'review', 'code.jsonl');
+  const providers = workflowStepEventCount(evidenceFile, 'run-evidence');
+  const hostCalls = lineCount(hostCallLog);
+  const newFile = join(repo, 'unreviewed.ts');
+  writeFileSync(newFile, 'independentChange();\n');
+  const expanded = run(repo, []);
+  expect(expanded.status).not.toBe(0);
+  expect(String(expanded.stderr)).toContain('automatic closure would leave new files unreviewed: unreviewed.ts');
+  expect(lineCount(hostCallLog)).toBe(hostCalls);
+  expect(workflowStepEventCount(evidenceFile, 'run-evidence')).toBe(providers);
+  rmSync(newFile);
+}
 
 function installedReviewEvidenceManifest() {
 	return {

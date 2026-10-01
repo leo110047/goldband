@@ -2576,3 +2576,26 @@ artifact readback, closure deltas, and both host adapters at the full stdin
 budget. The larger ceiling allows higher review cost and is not a token-window
 guarantee. Revisit input packaging if real host context failures or review-quality
 evidence show that complete input at this ceiling is impractical.
+
+## 2026-10-01: Review Context Belongs to the Installed Runtime
+
+Decision: agents call the installed review entrypoint with user intent and
+explicit scope. The program resolves its host, project contract, managed task
+and a unique signed unresolved review continuation. This supersedes the manual
+host and artifact assembly in the 2026-07-20 entrypoint decision.
+
+The existing launcher, lease and signed lineage remain the authorities. A new
+orchestrator or state store would duplicate those owners. Ambiguous, invalid or
+missing authority blocks; mode and domain evidence requirements are not guessed.
+Automatic retries compare the lineage's latest candidate and contract, while
+the initial artifact remains closure provenance. Explicit artifact selection
+preserves deliberate environment retries.
+Newly changed files outside the initial artifact's signed scope block automatic
+closure; the closure host is restricted to original findings, so it cannot
+provide initial semantic coverage for those additional changes.
+The scope digest owner projects managed bindings to work and ticket IDs; mutable
+receipts, revisions and claim details cannot change that stable task identity.
+
+Installed Claude/Codex probes cover entrypoints, lease binding, signed closure,
+partial-closure deduplication and native permissions. Revisit this design if
+real projects cannot identify a unique continuation without manual selection.

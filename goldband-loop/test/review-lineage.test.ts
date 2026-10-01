@@ -9,6 +9,7 @@ import { runWorkflow } from '../workflows/runtime';
 import {
   finalizeClosureReviewLineage,
   finalizeInitialReviewLineage,
+  findReviewContinuation,
   assertReviewContractBoundary,
   prepareReviewLineage,
   readReviewLineageForTest,
@@ -34,6 +35,68 @@ afterEach(() => {
 });
 
 describe('authoritative review lineage', () => {
+
+  test('finds only one signed overlapping continuation and rejects edited artifacts', () => {
+    const fixture = repository();
+    const value = manifest();
+    const scope = reviewLineageScopeDigest('b'.repeat(64), { changedFiles: ['deploy.ts'] });
+    const handle = prepare(fixture, value, undefined, { scopeDigest: scope, legacyScopeDigest: 'b'.repeat(64) });
+    const artifact = initialArtifact(value, [{ id: 'S-001', file: 'deploy.ts', severity: 'high',
+      summary: 'unsafe', blocking: true, behaviorCellIds: ['deployment-safe'] }]);
+    const file = join(fixture.state, 'initial.json');
+    writeFileSync(file, JSON.stringify(artifact));
+    finalizeInitialReviewLineage({ handle, key, repository: 'repo', baseDigest: 'a'.repeat(64),
+      scopeDigest: scope, artifact, artifactFile: file, findings: artifact.findings,
+      deterministicComplete: true, runtimeIncomplete: false });
+    releaseReviewLineage(handle);
+    const options = { storeRoot: fixture.state, key,
+      binding: { ...artifact.binding, candidateDigest: 'f'.repeat(64), changedFiles: ['deploy.ts'] } };
+    expect(findReviewContinuation(options)?.artifactFile).toBe(file);
+    expect(() => findReviewContinuation({ ...options,
+      binding: { ...options.binding, changedFiles: ['deploy.ts', 'unreviewed.ts'] } }))
+      .toThrow('automatic closure would leave new files unreviewed: unreviewed.ts');
+    expect(findReviewContinuation({ ...options, binding: { ...options.binding, changedFiles: [] } })?.artifactFile).toBe(file);
+    for (const binding of [
+      { ...options.binding, repository: 'another-repo' },
+      { ...options.binding, baseDigest: '0'.repeat(64) },
+      { ...options.binding, scopeDigest: '0'.repeat(64) },
+      { ...options.binding, changedFiles: ['docs.ts'] },
+    ]) expect(findReviewContinuation({ ...options, binding })).toBeUndefined();
+    const repair = prepare(fixture, value, artifact, { scopeDigest: scope,
+      legacyScopeDigest: 'b'.repeat(64), candidateDigest: options.binding.candidateDigest });
+    finalizeClosureReviewLineage({ handle: repair, key, artifact,
+      results: [{ findingId: 'S-001', status: 'still-open', summary: 'still unsafe', evidenceIds: ['gate:check'] }],
+      deterministicComplete: true, runtimeIncomplete: false });
+    releaseReviewLineage(repair);
+    expect(findReviewContinuation(options)).toMatchObject({ artifactFile: file,
+      lastCandidateDigest: options.binding.candidateDigest,
+      lastBehaviorContractDigest: repair.behaviorContractDigest });
+    expect(findReviewContinuation(options)?.lastCandidateDigest).not.toBe(artifact.binding.candidateDigest);
+    writeFileSync(file, JSON.stringify({ ...artifact, runId: 'caller-edited' }));
+    expect(() => findReviewContinuation(options)).toThrow('prior findings/blockers open');
+  });
+
+  test('ambiguous automatic continuation requires an explicit selection', () => {
+    const fixture = repository();
+    const value = manifest();
+    for (const name of ['a.ts', 'b.ts']) {
+      const scope = reviewLineageScopeDigest('b'.repeat(64), { changedFiles: [name] });
+      const handle = prepare(fixture, value, undefined, { scopeDigest: scope,
+        legacyScopeDigest: 'b'.repeat(64), scopeSummary: [name] });
+      const artifact = initialArtifact(value, [{ id: 'S-001', file: name, severity: 'high',
+        summary: 'unsafe', blocking: true, behaviorCellIds: ['deployment-safe'] }]);
+      artifact.binding.changedFiles = [name];
+      const file = join(fixture.state, `${name}.json`);
+      writeFileSync(file, JSON.stringify(artifact));
+      finalizeInitialReviewLineage({ handle, key, repository: 'repo', baseDigest: 'a'.repeat(64),
+        scopeDigest: scope, artifact, artifactFile: file, findings: artifact.findings,
+        deterministicComplete: true, runtimeIncomplete: false });
+      releaseReviewLineage(handle);
+    }
+    expect(() => findReviewContinuation({ storeRoot: fixture.state, key,
+      binding: { ...initialArtifact(value, []).binding, changedFiles: ['a.ts', 'b.ts'] } }))
+      .toThrow('continuation is ambiguous');
+  });
 	test('permits wider provider applicability but rejects narrower coverage', () => {
 		const baseline = manifest();
 		baseline.providers[0]!.applicability = {
@@ -522,6 +585,9 @@ describe('authoritative review lineage', () => {
     const candidateScope = 'b'.repeat(64);
     const first = reviewLineageScopeDigest(candidateScope, { workId: 'work-a', ticketId: 'ticket-a' });
     const second = reviewLineageScopeDigest(candidateScope, { workId: 'work-a', ticketId: 'ticket-b' });
+    const binding = { workId: 'work-a', ticketId: 'ticket-a', mapRevision: 7,
+      claimAttempt: 2, subject: { id: 'receipt', digest: 'c'.repeat(64) }, store: { root: '/private/state' } };
+    expect(reviewLineageScopeDigest(candidateScope, binding)).toBe(first);
     expect(first).not.toBe(second);
     expect(reviewLineageScopeDigest(candidateScope, { changedFiles: ['a.ts'] }))
       .not.toBe(reviewLineageScopeDigest(candidateScope, { changedFiles: ['b.ts'] }));
