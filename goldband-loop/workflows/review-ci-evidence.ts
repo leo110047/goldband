@@ -29,6 +29,14 @@ export type ReviewCiProvenance = {
   conclusion: 'success';
 };
 
+/** Admission reserves all validated provenance fields before any CI lookup. */
+export function reviewCiProvenanceBudget(providerId: string): ReviewCiProvenance {
+  return { repository: REPOSITORY, workflow: WORKFLOW, workflowDigest: 'f'.repeat(64),
+    revision: 'f'.repeat(40), tree: 'f'.repeat(40), runId: Number.MAX_SAFE_INTEGER,
+    attempt: Number.MAX_SAFE_INTEGER, jobId: Number.MAX_SAFE_INTEGER,
+    step: `Review evidence - ${providerId}`, conclusion: 'success' };
+}
+
 function hash(value: string | Buffer, algorithm = 'sha256'): string {
   return createHash(algorithm).update(value).digest('hex');
 }

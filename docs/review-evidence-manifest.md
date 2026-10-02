@@ -17,6 +17,15 @@ generated files 或改變 scope。超過上限仍明確失敗；closure 繼續�
 candidate 與 signed receipt，不能以縮小 diff 代替原範圍結案。
 既有 untracked file 的安全讀取與 redaction 限制仍各自適用。
 
+`plan-evidence` 在 snapshot、dependency preparation 與 provider 執行前，以同一個
+prompt builder 預檢 metadata。Initial 依全部預定 record identities 與完整欄位上界
+計算預留 bytes，保留 16 KiB evidence projection 上限；closure 預留有界的環境資訊、CI provenance
+及診斷標記，再以剩餘預算分配實際輸出。預留 record 只用於 bytes 計算，不能當成 evidence。
+重複的大型 contract before/after 與 closure execution context 使用可還原的共用引用；
+required cells、finding/evidence IDs、candidate binding 與 contract assessment 均保留。
+超限診斷列出各 section 的 bytes、overhead 與上限；host dispatch 前
+仍檢查實際組裝結果。完整診斷與原始 contract 留在 typed artifact。
+
 這是 Goldband 的輸入資源預算，不是模型 context window 的保證；host 自身的
 context 或執行錯誤仍會如實回報。接納較大的 diff 也不表示測試或 review 已通過。
 

@@ -122,8 +122,26 @@ export function reviewContractChangesPrompt(changes: ReviewContractChange[]): st
   if (changes.length === 0) return '';
   return [
     'REVIEW_CONTRACT_CHANGES_START',
-    JSON.stringify(changes),
+    JSON.stringify(projectReviewContractChanges(changes)),
     'REVIEW_CONTRACT_CHANGES_END',
+    'When values and changes are supplied, beforeRef and afterRef resolve to exact entries in values; assess those full values for every change ID.',
     'Assess every changed check, behavior description, and execution environment in contractReview. For execution corrections, verify that the replacement runtime exercises the original operation and preserves its isolation and dependency requirements; registered settings alone do not prove this. Set preserved=true only when the original safety and acceptance requirements remain covered. Explain the evidence, including why a corrected check accepts valid input and still rejects invalid input. A passing replacement command alone is insufficient. Inspect the check implementation and its regression tests; reject weakened assertions, skipped paths, unconditional success, or unsupported equivalence. If preservation cannot be established, set preserved=false and explain what remains unverified. This is a semantic assessment, not proof that two command digests are identical.',
   ].join('\n');
+}
+
+/** Lossless, prompt-only references for repeated large before/after contracts. */
+export function projectReviewContractChanges(changes: ReviewContractChange[]) {
+  const counts = new Map<string, number>();
+  for (const change of changes) for (const value of [change.before, change.after]) {
+    const text = JSON.stringify(value);
+    if (Buffer.byteLength(text) >= 256) counts.set(text, (counts.get(text) ?? 0) + 1);
+  }
+  const keys = new Map([...counts].filter(([, count]) => count > 1)
+    .map(([text], index) => [text, `contract-${index + 1}`]));
+  if (keys.size === 0) return changes;
+  const values = Object.fromEntries([...keys].map(([text, key]) => [key, JSON.parse(text)]));
+  return { values, changes: changes.map(({ before, after, ...identity }) => {
+    const beforeRef = keys.get(JSON.stringify(before)), afterRef = keys.get(JSON.stringify(after));
+    return { ...identity, ...(beforeRef ? { beforeRef } : { before }), ...(afterRef ? { afterRef } : { after }) };
+  }) };
 }
