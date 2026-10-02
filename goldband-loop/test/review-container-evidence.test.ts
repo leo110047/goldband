@@ -127,6 +127,36 @@ esac
       }
     } finally { lookup.mockRestore(); }
   });
+
+  test('refuses matching previous resources before creating or removing any session resource', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'review-container-retry-')); roots.push(root);
+    const calls = join(root, 'calls');
+    const fakeDocker = join(root, 'docker');
+    const previous = 'goldband-review-11111111-1111-1111-1111-111111111111';
+    writeFileSync(fakeDocker, `#!/bin/sh
+printf '%s\\n' "$*" >> '${calls}'
+case "$*" in
+  'context inspect'*) printf 'unix:///tmp/fixture-docker.sock\\n';;
+  *' version '*) printf '{"Os":"linux","Version":"28.0.1"}\\n';;
+  *'label=dev.goldband.review-scope='*'{{.Names}}'*) printf '${previous}-service\\n';;
+  *'label=dev.goldband.review-scope='*'{{.Name}}'*) printf '${previous}\\n';;
+esac
+`);
+    chmodSync(fakeDocker, 0o755);
+    const originalWhich = Bun.which.bind(Bun);
+    const lookup = spyOn(Bun, 'which').mockImplementation((command, options) => command === 'docker' ? fakeDocker : originalWhich(command, options));
+    try {
+      const result = (await execute(project(root, 'retry-project'), fixture())).records[0]!;
+      expect(result.status).toBe('runtime-incomplete');
+      expect(result.outputSummary).toContain('refusing to start another session');
+      expect(result.outputSummary).toContain(previous);
+      expect(result.outputSummary).toContain('ownerPID');
+      expect(result.outputSummary).toContain('previous broker may still be alive');
+      const invoked = readFileSync(calls, 'utf8');
+      expect(invoked).not.toMatch(/ (create|start|rm) /);
+      expect(invoked).toMatch(/label=dev.goldband.review-scope=[a-f0-9]{64}/);
+    } finally { lookup.mockRestore(); }
+  });
 });
 
 function project(root: string, name: string) {

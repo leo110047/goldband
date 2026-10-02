@@ -64,7 +64,7 @@ import {
 import { resolveReviewWorkspace, workspacePath } from './review-workspace';
 import { assertLocalReviewProvider, isReviewLocalMigration, isReviewLocalProvider, REVIEW_LOCAL_LANE, runLocalReviewEvidence } from './review-local-evidence';
 import { isRegisteredExecutionCorrection } from './review-execution-correction';
-import { collectReviewCiEvidence, isReviewCiMigration, isReviewCiProvider, REVIEW_CI_LANE, validateReviewCiProvenance, type ReviewCiProvenance } from './review-ci-evidence';
+import { collectReviewCiEvidence, isReviewCiMigration, isReviewCiProvider, REVIEW_CI_LANE, reviewCiProvenanceBudget, validateReviewCiProvenance, type ReviewCiProvenance } from './review-ci-evidence';
 import { assertContainerProvider, validateContainerContext, type ContainerEvidenceContext } from './review-container-contract';
 import { runContainerReviewEvidence } from './review-container-evidence';
 
@@ -486,10 +486,7 @@ export async function executeEvidencePlan(
   const workspace = verifiedReviewWorkspace(ctx.cwd, input.diff, binding.redactedUntrackedFiles);
   let outputBytes = 0;
   try {
-    const selectedCells = effectiveEvidenceCells(manifest, binding.changedFiles, onlyCellIds);
-    const providers = manifest.providers.filter((provider) =>
-      provider.cellIds.some((cellId) => selectedCells.some((cell) => cell.id === cellId)) &&
-      providerApplies(provider, binding.changedFiles));
+    const { selectedCells, providers } = selectedEvidencePlan(manifest, binding.changedFiles, onlyCellIds);
     for (const cell of selectedCells) {
       if (cell.disposition === 'not-applicable') {
         records.push(dispositionRecord(cell, binding, 'verified-pass'));
@@ -562,6 +559,33 @@ export async function executeEvidencePlan(
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
+}
+
+function selectedEvidencePlan(manifest: ReviewEvidenceManifest, changedFiles: string[], onlyCellIds?: Set<string>) {
+  const selectedCells = effectiveEvidenceCells(manifest, changedFiles, onlyCellIds);
+  const providers = manifest.providers.filter((provider) =>
+    provider.cellIds.some((cellId) => selectedCells.some((cell) => cell.id === cellId)) && providerApplies(provider, changedFiles));
+  return { selectedCells, providers };
+}
+
+/** Byte reservations only; these records must never be persisted or credited as execution evidence. */
+export function planReviewEvidenceRecords(manifest: ReviewEvidenceManifest, binding: CandidateBinding, onlyCellIds?: Set<string>): ReviewEvidenceRecord[] {
+  const { selectedCells, providers } = selectedEvidencePlan(manifest, binding.changedFiles, onlyCellIds);
+  const records = selectedCells.filter((cell) => ['not-applicable', 'unsupported', 'manual'].includes(cell.disposition))
+    .map((cell) => dispositionRecord(cell, binding, 'runtime-incomplete'));
+  const digest = 'f'.repeat(64);
+  for (const provider of providers) for (const operation of provider.operations) records.push({
+    id: `${provider.id}:${operation.id}`, providerId: provider.id, operationId: operation.id,
+    cellIds: [...provider.cellIds], owner: provider.owner, kind: provider.kind,
+    status: 'runtime-incomplete', evidenceLevel: operation.evidenceLevel,
+    environment: 'x'.repeat(128), commandDigest: digest, executionIdentityDigest: digest,
+    snapshotDigestBefore: digest, snapshotDigestAfter: digest,
+    ...(provider.executionContext.runner === 'github-actions' ? { ciProvenance: reviewCiProvenanceBudget(provider.id) } : {}),
+    seed: operation.seed, iterations: operation.iterations, exitStatus: -2147483648,
+    startedAt: '', finishedAt: '', outputDigest: digest, outputSummary: '',
+    candidateDigest: binding.candidateDigest, baseDigest: binding.baseDigest, scopeDigest: binding.scopeDigest, fresh: false,
+  });
+  return records;
 }
 
 export function evaluateEvidenceCompleteness(

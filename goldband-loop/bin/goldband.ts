@@ -38,6 +38,7 @@ import {
 	acquireReviewExecutionLease,
 	releaseReviewExecutionLease,
 } from "../lib/review-execution-lease";
+import { superviseReviewRuntime } from "../lib/review-runtime-process";
 import {
 	evidenceChildProcessEnvironment,
 	EVIDENCE_SANDBOX_ACTIVE_ENV,
@@ -102,7 +103,7 @@ const TRUSTED_LAUNCHER_ACTION_SET = new Set<string>(TRUSTED_LAUNCHER_ACTIONS);
 const PROMPT_CONTRACT_ACTION_SET = new Set<string>(PROMPT_CONTRACT_ACTIONS);
 
 type TrustedLauncherHandlers = {
-	"review/code": (args: string[]) => number;
+	"review/code": (args: string[]) => number | Promise<number>;
 	"browser/session": (args: string[]) => number;
 	"plan/create": (args: string[]) => number;
 	"plan/sync": (args: string[]) => number;
@@ -405,7 +406,7 @@ function installedSourceRoot(runtimeRoot: string): string | undefined {
 	return source || undefined;
 }
 
-function reviewCode(args: string[]): number {
+async function reviewCode(args: string[]): Promise<number> {
 	assertReviewNotNested(process.env);
 	if (args.includes("--help") || args.includes("-h")) {
 		printUsage(console);
@@ -443,18 +444,11 @@ function reviewCode(args: string[]): number {
 	);
 	reviewEnvironment.env[REVIEW_ACTIVE_ENV] = lease.token;
 	try {
-		const result = spawnSync(process.execPath, [runtimeFile, ...runtimeArgs], {
+		const result = await superviseReviewRuntime(runtimeFile, runtimeArgs, {
 			cwd: process.cwd(),
 			env: reviewEnvironment.env,
-			stdio: "inherit",
 		});
-		if (result.error) throw result.error;
-		if (result.status === null) {
-			throw new Error(
-				`review runtime terminated without an exit status (${result.signal ?? "unknown signal"})`,
-			);
-		}
-		return result.status;
+		return result.exitCode;
 	} finally {
 		releaseReviewExecutionLease(lease);
 	}
@@ -1203,7 +1197,7 @@ function dispatchTrustedLauncherAction(
 	action: string,
 	args: string[],
 	handlers: TrustedLauncherHandlers,
-): number | undefined {
+): number | Promise<number> | undefined {
 	if (action === "review/code") return handlers["review/code"](args);
 	if (action === "browser/session") return handlers["browser/session"](args);
 	if (action === "plan/create") return handlers["plan/create"](args);
@@ -1218,7 +1212,7 @@ const TRUSTED_LAUNCHER_HANDLERS: TrustedLauncherHandlers = {
 	"plan/sync": planSync,
 };
 
-export function main(args = process.argv.slice(2)): number {
+export async function main(args = process.argv.slice(2)): Promise<number> {
 	const [scope, action, name, ...rest] = args;
 	if (scope === "--contract-probe" && args.length === 1) {
 		console.log(
@@ -1243,7 +1237,7 @@ export function main(args = process.argv.slice(2)): number {
 			"plan/create": fakeRoute("plan/create"),
 			"plan/sync": fakeRoute("plan/sync"),
 		};
-		const status = dispatchTrustedLauncherAction(action, [], fakeHandlers);
+		const status = await dispatchTrustedLauncherAction(action, [], fakeHandlers);
 		if (status !== 0 || routedAction !== action) return 2;
 		console.log(
 			JSON.stringify({
@@ -1297,7 +1291,7 @@ export function main(args = process.argv.slice(2)): number {
 
 if (import.meta.main) {
 	try {
-		process.exitCode = main();
+		process.exitCode = await main();
 	} catch (error) {
 		console.error(
 			`goldband: ${error instanceof Error ? error.message : String(error)}`,

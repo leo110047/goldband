@@ -56,6 +56,28 @@ or failed cleanup remain runtime-incomplete. No project or test-suite IDs are
 recognized by the adapter. The ordinary sealed and named self-test lanes retain
 their existing boundaries.
 
+The shared launcher supervises the runtime with the existing review pass budget
+and forwards soft cancellation, allowing the broker's separate 30-second
+cleanup budget before escalation. Broker cancellation stops further operations.
+Docker resources carry session, canonical repository/review scope, and broker
+PID labels. The first evidence container reserves a deterministic scope
+name atomically in Docker before any service or candidate starts; cleanup selects
+only this session's labeled container IDs, including when a concurrent create loses.
+Before creating another session, the broker refuses matching
+containers or networks and provides bounded, read-only inspection commands.
+SIGKILL cannot execute cleanup: refusal prevents overlapping retries without
+automatically deleting resources whose previous owner may still be live.
+
+Before executing providers, `plan-evidence` uses the same prompt builders as host
+dispatch to admit fixed metadata and reserve variable evidence bytes. Initial
+admission uses the selected records' complete field bounds under the unchanged
+16 KiB evidence projection limit; closure admission uses
+the selected operation identities, bounded environment diagnostics, validated CI
+provenance and output markers. Reservation records never become execution evidence.
+Prompt-only references share repeated large before/after contracts and closure
+execution contexts losslessly; persisted artifacts retain the original values.
+Both paths keep the 48 KiB overhead budget and validate final bytes before dispatch.
+
 The initial host sees one immutable full diff plus bounded matrix, evidence,
 Rules, and impact projections. It looks for omissions; it does not rerun gates
 or decide whether a command passed. Runtime classification only permits

@@ -147,6 +147,12 @@ to read the exact project identity, registry entry, and configuration status;
 inspection does not require write access to the state directory. Sandbox-local
 review output does not change the durable contract lookup location.
 
+The shared Claude/Codex launcher forwards soft cancellation and allows bounded
+resource cleanup. Container retries refuse existing resources for the same
+repository/review scope; inspect the previous broker before removing anything.
+See [isolated service lifecycle](docs/review-evidence-manifest.md#隔離容器服務)
+for cancellation and hard-kill recovery boundaries.
+
 Goldband's local authoring file is `~/.goldband/review-contracts/goldband/review-evidence.json`.
 Register a deliberate setup/update with `goldband review contract import --manifest <path>`.
 The files under `goldband-loop/test/fixtures/review-contracts` are versioned regression

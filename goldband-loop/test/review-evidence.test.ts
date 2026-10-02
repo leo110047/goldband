@@ -32,6 +32,7 @@ import {
   evidenceRuntimeReadAccess,
   isEvidenceSandboxRuntimeFailure,
   loadReviewEvidenceManifest,
+  planReviewEvidenceRecords,
   materializePythonUvCache,
   readClosureArtifact,
   reviewFindingCellIds,
@@ -54,7 +55,7 @@ import { getWorkflow } from '../workflows/registry';
 import { evidenceSandboxCommand, createCompilerOutputDiagnosticCapture } from '../workflows/review-evidence-sandbox';
 import { readReviewCiResult, reviewCandidateTree, collectReviewCiEvidence, validateReviewCiProvenance } from '../workflows/review-ci-evidence';
 import { assertReviewContractBoundary } from '../workflows/review-lineage';
-import { reviewContractChanges, validateReviewContractAssessment } from '../workflows/review-contract-changes';
+import { projectReviewContractChanges, reviewContractChanges, reviewContractChangesPrompt, validateReviewContractAssessment } from '../workflows/review-contract-changes';
 import { runWorkflow } from '../workflows/runtime';
 import {
   buildClosureReviewPrompt,
@@ -4500,4 +4501,208 @@ test.each(['verified-failure', 'runtime-incomplete'] as const)('registered execu
   rerun.records[0]!.operationId = original.evidence.records[0]!.operationId;
   rerun.records[0]!.fresh = false;
   expect(() => validateClosureResults({ results: [result], input: closure, evidence: rerun, contractAssessment: assessment, trustedExecutionBaseline: trusted })).toThrow('passing fresh rerun evidence');
+});
+
+
+describe('review prompt admission budget', () => {
+  const digest = 'a'.repeat(64);
+  const diff = 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old();\n+new();\n';
+  const rules = { bundle: { selected: [], snapshot: [] }, text: 'Review the original safety contract.\n'.repeat(100) };
+  const context = { runId: 'budget-fixture', workflow: getWorkflow('review/code'), cwd: '/synthetic', options: { mode: 'mock' as const }, artifacts: [] };
+
+  function manifest(revision: string) {
+    const cellIds = Array.from({ length: 20 }, (_, i) => `behavior-${i}`);
+    const config = JSON.stringify({ revision, cases: Array.from({ length: 8 }, (_, i) => ({ id: `scenario-${i}`,
+      input: 'synthetic boundary input', expected: 'reject missing authority and preserve explicit candidate binding' })) });
+    return reviewEvidenceManifestSchema.validate({ schemaVersion: 2, authorizations: [],
+      behaviorMatrix: cellIds.map((id, i) => ({ id, behavior: 'Preserve required candidate coverage and resource isolation across review retries.',
+        kind: 'boundary', input: 'Explicit candidate, provider identity, and operation contract.',
+        preconditions: 'The isolated runner uses a pinned image and receives synthetic fixture configuration.',
+        expected: 'Candidate checks retain their required assertions, identity, and runtime provenance.',
+        risk: 'high', disposition: 'automated', providerIds: [`provider-${i % 12}`] })),
+      providers: Array.from({ length: 12 }, (_, i) => ({ id: `provider-${i}`, owner: `check-${i}.py`, kind: 'runtime-integration',
+        lifecycle: 'persistent', cellIds: cellIds.filter((_, j) => j % 12 === i), applicability: { kind: 'global', reason: 'Synthetic budget regression' },
+        executionContext: { sandboxOwner: 'review-runtime', runner: 'container', services: [],
+          container: { image: `sha256:${digest}`, user: '1000:1000', environment: { FIXTURE_CONFIG: config }, tmpfs: [], memoryMb: 128, cpus: 1 } },
+        operations: [{ id: 'verify', target: 'candidate', argv: ['python3', `check-${i}.py`], expectedExit: 'zero', timeoutMs: 10000,
+          maxOutputBytes: 4096, network: 'isolated', evidenceLevel: 'sandboxed-service' }] })),
+    });
+  }
+
+  function bundle(): ReviewEvidenceBundle {
+    const value = manifest('after');
+    const binding = { repository: '/synthetic', baseRef: 'HEAD', baseDigest: digest, candidateDigest: digest, scopeDigest: digest,
+      behaviorContractDigest: digest, changedFiles: ['a.ts'], redactedUntrackedFiles: [] };
+    return { schemaVersion: 1, manifest: value, binding, manifestSource: 'synthetic',
+      completeness: { complete: true, hostEligible: true, blockingCellIds: [], coverageGapCellIds: [], runtimeIncompleteCellIds: [] },
+      records: planReviewEvidenceRecords(value, binding).map((record) => ({ ...record, status: 'verified-pass', fresh: true,
+        environment: 'synthetic fixture', exitStatus: 0, outputSummary: `BEGIN\n${'診斷🙂"\\\n'.repeat(400)}\nEND` })) };
+  }
+
+  function restore(projected: ReturnType<typeof projectReviewContractChanges>) {
+    if (Array.isArray(projected)) return projected;
+    return projected.changes.map(({ beforeRef, afterRef, before, after, ...identity }) => ({ ...identity,
+      before: beforeRef ? projected.values[beforeRef] : before, after: afterRef ? projected.values[afterRef] : after }));
+  }
+
+  test('12 providers / 20 cells preserve every exact changed contract under the unchanged budget', () => {
+    const evidence = bundle(), changes = reviewContractChanges([manifest('before')], evidence.manifest);
+    const projected = projectReviewContractChanges(changes);
+    expect(restore(projected)).toEqual(changes);
+    expect(Buffer.byteLength(JSON.stringify(projected))).toBeLessThan(Buffer.byteLength(JSON.stringify(changes)) / 3);
+    const prompt = buildReviewPrompt(context, diff, { rules, evidence, contractChanges: changes });
+    const rawOverhead = Buffer.byteLength(prompt) - Buffer.byteLength(diff) +
+      Buffer.byteLength(JSON.stringify(changes)) - Buffer.byteLength(JSON.stringify(projected));
+    expect(rawOverhead).toBeGreaterThan(MAX_REVIEW_PROMPT_OVERHEAD_BYTES);
+    expect(Buffer.byteLength(prompt) - Buffer.byteLength(diff)).toBeLessThanOrEqual(MAX_REVIEW_PROMPT_OVERHEAD_BYTES);
+    expect(buildReviewPrompt(context, diff, { rules, evidence: { ...evidence, records: planReviewEvidenceRecords(evidence.manifest, evidence.binding) },
+      contractChanges: changes })).toContain('beforeRef');
+    const matrix = JSON.parse(prompt.split('BEHAVIOR_MATRIX_START\n')[1]!.split('\nBEHAVIOR_MATRIX_END')[0]!);
+    const typed = JSON.parse(prompt.split('TYPED_EVIDENCE_SUMMARY_START\n')[1]!.split('\nTYPED_EVIDENCE_SUMMARY_END')[0]!);
+    expect(matrix.map((cell: { id: string }) => cell.id)).toEqual(evidence.manifest.behaviorMatrix.map((cell) => cell.id));
+    expect(typed.binding).toEqual(evidence.binding);
+    expect(typed.records.map((record: { id: string }) => record.id)).toEqual(evidence.records.map((record) => record.id));
+    expect(prompt).toContain('contractReview');
+  });
+
+  test('closure retains finding identity, exact runtime context, contract assessment and bounded Unicode diagnostics', () => {
+    const evidence = bundle(), changes = reviewContractChanges([manifest('before')], evidence.manifest);
+    const artifact: InitialReviewArtifact = { schemaVersion: 1, phase: 'initial', runId: 'synthetic-initial', binding: evidence.binding,
+      diff, evidence, hostCallCount: 1, createdAt: '', contractReview: { changes, assessment: { preserved: true, summary: 'synthetic assessment' } },
+      findings: [{ id: 'S-001', classification: 'semantic-concern', severity: 'high', file: 'a.ts', line: 1,
+        summary: 'Preserve the original boundary.', evidence: 'Synthetic context.', behaviorCellIds: ['behavior-0'], evidenceIds: ['provider-0:verify'] }] };
+    const closure = { artifact, repairedBinding: { ...evidence.binding, candidateDigest: 'b'.repeat(64) },
+      originalBehaviorContractDigest: digest, repairedBehaviorContractDigest: digest, repairDelta: '+repair();',
+      affectedFindingIds: ['S-001'], affectedCellIds: ['behavior-0'] };
+    for (const records of [planReviewEvidenceRecords(evidence.manifest, evidence.binding), evidence.records]) {
+      const prompt = buildClosureReviewPrompt(closure, { ...evidence, records }, rules, changes);
+      expect(Buffer.byteLength(prompt) - Buffer.byteLength(closure.repairDelta)).toBeLessThanOrEqual(MAX_REVIEW_PROMPT_OVERHEAD_BYTES);
+      const payload = JSON.parse(prompt.split('CLOSURE_INPUT_START\n')[1]!.split('\nCLOSURE_INPUT_END')[0]!);
+      expect(payload.originalFindings[0]).toMatchObject({ id: 'S-001', relatedEvidenceIds: ['provider-0:verify'] });
+      expect(payload.repairedCandidateDigest).toBe(closure.repairedBinding.candidateDigest);
+      expect(restore(payload.originalContractReview.changes)).toEqual(changes);
+      expect(payload.originalContractReview.assessment.preserved).toBe(true);
+      for (const [i, projected] of payload.rerunEvidence.entries()) {
+        expect(projected.id).toBe(records[i]!.id);
+        expect(projected.executionIdentityDigest).toBe(records[i]!.executionIdentityDigest);
+        expect(payload.executionContexts[projected.operation.executionContextRef]).toEqual(evidence.manifest.providers[i]!.executionContext);
+        if (records === evidence.records) {
+          expect(projected.outputSummary).toContain('BEGIN'); expect(projected.outputSummary).toContain('END');
+          expect(Buffer.byteLength(JSON.stringify(projected.outputSummary)) - 2).toBeLessThanOrEqual(2048);
+        }
+      }
+    }
+    expect(() => buildClosureReviewPrompt(closure, evidence, { ...rules, text: 'x'.repeat(49152) }, changes)).toThrow('shared input budget');
+  });
+
+  test('variable environment diagnostics are bounded without discarding evidence identity', () => {
+    const evidence = bundle(); evidence.records[0]!.environment = `BEGIN\n${'診斷🙂"\\\n'.repeat(4000)}\nEND`;
+    const prompt = buildReviewPrompt(context, diff, { rules, evidence });
+    const typed = JSON.parse(prompt.split('TYPED_EVIDENCE_SUMMARY_START\n')[1]!.split('\nTYPED_EVIDENCE_SUMMARY_END')[0]!);
+    expect(typed.records[0]).toMatchObject({ id: evidence.records[0]!.id, status: 'verified-pass', candidateDigest: digest });
+    expect(Buffer.byteLength(JSON.stringify(typed.records[0].environment)) - 2).toBeLessThanOrEqual(128);
+    expect(typed.records[0].environment).toContain('[environment truncated]');
+  });
+
+  test('planned field bounds admit large policy context and cover variable initial metadata', () => {
+    const evidence = bundle();
+    const planned = { ...evidence, records: planReviewEvidenceRecords(evidence.manifest, evidence.binding),
+      completeness: { complete: false, hostEligible: false,
+        blockingCellIds: evidence.manifest.behaviorMatrix.map((cell) => cell.id),
+        coverageGapCellIds: evidence.manifest.behaviorMatrix.map((cell) => cell.id),
+        runtimeIncompleteCellIds: evidence.manifest.behaviorMatrix.map((cell) => cell.id) } };
+    const options = { rules, policyText: 'p'.repeat(20 * 1024), workMapIntentBundle: 'i'.repeat(6 * 1024) };
+    const admitted = buildReviewPrompt(context, diff, { ...options, evidence: planned });
+    for (const record of evidence.records) record.environment = '診斷🙂"\\\n'.repeat(4000);
+    evidence.completeness.coverageGapCellIds = planned.completeness.coverageGapCellIds;
+    const actual = buildReviewPrompt(context, diff, { ...options, evidence });
+    expect(Buffer.byteLength(admitted) - Buffer.byteLength(diff)).toBeLessThanOrEqual(MAX_REVIEW_PROMPT_OVERHEAD_BYTES);
+    expect(Buffer.byteLength(actual)).toBeLessThanOrEqual(Buffer.byteLength(admitted));
+    // The evidence cap remains enforced independently of the overall budget.
+    expect(() => buildReviewPrompt(context, diff, { rules, evidence: { ...planned, records: [...planned.records, ...planned.records, ...planned.records] } }))
+      .toThrow('evidence projection exceeds');
+  });
+
+  test('validated CI provenance mutations cannot exceed planned initial metadata bytes', () => {
+    const value = reviewEvidenceManifestSchema.validate(JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/review-contracts/goldband.json'), 'utf8')));
+    const binding = { ...bundle().binding, changedFiles: value.providers.flatMap((provider) =>
+      provider.applicability.kind === 'global' ? [] : provider.applicability.pathPrefixes) };
+    const records = planReviewEvidenceRecords(value, binding).filter((record) => record.ciProvenance);
+    expect(records).toHaveLength(3);
+    const projection = (rows: ReviewEvidenceBundle['records']) => buildReviewPrompt(context, diff, {
+      rules, policyText: 'synthetic CI bounds', evidence: { ...bundle(), records: rows } });
+    const admitted = projection(records);
+    const actual = records.map((record) => ({ ...record, status: 'verified-pass' as const, fresh: true, exitStatus: 0,
+      environment: 'github-actions/macos-writable-checkout',
+      ciProvenance: { ...record.ciProvenance!, runId: 7, attempt: 2, jobId: Number.MAX_SAFE_INTEGER, revision: 'b'.repeat(40), tree: 'c'.repeat(40) } }));
+    for (const record of actual) expect(() => validateReviewCiProvenance(record.ciProvenance, record.providerId!)).not.toThrow();
+    expect(Buffer.byteLength(projection(actual))).toBeLessThanOrEqual(Buffer.byteLength(admitted));
+    actual[0]!.ciProvenance.runId = Number.MAX_SAFE_INTEGER + 1;
+    expect(() => validateReviewCiProvenance(actual[0]!.ciProvenance, actual[0]!.providerId!)).toThrow('identity');
+  });
+
+  test('unavoidable overhead refuses in plan-evidence before snapshot preparation, providers, or host dispatch', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'review-budget-')); roots.push(root);
+    const git = (args: string[]) => { const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+      if (result.status !== 0) throw new Error(result.stderr); };
+    git(['init']); git(['config', 'user.name', 'Fixture']); git(['config', 'user.email', 'fixture@example.com']);
+    writeFileSync(join(root, 'a.ts'), 'old();\n'); git(['add', '.']); git(['commit', '-m', 'base']);
+    const value = manifest('after');
+    // Each cell remains individually valid and the whole matrix exceeds its fixed 16 KiB limit.
+    for (const cell of value.behaviorMatrix) cell.expected = 'required boundary '.repeat(100);
+    writeFileSync(join(root, 'candidate.diff'), diff);
+    writeFileSync(join(root, 'goldband.review-evidence.json'), JSON.stringify(value));
+    const state = join(root, '.state');
+    await expect(runWorkflow(getWorkflow('review/code'), { mode: 'mock', host: 'mock', cwd: root, goldbandHome: state,
+      diffFile: 'candidate.diff', evidenceManifestFile: 'goldband.review-evidence.json' })).rejects.toThrow('behavior matrix projection exceeds');
+    const log = readFileSync(join(state, 'workflow-runs/review/code.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    expect(log.find((entry) => entry.step === 'plan-evidence').status).toBe('failed');
+    expect(log.some((entry) => entry.step === 'run-evidence' || entry.step === 'run-review')).toBe(false);
+    expect(existsSync(join(state, 'tmp'))).toBe(false);
+    expect(existsSync(join(state, 'workflow-runs/telemetry'))).toBe(false);
+    // Refusal releases the lineage lease; another attempt reaches admission instead of a live-owner error.
+    await expect(runWorkflow(getWorkflow('review/code'), { mode: 'mock', host: 'mock', cwd: root, goldbandHome: state,
+      diffFile: 'candidate.diff', evidenceManifestFile: 'goldband.review-evidence.json' })).rejects.toThrow('behavior matrix projection exceeds');
+  });
+
+  test('unique oversized contracts still refuse with a bounded byte breakdown', () => {
+    const evidence = bundle(), changes = reviewContractChanges([manifest('before')], evidence.manifest);
+    for (const [i, change] of changes.entries()) change.after = { unique: i, required: 'x'.repeat(5000) };
+    expect(() => buildReviewPrompt(context, diff, { rules, evidence, contractChanges: changes })).toThrow('"policyRules"');
+    expect(() => buildReviewPrompt(context, diff, { rules, evidence, contractChanges: changes })).toThrow('"limit":49152');
+    expect(reviewContractChangesPrompt(changes)).toContain('preserved=false');
+  });
+
+  test.skipIf(!hostBoundaryPrerequisite(process.platform === 'darwin' && existsSync('/usr/bin/sandbox-exec'), 'macOS Seatbelt'))(
+    'closure refuses unique oversized contract changes before rerunning evidence or host dispatch', async () => {
+      const repo = gitFixture(), state = join(repo, '.state');
+      const value = manifest('before');
+      const provider = value.providers[0]!;
+      provider.cellIds = value.behaviorMatrix.map((cell) => cell.id);
+      provider.executionContext = { sandboxOwner: 'review-runtime', runner: 'sealed' };
+      Object.assign(provider.operations[0]!, { argv: ['true'], network: 'deny', evidenceLevel: 'fixture' });
+      value.providers = [provider];
+      for (const cell of value.behaviorMatrix) cell.providerIds = [provider.id];
+      writeFileSync(join(repo, 'goldband.review-evidence.json'), JSON.stringify(value));
+      writeFileSync(join(repo, 'candidate.diff'), diff);
+      const options = { mode: 'mock' as const, host: 'mock' as const, cwd: repo, goldbandHome: state,
+        diffFile: 'candidate.diff', evidenceManifestFile: 'goldband.review-evidence.json' };
+      const initial = await runWorkflow(getWorkflow('review/code'), options);
+      const artifact = initial.artifacts.find((file) => file.endsWith('-review-evidence.json'))!;
+      expect(artifact).toBeDefined();
+      for (const [i, cell] of value.behaviorMatrix.entries()) cell.expected = `${i}: ${'Preserve every required acceptance assertion. '.repeat(100)}`;
+      writeFileSync(join(repo, 'goldband.review-evidence.json'), JSON.stringify(value));
+      writeFileSync(join(repo, 'candidate.diff'), diff.replace('+new();', '+repaired();'));
+      await expect(runWorkflow(getWorkflow('review/code'), { ...options, closureArtifactFile: artifact }))
+        .rejects.toThrow('review closure prompt exceeds shared input budget');
+      const log = readFileSync(join(state, 'workflow-runs/review/code.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+      const failed = log.findLast((entry) => entry.step === 'plan-evidence' && entry.status === 'failed');
+      expect(failed).toBeDefined();
+      expect(log.some((entry) => entry.runId === failed.runId && ['run-evidence', 'run-review'].includes(entry.step))).toBe(false);
+      expect(existsSync(join(state, 'workflow-runs/telemetry', `${failed.runId}-review-prompt.json`))).toBe(false);
+      const original = JSON.parse(readFileSync(artifact, 'utf8'));
+      expect(original.hostCallCount).toBe(1);
+      expect(original.findings[0].id).toBe('S-001');
+    });
+
 });

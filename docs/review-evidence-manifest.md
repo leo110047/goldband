@@ -17,6 +17,15 @@ generated files 或改變 scope。超過上限仍明確失敗；closure 繼續�
 candidate 與 signed receipt，不能以縮小 diff 代替原範圍結案。
 既有 untracked file 的安全讀取與 redaction 限制仍各自適用。
 
+`plan-evidence` 在 snapshot、dependency preparation 與 provider 執行前，以同一個
+prompt builder 預檢 metadata。Initial 依全部預定 record identities 與完整欄位上界
+計算預留 bytes，保留 16 KiB evidence projection 上限；closure 預留有界的環境資訊、CI provenance
+及診斷標記，再以剩餘預算分配實際輸出。預留 record 只用於 bytes 計算，不能當成 evidence。
+重複的大型 contract before/after 與 closure execution context 使用可還原的共用引用；
+required cells、finding/evidence IDs、candidate binding 與 contract assessment 均保留。
+超限診斷列出各 section 的 bytes、overhead 與上限；host dispatch 前
+仍檢查實際組裝結果。完整診斷與原始 contract 留在 typed artifact。
+
 這是 Goldband 的輸入資源預算，不是模型 context window 的保證；host 自身的
 context 或執行錯誤仍會如實回報。接納較大的 diff 也不表示測試或 review 已通過。
 
@@ -250,6 +259,16 @@ Docker Desktop 已有實測。這不代表原生 Linux／Windows sealed runner �
 初始化與測試放在同一個專案擁有的腳本中；不同 operations 不共享容器或資料。
 服務按陣列順序啟動，`ready` 成功後才啟動下一個，全部 ready 後才執行測試。
 `timeoutMs` 包含映像檢查、服務啟動、readiness 與測試；清理另有 30 秒上限。
+
+Public launcher 使用既有 review pass 預算監督 runtime，收到 soft cancellation
+時傳遞訊號並等待有界清理。不要用較短的外層 timeout 硬殺 launcher 再立即重跑。
+新建立的容器與 network 綁定 session、repository／review scope 與 broker PID。
+同一 scope 尚有資源時，broker 會在建立新服務前拒絕，提供 exact resource
+inspection 指令；先確認前一個 broker 是否仍存活，等待清理，或在確認 owner
+已結束後人工處理該 session。SIGKILL 無法保證清理；舊版未帶 scope labels
+的資源仍需人工確認 ownership。第一個蒐證容器使用同 scope 的固定名稱，
+由 Docker 原子排他，避免兩次 inventory 都為空的並行競態。清理只刪除
+當次 session label 對應的 container IDs。不得以 global prune 代替 scoped 診斷。
 單一步驟最高 20 分鐘。延長已登錄的時間預算可作為 execution correction 進入複審，仍須語意審查確認；未登錄的修改、縮短時間或其他驗證條件變更不因此獲准。
 
 Provider 的 execution context 範例（將映像 ID 換成實際準備好的內容）：
@@ -338,6 +357,13 @@ base、candidate、scope、manifest、指令與依賴 digest，並由既有 rece
 不宣稱 OS network deny 或敵對程式隔離。一般 providers 仍走 sealed runner。
 本機 lane 必須由已安裝的 Claude/Codex runtime 授權，無法以任意 argv 使用。
 真正的測試失敗會阻擋審查；缺少必要工具、外層沙箱限制、逾時或副本遭修改則回報 runtime-incomplete。
+
+Docker broker lifecycle 另有固定 `review-container-lifecycle-tests` recipe，只執行
+`bun test --cwd goldband-loop test/review-container-lifecycle.test.ts`。需預先準備
+`GOLDBAND_CONTAINER_TEST_IMAGE=sha256:...`，且 Docker 為本機 Unix socket、Linux
+Engine 28+。Runtime 查核實際 image／daemon，將 prerequisites 綁入 execution
+identity，再以 required mode 執行：缺少映像或 Docker 不會 skip／verified pass。
+此 lane 不 pull image、不新增任意 host 指令或環境入口。
 
 專案 registry 可將三個固定 CI recipes 遷移到本機，僅允許上述 runner/network
 變更與增加逾時上限；所有測試、cells 與其他驗證要求須完全保留。舊 receipt

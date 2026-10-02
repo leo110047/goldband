@@ -41,6 +41,7 @@ import {
   createReviewCandidateBinding,
   createReviewArtifactPath,
   executeEvidencePlan,
+  planReviewEvidenceRecords,
   initialReviewArtifactDigest,
   readClosureArtifact,
   reviewFindingCellIds,
@@ -60,6 +61,7 @@ import {
 import {
   reviewContractChanges,
   reviewContractChangesPrompt,
+  projectReviewContractChanges,
   reviewContractAssessmentJsonSchema,
   validateReviewContractAssessment,
   type ReviewContractChange,
@@ -390,7 +392,7 @@ function planEvidence(ctx: WorkflowContext) {
     runId: ctx.runId,
   });
   const closure = prepareClosure(lineage, closureArtifact, binding, input.diff);
-  reviewEvidenceRuns.set(ctx.runId, {
+  const state: ReviewEvidenceRunState = {
     input,
     manifest,
     evidence: {
@@ -413,14 +415,35 @@ function planEvidence(ctx: WorkflowContext) {
     lineage,
     lineageKey: authority.key,
     rules,
-    contractReview: {
-      changes: reviewContractChanges([
+    contractReview: { changes: reviewContractChanges([
         lineage.requiredManifest,
         ...(closureArtifact ? [closureArtifact.evidence.manifest] : []),
-      ], manifest),
-    },
-  });
+      ], manifest) },
+  };
+  admitReviewPrompt(ctx, state, workMapBinding?.intentBundle);
   return input;
+}
+
+function admitReviewPrompt(ctx: WorkflowContext, state: ReviewEvidenceRunState, intent?: string): void {
+  try {
+    const planned = { ...state.evidence, records: planReviewEvidenceRecords(state.manifest, state.evidence.binding,
+      state.closure ? new Set(state.closure.affectedCellIds) : undefined),
+      completeness: { complete: false, hostEligible: false,
+        blockingCellIds: state.manifest.behaviorMatrix.map((cell) => cell.id),
+        coverageGapCellIds: state.manifest.behaviorMatrix.map((cell) => cell.id),
+        runtimeIncompleteCellIds: state.manifest.behaviorMatrix.map((cell) => cell.id) } };
+    if (state.closure?.kind === 'semantic-closure') {
+      buildClosureReviewPrompt(state.closure, planned, state.rules, state.contractReview.changes);
+    } else {
+      buildReviewPrompt(ctx, state.input.diff, { rules: state.rules, impact: state.input.impact,
+        workMapIntentBundle: intent, evidence: planned, contractChanges: state.contractReview.changes });
+    }
+    reviewEvidenceRuns.set(ctx.runId, state);
+  } catch (error) {
+    releaseReviewLineage(state.lineage);
+    workMapReviewBindings.delete(ctx.runId);
+    throw error;
+  }
 }
 
 function prepareClosure(
@@ -1423,30 +1446,34 @@ export function buildReviewPrompt(
   const { rules = coreReviewRules(ctx.cwd, diff), impact, workMapIntentBundle, evidence, contractChanges = [] } = context;
   const matrixProjection = evidence ? behaviorMatrixProjection(evidence) : '';
   const evidenceProjection = evidence ? evidenceSummaryProjection(evidence) : '';
-  if (Buffer.byteLength(matrixProjection) > MAX_REVIEW_MATRIX_PROMPT_BYTES) {
-    throw new Error(`review behavior matrix projection exceeds ${MAX_REVIEW_MATRIX_PROMPT_BYTES} byte limit`);
+  return assembleReviewPrompt({
+    policyRules: context.policyText ?? buildReviewPolicyText(ctx, rules),
+    impactIntent: [impact ? formatReviewImpactContext(impact) : '', workMapIntentBundle ?? ''].join('\n'),
+    matrix: matrixProjection, evidence: evidenceProjection, contractChanges: reviewContractChangesPrompt(contractChanges),
+    diffStart: 'DIFF_START', diff, diffEnd: 'DIFF_END',
+  }, 'initial');
+}
+
+function reviewPromptBytes(sections: Record<string, string>) {
+  const bytes = Object.fromEntries(Object.entries(sections).map(([key, value]) => [key, Buffer.byteLength(value)]));
+  const total = Object.values(bytes).reduce((sum, value) => sum + value, Object.keys(sections).length - 1);
+  const overhead = total - (bytes.diff ?? 0);
+  return { ...bytes, actualBytes: overhead, limit: MAX_REVIEW_PROMPT_OVERHEAD_BYTES };
+}
+
+function assembleReviewPrompt(sections: Record<string, string>, kind: 'initial' | 'closure'): string {
+  const bytes = reviewPromptBytes(sections);
+  if (kind === 'initial' && Buffer.byteLength(sections.matrix ?? '') > MAX_REVIEW_MATRIX_PROMPT_BYTES) {
+    throw new Error(`review behavior matrix projection exceeds ${MAX_REVIEW_MATRIX_PROMPT_BYTES} byte limit: ${JSON.stringify(bytes)}`);
   }
-  if (Buffer.byteLength(evidenceProjection) > MAX_REVIEW_EVIDENCE_PROMPT_BYTES) {
-    throw new Error(`review evidence projection exceeds ${MAX_REVIEW_EVIDENCE_PROMPT_BYTES} byte limit`);
+  if (kind === 'initial' && Buffer.byteLength(sections.evidence ?? '') > MAX_REVIEW_EVIDENCE_PROMPT_BYTES) {
+    throw new Error(`review evidence projection exceeds ${MAX_REVIEW_EVIDENCE_PROMPT_BYTES} byte limit: ${JSON.stringify(bytes)}`);
   }
-  const prompt = [
-    context.policyText ?? buildReviewPolicyText(ctx, rules),
-    impact ? formatReviewImpactContext(impact) : '',
-    workMapIntentBundle ?? '',
-    matrixProjection,
-    evidenceProjection,
-    reviewContractChangesPrompt(contractChanges),
-    'DIFF_START',
-    diff,
-    'DIFF_END',
-  ].join('\n');
-  const overheadBytes = Buffer.byteLength(prompt) - Buffer.byteLength(diff);
-  if (overheadBytes > MAX_REVIEW_PROMPT_OVERHEAD_BYTES) {
-    throw new Error(
-      `review prompt overhead exceeds budget: actualBytes=${overheadBytes} limit=${MAX_REVIEW_PROMPT_OVERHEAD_BYTES}`,
-    );
+  if (bytes.actualBytes > MAX_REVIEW_PROMPT_OVERHEAD_BYTES || Buffer.byteLength(sections.diff ?? '') > MAX_REVIEW_DIFF_BYTES) {
+    const message = kind === 'closure' ? 'review closure prompt exceeds shared input budget' : 'review prompt overhead exceeds budget';
+    throw new Error(`${message}: ${JSON.stringify(bytes)}`);
   }
-  return prompt;
+  return Object.values(sections).join('\n');
 }
 
 export function buildClosureReviewPrompt(
@@ -1463,52 +1490,62 @@ export function buildClosureReviewPrompt(
     affectedCellIds: closure.affectedCellIds,
     originalFindings: closure.artifact.findings.map((finding) =>
       projectClosureFinding(finding, closure.artifact.evidence, evidence)),
-    originalContractReview: closure.artifact.contractReview,
+    originalContractReview: closure.artifact.contractReview ? { ...closure.artifact.contractReview,
+      changes: projectReviewContractChanges(closure.artifact.contractReview.changes) } : undefined,
     rerunEvidence: evidence.records.map((record) => projectClosureEvidenceRecord(record, evidence.manifest)),
   };
-  const prefix = [
+  const executionContexts = shareClosureExecutionContexts(payload.rerunEvidence);
+  const payloadWithContexts = { ...payload, ...(executionContexts ? { executionContexts } : {}) };
+  const policyRules = [
     '# Scoped Closure Review',
     'Decide only whether each original finding is closed, still-open, a direct repair regression, or evidence-incomplete. Do not rebuild a general findings inventory.',
     'A semantic finding may use project-declared path applicability when its original record omitted behavior cells. Close only with fresh related evidence and inspection of the actual repair; if no declared coverage applies, return evidence-incomplete. Preserve every original finding ID. Corrected checks require the separate contractReview assessment; do not describe a changed command as an identical rerun.',
     'Use each finding’s relatedEvidenceIds for its result.evidenceIds. Assess additional contract-verification records in contractReview; they do not change a finding’s evidence binding.',
-    reviewContractChangesPrompt(contractChanges),
+    'Resolve executionContextRef from executionContexts and contract beforeRef/afterRef from that contract review’s values; each reference retains the exact original value.',
     'APPLICABLE_GOLDBAND_RULES_START',
     rules.text,
     'APPLICABLE_GOLDBAND_RULES_END',
-    'CLOSURE_INPUT_START',
-  ];
-  const suffix = [
-    'CLOSURE_INPUT_END',
-    'REPAIR_DELTA_START',
-    closure.repairDelta,
-    'REPAIR_DELTA_END',
-  ];
-  const fixedOverheadBytes = [...prefix, ...suffix].reduce(
-    (bytes, part) => bytes + Buffer.byteLength(part), prefix.length + suffix.length,
-  ) - Buffer.byteLength(closure.repairDelta);
+  ].join('\n');
+  const sections = {
+    policyRules, impactIntent: '', matrix: '', contractChanges: reviewContractChangesPrompt(contractChanges),
+    evidence: `CLOSURE_INPUT_START\n${JSON.stringify(payloadWithContexts)}\nCLOSURE_INPUT_END`,
+    diffStart: 'REPAIR_DELTA_START', diff: closure.repairDelta, diffEnd: 'REPAIR_DELTA_END',
+  };
+  // Validate fixed metadata and the reserved diagnostic markers before allocating outputs.
+  assembleReviewPrompt(sections, 'closure');
   const outputBytesPerRecord = Math.max(0, Math.floor(
-    (MAX_REVIEW_PROMPT_OVERHEAD_BYTES - fixedOverheadBytes - Buffer.byteLength(JSON.stringify(payload))) /
+    (MAX_REVIEW_PROMPT_OVERHEAD_BYTES - reviewPromptBytes(sections).actualBytes) /
     Math.max(1, payload.rerunEvidence.length),
   ));
   for (const [index, projected] of payload.rerunEvidence.entries()) {
     projected.outputSummary = boundClosureEvidenceOutput(evidence.records[index]!.outputSummary,
       outputBytesPerRecord + Buffer.byteLength(JSON.stringify(projected.outputSummary)) - 2);
   }
-  const payloadText = JSON.stringify(payload);
-  const prompt = [...prefix, payloadText, ...suffix].join('\n');
+  const payloadText = JSON.stringify(payloadWithContexts);
+  sections.evidence = `CLOSURE_INPUT_START\n${payloadText}\nCLOSURE_INPUT_END`;
+  const prompt = assembleReviewPrompt(sections, 'closure');
   if (prompt.includes(`DIFF_START\n${closure.artifact.diff}\nDIFF_END`)) {
     throw new Error('closure prompt must not contain the original full diff');
   }
-  const overheadBytes = Buffer.byteLength(prompt) - Buffer.byteLength(closure.repairDelta);
-  if (Buffer.byteLength(closure.repairDelta) > MAX_REVIEW_DIFF_BYTES ||
-      overheadBytes > MAX_REVIEW_PROMPT_OVERHEAD_BYTES) {
-    throw new Error(
-      `review closure prompt exceeds shared input budget: ` +
-      `actualBytes=${Buffer.byteLength(prompt)} rulesBytes=${Buffer.byteLength(rules.text)} ` +
-      `payloadBytes=${Buffer.byteLength(payloadText)} deltaBytes=${Buffer.byteLength(closure.repairDelta)}`,
-    );
-  }
   return prompt;
+}
+
+function shareClosureExecutionContexts(records: ReturnType<typeof projectClosureEvidenceRecord>[]) {
+  const counts = new Map<string, number>();
+  for (const record of records) {
+    const text = JSON.stringify(record.operation?.executionContext);
+    if (text && Buffer.byteLength(text) >= 256) counts.set(text, (counts.get(text) ?? 0) + 1);
+  }
+  const keys = new Map([...counts].filter(([, count]) => count > 1).map(([text], index) => [text, `runtime-${index + 1}`]));
+  if (keys.size === 0) return undefined;
+  for (const record of records) {
+    const key = keys.get(JSON.stringify(record.operation?.executionContext));
+    if (key && record.operation) {
+      record.operation.executionContext = undefined;
+      record.operation.executionContextRef = key;
+    }
+  }
+  return Object.fromEntries([...keys].map(([text, key]) => [key, JSON.parse(text)]));
 }
 
 function loadWorkMapReviewBinding(
@@ -1888,7 +1925,7 @@ function projectEvidenceRecord(record: ReviewEvidenceBundle['records'][number]) 
     evidenceLevel: record.evidenceLevel,
     commandDigest: record.commandDigest,
     exitStatus: record.exitStatus,
-    environment: record.environment,
+    environment: boundClosureEvidenceOutput(record.environment, 128, '[environment truncated]'),
     ciProvenance: record.ciProvenance,
     outputDigest: record.outputDigest,
     candidateDigest: record.candidateDigest,
@@ -1941,18 +1978,19 @@ function projectClosureEvidenceRecord(
       network: operation.network,
       pythonRuntime: operation.pythonRuntime,
       executionContext: provider?.executionContext,
+      executionContextRef: undefined as string | undefined,
     } : undefined,
   };
 }
 
-function boundClosureEvidenceOutput(value: string, maxJsonBytes: number): string {
+function boundClosureEvidenceOutput(value: string, maxJsonBytes: number, marker = '[output truncated]'): string {
   const budget = Math.min(2048, maxJsonBytes);
   const jsonBytes = (text: string) => Buffer.byteLength(JSON.stringify(text)) - 2;
   if (jsonBytes(value) <= budget) return value;
   const characters = Array.from(value);
   const summary = (length: number) => [
     characters.slice(0, Math.ceil(length / 2)).join(''),
-    '[output truncated]',
+    marker,
     characters.slice(characters.length - Math.floor(length / 2)).join(''),
   ].join('\n');
   let low = 0;

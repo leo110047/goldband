@@ -4,6 +4,7 @@ import { mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { superviseCommand } from '../scripts/process-supervisor.mjs';
 import { EVIDENCE_SANDBOX_ACTIVE_ENV, EVIDENCE_TEMP_ROOT_ENV } from '../lib/evidence-runtime-contract';
+import { REVIEW_RESOURCE_CLEANUP_TIMEOUT_MS } from '../lib/review-runtime-contract';
 import type { CandidateBinding, ReviewEvidenceManifest, ReviewEvidenceRecord } from './review-evidence';
 import type { ContainerEvidenceContext, EvidenceContainer } from './review-container-contract';
 
@@ -16,10 +17,13 @@ type Broker = { command: string; prefix: string[]; env: NodeJS.ProcessEnv; ident
 type Session = {
   broker: Broker; network: string; containers: string[]; deadline: number;
   snapshotRoot: string; executionOffset: string;
+  scope: string; cancellation?: string;
 };
 type Result = { exitCode: number; reason: string; stdout: string; stderr: string };
 const POLICY = 'docker-isolated-services-v2';
 const LABEL = 'dev.goldband.review-run';
+const SCOPE_LABEL = 'dev.goldband.review-scope';
+const OWNER_LABEL = 'dev.goldband.review-owner-pid';
 
 /** Only the broker sees the Docker socket. Candidate commands execute inside disposable containers. */
 export async function runContainerReviewEvidence(options: Options, snapshotDigest: () => string,
@@ -32,8 +36,16 @@ export async function runContainerReviewEvidence(options: Options, snapshotDiges
   let session: Session | undefined;
   let result: Result | undefined;
   let identity: string | undefined;
+  let cancellation: string | undefined;
+  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+  const listeners = signals.map((signal) => () => {
+    cancellation = signal;
+    if (session) session.cancellation = signal;
+  });
+  signals.forEach((signal, index) => process.on(signal, listeners[index]!));
   try {
     session = prepareSession(options);
+    await assertNoPreviousSession(session);
     identity = hash({ policy: POLICY, binding, provider, broker: session.broker.identity, snapshot: before });
     await startServices(session, provider.executionContext);
     const spec = provider.executionContext.container;
@@ -49,8 +61,13 @@ export async function runContainerReviewEvidence(options: Options, snapshotDiges
   } catch (error) {
     diagnostics.push(error instanceof Error ? error.message : String(error));
   } finally {
-    if (session) diagnostics.push(...await cleanup(session));
+    try {
+      if (session) diagnostics.push(...await cleanup(session));
+    } finally {
+      signals.forEach((signal, index) => process.off(signal, listeners[index]!));
+    }
   }
+  if (cancellation) throw new Error(`container evidence cancelled by ${cancellation}; ${diagnostics.join('; ') || 'owned resource cleanup completed'}`);
   return containerRecord({ options, before, after: snapshotDigest(), startedAt, diagnostics, result, identity }, redact);
 }
 
@@ -95,7 +112,33 @@ function prepareSession(options: Options): Session {
   if (process.env[EVIDENCE_SANDBOX_ACTIVE_ENV] === '1') throw new Error('container broker cannot run inside an evidence sandbox');
   if (/[\n\r,"]/.test(options.snapshotRoot)) throw new Error('container snapshot path contains unsupported mount separators');
   return { broker: prepareBroker(options, deadline), network: `goldband-review-${randomUUID()}`, containers: [], deadline,
+    scope: hash({ repository: realpathSync(options.binding.repository), scope: options.binding.scopeDigest }),
     snapshotRoot: realpathSync(options.snapshotRoot), executionOffset: options.executionOffset };
+}
+
+async function assertNoPreviousSession(session: Session): Promise<void> {
+  const filter = ['--filter', `label=${SCOPE_LABEL}=${session.scope}`];
+  const containers = await checked(session, ['container', 'ls', '--all', ...filter, '--format', '{{.Names}}']);
+  const networks = await checked(session, ['network', 'ls', ...filter, '--format', '{{.Name}}']);
+  if (!containers && !networks) return;
+  const names = containers.split('\n').filter(Boolean);
+  const networkNames = networks.split('\n').filter(Boolean);
+  if (names.some((name) => !/^goldband-review-(?:[a-f0-9-]{36}-[a-z][a-z0-9-]{0,31}|[a-f0-9]{64}-owner)$/.test(name)) ||
+      networkNames.some((name) => !/^goldband-review-[a-f0-9-]{36}$/.test(name))) {
+    throw new Error('review resource ownership inventory is invalid; inspect the review-scope labels before retrying');
+  }
+  const inspect = [
+    ...(names.length ? [`docker container inspect --format '{{.Name}} ownerPID={{index .Config.Labels "${OWNER_LABEL}"}}' ${names.join(' ')}`] : []),
+    ...(networkNames.length ? [`docker network inspect --format '{{.Name}} ownerPID={{index .Labels "${OWNER_LABEL}"}}' ${networkNames.join(' ')}`] : []),
+  ];
+  throw new Error(`review resources already exist for this repository and scope; refusing to start another session. ` +
+    `The previous broker may still be alive. Inspect exact resources: ${inspect.join('; ')}. ` +
+    'Wait for its cleanup; remove owned resources manually only after confirming the previous broker has ended. No existing resources were removed.');
+}
+
+function sessionLabels(session: Session): string[] {
+  return ['--label', `${LABEL}=${session.network}`, '--label', `${SCOPE_LABEL}=${session.scope}`,
+    '--label', `${OWNER_LABEL}=${process.pid}`];
 }
 
 function prepareBroker(options: Options, deadline: number): Broker {
@@ -134,7 +177,7 @@ async function startServices(session: Session, context: ContainerEvidenceContext
   }
   await checked(session, ['network', 'create', '--driver', 'bridge', '--internal',
     '--opt', 'com.docker.network.bridge.gateway_mode_ipv4=isolated', '--opt', 'com.docker.network.bridge.gateway_mode_ipv6=isolated',
-    '--label', `${LABEL}=${session.network}`, session.network]);
+    ...sessionLabels(session), session.network]);
   const network = JSON.parse(await checked(session, ['network', 'inspect', session.network]));
   if (!network[0]?.Internal || network[0]?.Options?.['com.docker.network.bridge.gateway_mode_ipv4'] !== 'isolated') throw new Error('Docker did not create an isolated internal network');
   for (const service of context.services) {
@@ -157,7 +200,9 @@ async function validateImage(session: Session, spec: EvidenceContainer): Promise
 }
 
 async function createContainer(session: Session, id: string, spec: EvidenceContainer, argv: string[]): Promise<string> {
-  const name = `${session.network}-${id}`;
+  // Docker container names are reserved atomically. Reuse the first real evidence
+  // container as the scope reservation before any candidate/service process starts.
+  const name = session.containers.length === 0 ? `goldband-review-${session.scope}-owner` : `${session.network}-${id}`;
   // Record the intended name first: an interrupted create may already have reached the daemon.
   session.containers.push(name);
   const args = containerArgs(session, name, spec);
@@ -169,7 +214,7 @@ async function createContainer(session: Session, id: string, spec: EvidenceConta
 function containerArgs(session: Session, name: string, spec: EvidenceContainer): string[] {
   const [uid, gid] = spec.user.split(':');
   const cwd = [session.executionOffset, spec.workdir === '.' ? '' : spec.workdir].filter(Boolean).join('/');
-  return ['create', '--pull', 'never', '--name', name, '--label', `${LABEL}=${session.network}`,
+  return ['create', '--pull', 'never', '--name', name, ...sessionLabels(session),
     '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges=true', '--user', spec.user,
     '--pids-limit', '512', '--memory', `${spec.memoryMb}m`, '--memory-swap', `${spec.memoryMb}m`, '--cpus', String(spec.cpus),
     '--init', '--ipc', 'private', '--shm-size', '128m', '--restart', 'no', '--no-healthcheck',
@@ -208,6 +253,7 @@ async function assertServicesRunning(session: Session): Promise<void> {
 }
 
 async function docker(session: Session, args: string[], maxBytes = 8192): Promise<Result> {
+  if (session.cancellation) throw new Error(`container evidence cancelled by ${session.cancellation}`);
   const remaining = Math.max(1, Math.ceil(session.deadline - performance.now()));
   const timeoutMs = Math.min(30000, remaining);
   if (session.deadline <= performance.now()) throw new Error('container evidence operation deadline exceeded');
@@ -226,12 +272,13 @@ async function checked(session: Session, args: string[]): Promise<string> {
 
 async function cleanup(session: Session): Promise<string[]> {
   const failures: string[] = [];
-  const cleanupSession = { ...session, deadline: performance.now() + 30000 };
+  const cleanupSession = { ...session, cancellation: undefined, deadline: performance.now() + REVIEW_RESOURCE_CLEANUP_TIMEOUT_MS };
   for (const name of [...session.containers].reverse()) {
     try {
-      const found = await docker(cleanupSession, ['container', 'ls', '--all', '--filter', `name=^/${name}$`, '--format', '{{.Names}}']);
+      const found = await docker(cleanupSession, ['container', 'ls', '--all', '--filter', `name=^/${name}$`,
+        '--filter', `label=${LABEL}=${session.network}`, '--format', '{{.ID}}']);
       if (found.exitCode !== 0 || found.reason !== 'exit') throw new Error(found.stderr);
-      if (found.stdout.trim()) await checked(cleanupSession, ['rm', '--force', '--volumes', name]);
+      if (found.stdout.trim()) await checked(cleanupSession, ['rm', '--force', '--volumes', found.stdout.trim()]);
     } catch (error) { failures.push(`container cleanup failed for ${name}: ${String(error)}`); }
   }
   try {
