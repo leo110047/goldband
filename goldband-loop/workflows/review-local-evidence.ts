@@ -1,10 +1,11 @@
 import { localReviewPythonPath } from './review-python-tools';
-import { REVIEW_HOST_EVIDENCE_POLICY } from '../lib/review-runtime-contract';
+import { REVIEW_HOST_EVIDENCE_POLICY, REVIEW_RESOURCE_CLEANUP_TIMEOUT_MS } from '../lib/review-runtime-contract';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { superviseCommand } from '../scripts/process-supervisor.mjs';
 import { isReviewCiProvider, REVIEW_CI_LANE } from './review-ci-evidence';
+import { containerLifecyclePrerequisites, isContainerLifecycleRecipe } from './review-container-lifecycle-evidence';
 import type { CandidateBinding, ReviewEvidenceManifest, ReviewEvidenceRecord } from './review-evidence';
 
 type Provider = ReviewEvidenceManifest['providers'][number];
@@ -16,7 +17,7 @@ export function isReviewLocalProvider(provider: Provider): boolean {
   return provider.kind === 'project-gate' && provider.lifecycle === 'persistent' &&
     provider.executionContext.runner === 'local-host' &&
     provider.executionContext.sandboxOwner === 'provider' &&
-    provider.executionContext.lane === REVIEW_LOCAL_LANE && isReviewCiProvider(baseCiRecipe(provider)) &&
+    provider.executionContext.lane === REVIEW_LOCAL_LANE && (isReviewCiProvider(baseCiRecipe(provider)) || isContainerLifecycleRecipe(provider)) &&
     provider.operations[0]!.network === 'host' && !provider.operations[0]!.authorizationId;
 }
 
@@ -82,7 +83,7 @@ export async function runLocalReviewEvidence(options: LocalOperation, snapshotDi
   const output = createHash('sha256');
   const diagnostics = localPrerequisiteDiagnostics();
   const startedAt = new Date().toISOString();
-  const tools = localPythonPrerequisites(options);
+  const tools = localPrerequisites(options);
   if (tools.error) { diagnostics.write(tools.error); output.update(tools.error); }
   const result = tools.error ? { exitCode: 1, reason: 'prerequisite-unavailable', stdout: '', stderr: tools.error } : await superviseCommand(process.execPath, operation.argv.slice(1), {
     cwd: options.snapshotRoot,
@@ -91,8 +92,11 @@ export async function runLocalReviewEvidence(options: LocalOperation, snapshotDi
       HOME: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary,
       GOLDBAND_HOME: join(home, '.goldband'), LANG: 'C.UTF-8', CI: '1',
       GOLDBAND_REQUIRE_REVIEW_HOST_BOUNDARY: '1',
+      ...tools.env,
     },
-    timeoutMs: operation.timeoutMs, killGraceMs: 1000, killConfirmMs: 2000,
+    timeoutMs: operation.timeoutMs,
+    killGraceMs: isContainerLifecycleRecipe(provider) ? REVIEW_RESOURCE_CLEANUP_TIMEOUT_MS + 2_000 : 1000,
+    killConfirmMs: 2000,
     captureOutput: { stdoutMaxBytes: operation.maxOutputBytes, stderrMaxBytes: operation.maxOutputBytes },
     label: `local review self-test ${provider.id}`,
     stdout: { write: (chunk: string) => { output.update(chunk); diagnostics.write(chunk); } },
@@ -103,13 +107,13 @@ export async function runLocalReviewEvidence(options: LocalOperation, snapshotDi
   const complete = !environmentUnavailable && result.reason === 'exit' && before === after &&
     executableDigest === hash(readFileSync(process.execPath));
   const status = localEvidenceStatus(complete, result.exitCode);
-  const summary = localEvidenceSummary(result, complete, before === after, environmentUnavailable);
+  const summary = `${tools.summary ?? ''}\n${localEvidenceSummary(result, complete, before === after, environmentUnavailable)}`;
   return {
     id: `${provider.id}:${operation.id}`, providerId: provider.id, operationId: operation.id,
     cellIds: [...provider.cellIds], owner: provider.owner, kind: provider.kind,
     status, evidenceLevel: operation.evidenceLevel, environment: 'local-host/macos-self-tests',
     commandDigest: hash(stable({ argv: operation.argv, cwd: '.', network: operation.network })),
-    executionIdentityDigest: hash(stable({ binding, provider, executableDigest, dependencyDigest: options.dependencyDigest })),
+    executionIdentityDigest: hash(stable({ binding, provider, executableDigest, dependencyDigest: options.dependencyDigest, prerequisiteIdentity: tools.identity })),
     snapshotDigestBefore: before, snapshotDigestAfter: after, replayCommand: [...operation.argv],
     startedAt, finishedAt: new Date().toISOString(),
     exitStatus: result.reason === 'exit' ? result.exitCode : undefined,
@@ -143,9 +147,10 @@ function localPrerequisiteDiagnostics() {
   };
 }
 
-function localPythonPrerequisites(options: LocalOperation): { directories: string[]; error?: string } {
-  if (!['review-evidence-tests', 'installed-runtime-tests'].includes(options.provider.id)) return { directories: [] };
+function localPrerequisites(options: LocalOperation): { directories: string[]; error?: string; env?: Record<string, string>; identity?: string; summary?: string } {
   try {
+    if (isContainerLifecycleRecipe(options.provider)) return containerLifecyclePrerequisites(options.binding.repository);
+    if (!['review-evidence-tests', 'installed-runtime-tests'].includes(options.provider.id)) return { directories: [] };
     const interpreters = options.provider.id === 'review-evidence-tests' ? LOCAL_PYTHON_TEST_INTERPRETERS : ['python3.14'];
     return { directories: localReviewPythonPath(options.binding.repository, interpreters) };
   } catch (error) {
