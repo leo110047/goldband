@@ -24,6 +24,22 @@
   A sandbox that cannot see host credentials is not evidence that the host is
   logged out, and one operating system or compatibility runtime is not proof of
   another platform.
-- A test counts as evidence only when it can fail for the incident or contract
-  regression it claims to cover. Trivial execution and assertions unrelated to
-  the risk are not verification.
+
+## Verification Quality
+
+- Derive relevant success, rejection, failure, and boundary cases from the
+  changed contract and reachable risks. Include concurrency, retries, and
+  compatibility where applicable; use existing evidence where sufficient.
+  Exhaustive combinations and coverage percentages are not universal targets.
+- Trace test setup, the invoked behavior, and assertions. Valid behavior must
+  pass; the original defect or a representative contract violation must fail.
+  Assertions must observe the required outcome, and mocks must leave the
+  behavior being verified intact.
+- Check what actually ran and its outputs or state, not just the exit status.
+  Skipped or empty runs, swallowed errors, and fallback do not prove required
+  behavior. Identify any degradation allowed by the contract.
+- Report missing or ineffective verification independently of product defects.
+  Name the explicit requirement or concrete risk, source evidence showing the
+  gap, and the check needed. Do not infer a product defect from missing tests.
+- Distinguish inspected code, observed execution, and unverified scope.
+  Passing checks or no review findings do not establish complete coverage.

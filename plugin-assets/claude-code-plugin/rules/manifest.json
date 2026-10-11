@@ -83,9 +83,12 @@
         "baseline"
       ],
       "reviewCriteria": [
-        "Support repository claims with current files, commands, tests, or logs.",
-        "Match proof to the claimed boundary; static checks and mocks do not prove live provider or platform behavior.",
-        "A regression test counts only when it can fail for the incident or contract risk it claims to cover."
+        "Support claims with current evidence at the claimed boundary; static checks and mocks do not prove live behavior.",
+        "Derive relevant success, rejection, failure and boundary cases from the changed contract and reachable risks.",
+        "Trace test setup, execution and assertions: valid behavior must pass; the original defect or a representative contract violation must fail.",
+        "Check actual execution and outcomes; skipped or empty runs, swallowed errors and fallback cannot prove required behavior.",
+        "Report concrete verification gaps independently of product defects; name the requirement or risk, source evidence and needed check.",
+        "State inspected, executed and unverified scope; green checks or no findings do not prove completeness."
       ]
     },
     {
@@ -195,7 +198,7 @@
         "Reject symptom patches, duplicated authority, provider leakage, and unsafe permission bypasses.",
         "Require live evidence for provider, authentication, permission, process, platform, and deployment claims.",
         "Prefer deterministic ownership of known formats and safety invariants; isolate optional AI failure.",
-        "Report only findings with a reachable failure path and concrete evidence."
+        "Support product defects with a reachable failure path; support verification gaps with an explicit requirement or concrete risk and evidence of missing or ineffective checks."
       ]
     }
   ]

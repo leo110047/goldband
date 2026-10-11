@@ -11,8 +11,6 @@ Apply the shared rubric's evidence gate while tracing the relevant categories.
   runtime path users invoke. A file or config existing on disk is not enough.
 - For contract changes, verify producers and consumers agree on required
   fields, states, permissions, side effects, and error behavior.
-- For test claims, verify the test would fail against the old behavior and
-  exercises the stated requirement.
 
 ### SQL & Data Safety
 
@@ -53,10 +51,10 @@ at grep output.
 
 ### Completeness And Verification
 
-- Missing negative-path or regression tests only when a concrete behavioral
-  defect has already been demonstrated.
-- Claims of enforcement, readback, install, runtime, or parity evidence that are
-  not proven by current files or commands.
+- Apply `claim-verification` to scenario coverage, test effectiveness, actual
+  execution, and success claims. Trace setup, invoked behavior, and assertions.
+- Report concrete verification gaps even without a demonstrated product defect;
+  identify the requirement or risk, inadequate evidence, and needed check.
 - Partial implementations where finishing the explicit contract is modest.
 
 ### Architecture And Maintainability

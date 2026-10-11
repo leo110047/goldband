@@ -25,9 +25,9 @@ Validity rules:
 
 - Use `null` for optional fields that do not apply when a JSON schema requires
   the key.
-- Code findings require an exact `file` and `line`, concrete `evidence`, and a
-  `failureScenario` that identifies the triggering input or runtime state,
-  reachable path, incorrect result, expected result, and practical impact.
+- Require an exact `file` and `line`, concrete `evidence`, and a `failureScenario`.
+  Apply `shared-rubric.md` to distinguish product defects from verification gaps;
+  an undetected contract violation is not an observed product failure.
 - `recommendation`, `suggestedVerification`, policy, and specialist fields are
   metadata. They cannot substitute for the validity requirements above.
 - Human-readable reports must preserve `evidence` and
