@@ -1284,6 +1284,8 @@ describe('review evidence contracts', () => {
       status: 'verified-failure',
       replayCommand: ['bun', 'test'],
     }]);
+    // Rejected host references may use declared file coverage, never global inference.
+    evidence.manifest.providers[0]!.applicability = { kind: 'paths', pathPrefixes: ['a.ts'] };
     const verified = classifyReviewFindings([finding({
       id: 'D-001',
       classification: 'verified-failure',
@@ -3062,6 +3064,63 @@ describe('review evidence contracts', () => {
       .toHaveLength(1);
     uncovered.findings[0]!.classification = 'verified-failure';
     expect(reviewFindingCellIds(uncovered.findings[0]!, original.evidence)).toEqual([]);
+  });
+
+  test('unbound semantic concerns do not inherit unrelated global checks', () => {
+    const evidence = bundle();
+    for (const severity of ['medium', 'high'] as const) {
+      const normalized = classifyReviewFindings([finding({
+        severity, evidenceIds: [], behaviorCellIds: [],
+      })], evidence)[0]!;
+      expect(normalized.behaviorCellIds).toEqual([]);
+    }
+  });
+
+  test('semantic closure adopts added file-scoped coverage without rewriting the original finding', () => {
+    const original = initialArtifact();
+    original.findings[0]!.behaviorCellIds = ['behavior-a'];
+    const stored = JSON.stringify(original);
+    const rerun = structuredClone(original.evidence);
+    rerun.manifest.behaviorMatrix.push({
+      ...rerun.manifest.behaviorMatrix[0]!, id: 'focused-behavior', providerIds: ['focused'],
+    });
+    rerun.manifest.providers.push({
+      ...rerun.manifest.providers[0]!, id: 'focused', cellIds: ['focused-behavior'],
+      applicability: { kind: 'paths', pathPrefixes: ['a.ts'] },
+    });
+    rerun.records.push({ ...record(), id: 'focused:pass', providerId: 'focused', cellIds: ['focused-behavior'] });
+    assertReviewContractBoundary(original.evidence.manifest, rerun.manifest);
+    const closure = buildClosureInput({
+      artifact: original,
+      repairedBinding: { ...original.binding, candidateDigest: 'd'.repeat(64), behaviorContractDigest: 'f'.repeat(64) },
+      repairedDiff: 'diff --git a/a.ts b/a.ts\n+fixed();', repairedManifest: rerun.manifest,
+    });
+    const prompt = buildClosureReviewPrompt(closure, rerun, { bundle: { selected: [], snapshot: [] }, text: 'closure rule' });
+    const payload = JSON.parse(prompt.split('CLOSURE_INPUT_START\n')[1]!.split('\nCLOSURE_INPUT_END')[0]!);
+    expect(payload.originalFindings[0].behaviorCellIds).toEqual(['behavior-a', 'focused-behavior']);
+    expect(payload.originalFindings[0].relatedEvidenceIds).toEqual(['gate:pass', 'focused:pass']);
+    const result = { findingId: 'F-001', status: 'closed' as const, summary: 'Repaired and checked.', evidenceIds: ['focused:pass'] };
+    expect(validateClosureResults({ results: [result], input: closure, evidence: rerun })).toEqual([result]);
+    expect(JSON.stringify(original)).toBe(stored);
+
+    const unrelated = structuredClone(rerun);
+    for (const applicability of [
+      { kind: 'global', reason: 'A broad added check is not finding-specific coverage.' },
+      { kind: 'paths', pathPrefixes: ['other.ts'] },
+    ] as ReviewEvidenceManifest['providers'][number]['applicability'][]) {
+      unrelated.manifest.providers[1]!.applicability = applicability;
+      expect(() => validateClosureResults({ results: [result], input: closure, evidence: unrelated }))
+        .toThrow('unrelated to finding behavior cells');
+    }
+    const stale = structuredClone(rerun);
+    stale.records[1]!.fresh = false;
+    expect(() => validateClosureResults({ results: [result], input: closure, evidence: stale }))
+      .toThrow('passing fresh rerun evidence');
+    const failed = structuredClone(original);
+    failed.findings[0]!.classification = 'verified-failure';
+    failed.evidence.records[0]!.status = 'verified-failure';
+    expect(() => validateClosureResults({ results: [result], input: { ...closure, artifact: failed }, evidence: rerun }))
+      .toThrow('unrelated to finding behavior cells');
   });
 
   test('a check correction requires explicit semantic assessment and fresh matching evidence', () => {

@@ -4433,15 +4433,14 @@ export function reviewFindingCellIds(
     ...(finding.behaviorCellIds ?? []),
     ...evidenceCellsForFinding(finding, evidence),
   ]);
-  if (bound.length > 0) return bound;
   if (finding.classification !== 'semantic-concern' ||
-      !finding.file || finding.file.startsWith('<')) return [];
-  // Applicability belongs to the project contract. Do not bind every high
-  // severity finding to every cell, or invent coverage for an unknown path.
-  const inherited = evidence.manifest.providers.filter((provider) => providerApplies(provider, [finding.file]));
-  const providers = inherited.length > 0 ? inherited : manifest.providers.filter((provider) =>
+      !finding.file || finding.file.startsWith('<')) return bound;
+  // Semantic observations may gain declared coverage for their source file.
+  // Preserve existing bindings; global checks do not establish path coverage.
+  // Deterministic failures retain their original operation boundary above.
+  const providers = manifest.providers.filter((provider) =>
     provider.applicability.kind === 'paths' && providerApplies(provider, [finding.file]));
-  return uniqueSorted(providers.flatMap((provider) => provider.cellIds));
+  return uniqueSorted([...bound, ...providers.flatMap((provider) => provider.cellIds)]);
 }
 
 function cellAffectedByPaths(

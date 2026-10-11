@@ -1499,7 +1499,7 @@ export function buildClosureReviewPrompt(
   const policyRules = [
     '# Scoped Closure Review',
     'Decide only whether each original finding is closed, still-open, a direct repair regression, or evidence-incomplete. Do not rebuild a general findings inventory.',
-    'A semantic finding may use project-declared path applicability when its original record omitted behavior cells. Close only with fresh related evidence and inspection of the actual repair; if no declared coverage applies, return evidence-incomplete. Preserve every original finding ID. Corrected checks require the separate contractReview assessment; do not describe a changed command as an identical rerun.',
+    'A semantic finding may use additional project-declared path coverage for its source file. Close only with fresh related evidence and inspection of the actual repair; if no declared coverage applies, return evidence-incomplete. Preserve every original finding ID and original binding. Deterministic failures still require their original operation boundary. Corrected checks require the separate contractReview assessment; do not describe a changed command as an identical rerun.',
     'Use each finding’s relatedEvidenceIds for its result.evidenceIds. Assess additional contract-verification records in contractReview; they do not change a finding’s evidence binding.',
     'Resolve executionContextRef from executionContexts and contract beforeRef/afterRef from that contract review’s values; each reference retains the exact original value.',
     'APPLICABLE_GOLDBAND_RULES_START',
