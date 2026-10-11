@@ -269,9 +269,9 @@ export function recordAnalysisArtifact(input: {
 	const ticket = map.tickets.find((item) => item.id === input.ticketId);
 	if (
 		!ticket ||
-		!["ready", "claimed"].includes(ticket.status) ||
+		!["ready", "claimed", "implemented"].includes(ticket.status) ||
 		ticket.verificationMode !== "analysis-only" ||
-		(ticket.status === "claimed" && ticket.claim?.kind !== "analysis") ||
+		(ticket.status !== "ready" && ticket.claim?.kind !== "analysis") ||
 		!ticket.analysisArtifact
 	) {
 		throw new Error("analysis artifact requires a ready analysis-only ticket");
@@ -664,16 +664,7 @@ function resolveVerificationContext(cwd: string, env: NodeJS.ProcessEnv) {
 	};
 }
 
-/** Missing markers mean ordinary Git work; malformed existing markers still fail. */
-export function findManagedLeaseForWorktree(cwd: string): ManagedWorktreeLease | undefined {
-	const root = fs.realpathSync(cwd);
-	const gitDir = gitRaw(["rev-parse", "--git-dir"], root, 1024).toString("utf8").trim();
-	const marker = path.join(path.resolve(root, gitDir), MANAGED_MARKER);
-	if (!fs.lstatSync(marker, { throwIfNoEntry: false })) return undefined;
-	return readManagedLeaseForWorktree(cwd);
-}
-
-export function readManagedLeaseForWorktree(
+function readManagedLeaseForWorktree(
 	cwd: string,
 ): ManagedWorktreeLease {
 	const root = fs.realpathSync(cwd);

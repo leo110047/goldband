@@ -150,9 +150,24 @@ describe("Work Map domain", () => {
 			"invalid Work Map status transition",
 		);
 		expect(() => assertMapTransition("mapped", "executing")).not.toThrow();
-		expect(() => assertTicketTransition("ready", "verified")).toThrow(
+		expect(() => assertTicketTransition(ticket("ticket-a"), "verified")).toThrow(
 			"invalid ticket status transition",
 		);
+	});
+
+	test("only analysis delivery can transition directly from claimed to verified", () => {
+		const claimed = { ...ticket("ticket-a"), status: "claimed" as const };
+		for (const verificationMode of ["tdd", "existing-tests", "manual"] as const) {
+			expect(() => assertTicketTransition({ ...claimed, verificationMode }, "verified")).toThrow(
+				"invalid ticket status transition",
+			);
+		}
+		const analysis = { ...claimed, verificationMode: "analysis-only" as const };
+		expect(() => assertTicketTransition(analysis, "verified")).not.toThrow();
+		const before = { ...fixture(), status: "executing" as const, tickets: [analysis] };
+		expect(() => assertWorkMapTransition(before, {
+			...before, tickets: [{ ...analysis, status: "verified" }],
+		})).not.toThrow();
 	});
 
 	test("rejects adding or removing tickets through a generic update", () => {

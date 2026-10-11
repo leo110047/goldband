@@ -23,7 +23,6 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { findManagedLeaseForWorktree } from "../lib/verification-receipt";
 import {
 	abortCreatedManagedWorktree,
 	createManagedWorktree,
@@ -34,24 +33,16 @@ import {
 	probeManagedBoundary,
 	runManagedCommand,
 } from "../lib/managed-worktree-boundary";
+import { superviseReviewRuntime } from "../lib/review-runtime-process";
 import {
 	acquireReviewExecutionLease,
 	releaseReviewExecutionLease,
 } from "../lib/review-execution-lease";
-import { superviseReviewRuntime } from "../lib/review-runtime-process";
-import {
-	evidenceChildProcessEnvironment,
-	EVIDENCE_SANDBOX_ACTIVE_ENV,
-	EVIDENCE_TEMP_ROOT_ENV,
-} from "../lib/evidence-runtime-contract";
 import {
 	assertReviewNotNested,
 	assertValidReviewScopeFlags,
 	INDEPENDENT_REVIEWER_ERROR,
 	REVIEW_ACTIVE_ENV,
-	REVIEW_CONTRACT_ROOT_ENV,
-	REVIEW_EVIDENCE_DURABILITY_ENV,
-	REVIEW_EVIDENCE_DURABILITY_EPHEMERAL,
 	REVIEW_SCOPE_FLAGS,
 	type ReviewScopeFlag,
 } from "../lib/review-runtime-contract";
@@ -89,15 +80,12 @@ type ReviewProcessEnvironment = {
 
 type ReviewProcessEnvironmentOptions = {
 	home?: string;
-	coordinationRoot?: string;
 	createTemporaryRoot?: () => string;
 	probeStateRoot?: (root: string) => void;
 };
 
 const TRUSTED_CODEX_EXECUTABLE_ENV = "GOLDBAND_TRUSTED_CODEX_EXECUTABLE";
 const TRUSTED_BROWSER_EXECUTABLE_ENV = "GOLDBAND_TRUSTED_BROWSER_EXECUTABLE";
-const REVIEW_RECEIPT_TRUSTED_CONFIG_ENV =
-	"GOLDBAND_REVIEW_RECEIPT_TRUSTED_CONFIG";
 
 const TRUSTED_LAUNCHER_ACTION_SET = new Set<string>(TRUSTED_LAUNCHER_ACTIONS);
 const PROMPT_CONTRACT_ACTION_SET = new Set<string>(PROMPT_CONTRACT_ACTIONS);
@@ -112,20 +100,12 @@ type TrustedLauncherHandlers = {
 function printUsage(stream: Pick<Console, "log">): void {
 	stream.log("Usage:");
 	stream.log(
-		"  goldband review code [--semantic-only] [--staged|--worktree|--base <ref>|--diff-file <file>]",
+		"  goldband review code [--staged|--worktree|--base <ref>|--diff-file <file>]",
 	);
-	stream.log("    Host, project contract, managed task and repaired-review continuation are resolved automatically.");
-	stream.log("    Default: review the managed task or current worktree with execution evidence. --semantic-only: inspect code without executing checks.");
-	stream.log("    Advanced: --host <claude|codex> --work-id <id> --ticket-id <id> --evidence-manifest <file> --closure-artifact <file> --include-untracked");
+	stream.log("    Independent read-only semantic review; host is inferred from the installed entrypoint.");
+	stream.log("    Default: current worktree. Tests and runtime verification remain project-owned.");
+	stream.log("    Advanced: --host <claude|codex> --include-untracked");
 	stream.log("    Budgets: --review-host-timeout-seconds <60-1800> --review-pass-timeout-seconds <60-1800> --review-claude-max-budget-usd <0.01-100.00>");
-	stream.log(
-		"  goldband review contract help",
-		"  goldband review contract init [--output <path>]",
-		"  goldband review contract validate --manifest <path>",
-		"  goldband review contract inspect",
-		"  goldband review contract import --manifest <path>",
-		"  goldband review contract remove",
-	);
 	stream.log(
 		"  goldband browser session --host <claude|codex> [command] [args...]",
 	);
@@ -235,24 +215,11 @@ function finish(name: string | undefined, args: string[]): number {
 	return 0;
 }
 
-function assertSemanticReviewArgs(args: string[]): void {
-  const count = args.filter((arg) => arg === "--semantic-only").length;
-  if (count > 1) throw new Error("--semantic-only may be supplied only once");
-  if (count && args.some((arg) => ["--evidence-manifest", "--closure-artifact", "--work-id", "--ticket-id"].includes(arg))) {
-    throw new Error("--semantic-only is incompatible with --evidence-manifest, --closure-artifact, --work-id, and --ticket-id");
-  }
-}
-
-type ReviewLaunchContext = { host?: ReviewHost; workMap?: { workId: string; ticketId: string } };
+type ReviewLaunchContext = { host?: ReviewHost };
 
 export function buildReviewRuntimeArgs(args: string[], context: ReviewLaunchContext = {}): string[] {
-	assertSemanticReviewArgs(args);
-	const ownsScope = args.some((arg) => [...REVIEW_SCOPE_FLAGS, "--work-id", "--ticket-id", "--semantic-only"].includes(arg));
-	const resolved = context.workMap && !ownsScope
-		? [...args, "--work-id", context.workMap.workId, "--ticket-id", context.workMap.ticketId]
-		: args;
-	return parseReviewRuntimeArgs(context.host && !resolved.includes("--host")
-		? ["--host", context.host, ...resolved] : resolved);
+	return parseReviewRuntimeArgs(context.host && !args.includes("--host")
+		? ["--host", context.host, ...args] : args);
 }
 
 function parseReviewRuntimeArgs(args: string[]): string[] {
@@ -260,11 +227,7 @@ function parseReviewRuntimeArgs(args: string[]): string[] {
 	const forwarded: string[] = [];
 	let hasScope = false;
 	const scopeFlags: ReviewScopeFlag[] = [];
-	let workId: string | undefined;
-	let ticketId: string | undefined;
 	let hasClaudeBudgetOverride = false;
-	let hasEvidenceManifest = false;
-	let hasClosureArtifact = false;
 
 	for (let index = 0; index < args.length; index += 1) {
 		const arg = args[index];
@@ -286,22 +249,8 @@ function parseReviewRuntimeArgs(args: string[]): string[] {
 		if (arg === "--goldband-home") {
 			throw new Error("review state root is runtime-owned");
 		}
-		if (arg === "--review-receipt-trusted-config") {
-			throw new Error("review receipt authority is runtime-owned");
-		}
-		if (arg === "--work-id" || arg === "--ticket-id") {
-			const value = args[index + 1];
-			if (!value) throw new Error(`${arg} requires a value`);
-			if (arg === "--work-id") {
-				if (workId) throw new Error("--work-id may be supplied only once");
-				workId = value;
-			} else {
-				if (ticketId) throw new Error("--ticket-id may be supplied only once");
-				ticketId = value;
-			}
-			forwarded.push(arg, value);
-			index += 1;
-			continue;
+		if (["--semantic-only", "--evidence-manifest", "--closure-artifact", "--work-id", "--ticket-id", "--review-receipt-trusted-config"].includes(arg)) {
+			throw new Error(`${arg} was removed; review code now performs independent semantic review without evidence governance`);
 		}
 		if (arg === "--loop") {
 			throw new Error(
@@ -328,20 +277,6 @@ function parseReviewRuntimeArgs(args: string[]): string[] {
 			index += 1;
 			continue;
 		}
-		if (arg === "--evidence-manifest" || arg === "--closure-artifact") {
-			const value = args[index + 1];
-			if (!value) throw new Error(`${arg} requires a value`);
-			if (arg === "--evidence-manifest") {
-				if (hasEvidenceManifest) throw new Error(`${arg} may be supplied only once`);
-				hasEvidenceManifest = true;
-			} else {
-				if (hasClosureArtifact) throw new Error(`${arg} may be supplied only once`);
-				hasClosureArtifact = true;
-			}
-			forwarded.push(arg, value);
-			index += 1;
-			continue;
-		}
 		if (REVIEW_SCOPE_FLAGS.includes(arg as ReviewScopeFlag)) {
 			scopeFlags.push(arg as ReviewScopeFlag);
 		}
@@ -356,16 +291,8 @@ function parseReviewRuntimeArgs(args: string[]): string[] {
 	if (hasClaudeBudgetOverride && host !== "claude") {
 		throw new Error("--review-claude-max-budget-usd requires --host claude");
 	}
-	if (Boolean(workId) !== Boolean(ticketId)) {
-		throw new Error("--work-id and --ticket-id must be supplied together");
-	}
-	if (workId && scopeFlags.length > 0) {
-		throw new Error(
-			"Work Map review scope is runtime-owned; remove staged, worktree, base, diff-file, and include-untracked flags",
-		);
-	}
 	assertValidReviewScopeFlags(scopeFlags);
-	if (!hasScope && !workId) forwarded.unshift("--worktree");
+	if (!hasScope) forwarded.unshift("--worktree");
 
 	return ["review", "code", "--mode", "real", "--host", host, ...forwarded];
 }
@@ -418,14 +345,6 @@ async function reviewCode(args: string[]): Promise<number> {
 	const runtimeArgs = resolveReviewLaunchArgs(args, entryFile, trustedRuntime?.config);
 	const reviewEnvironment = prepareReviewProcessEnvironment(process.env);
 	runtimeArgs.push("--goldband-home", reviewEnvironment.evidenceRoot);
-	if (trustedRuntime) {
-		reviewEnvironment.env[REVIEW_RECEIPT_TRUSTED_CONFIG_ENV] =
-			trustedRuntime.configFile;
-		runtimeArgs.push(
-			"--review-receipt-trusted-config",
-			trustedRuntime.configFile,
-		);
-	}
 	const trustedCodexExecutable = resolveTrustedCodexExecutable();
 	if (trustedCodexExecutable) resolveTrustedRulesRuntime();
 	if (trustedCodexExecutable) {
@@ -434,7 +353,7 @@ async function reviewCode(args: string[]): Promise<number> {
 	}
 	if (reviewEnvironment.durability === "ephemeral") {
 		console.error(
-			`Goldband review: durable state root is not writable in this sandbox; evidence will use sandbox-safe temporary root ${reviewEnvironment.evidenceRoot}.`,
+			`Goldband review: durable state root is not writable in this sandbox; reports will use sandbox-safe temporary root ${reviewEnvironment.evidenceRoot}.`,
 		);
 	}
 	const lease = acquireReviewExecutionLease(
@@ -463,46 +382,7 @@ function resolveReviewLaunchArgs(args: string[], entryFile: string, config?: Rec
 		host: configuredHost as ReviewHost | undefined ??
 			(args.includes("--host") ? undefined : inferPlanHost(entryFile, process.env)),
 	};
-	const validatedArgs = buildReviewRuntimeArgs(args, context);
-	if (args.some((arg) => [...REVIEW_SCOPE_FLAGS, "--work-id", "--ticket-id", "--semantic-only"].includes(arg))) return validatedArgs;
-	const lease = findManagedLeaseForWorktree(process.cwd());
-	return lease?.workMap ? buildReviewRuntimeArgs(args, { ...context, workMap: lease.workMap }) : validatedArgs;
-}
-
-function reviewContract(args: string[]): number {
-	const runtimeFile = join(dirname(resolveWorkflowRuntimeFile()), "review-contract-cli.ts");
-	if (!existsSync(runtimeFile) || !lstatSync(runtimeFile).isFile()) {
-		throw new Error(
-			"review contract runtime unavailable: rerun the Goldband workflow installer",
-		);
-	}
-	const command = args[0];
-	const needsState = command === "import" || command === "remove";
-	const runtimeEnvironment = needsState
-		? prepareReviewProcessEnvironment(process.env)
-		: undefined;
-	if (runtimeEnvironment && runtimeEnvironment.durability !== "durable") {
-		throw new Error("review contract store requires a writable durable Goldband state root");
-	}
-	const runtimeArgs = runtimeEnvironment
-		? [...args, "--goldband-home", runtimeEnvironment.evidenceRoot]
-		: args;
-	const result = spawnSync(
-		process.execPath,
-		[runtimeFile, ...runtimeArgs],
-		{
-			cwd: process.cwd(),
-			env: runtimeEnvironment?.env ?? process.env,
-			stdio: "inherit",
-		},
-	);
-	if (result.error) throw result.error;
-	if (result.status === null) {
-		throw new Error(
-			`review contract runtime terminated without an exit status (${result.signal ?? "unknown signal"})`,
-		);
-	}
-	return result.status;
+	return buildReviewRuntimeArgs(args, context);
 }
 
 function browserSession(args: string[]): number {
@@ -533,7 +413,7 @@ function browserSession(args: string[]): number {
 	}
 	if (runtimeEnvironment.durability === "ephemeral") {
 		console.error(
-			`Goldband browser: durable state root is not writable in this sandbox; evidence will use sandbox-safe temporary root ${runtimeEnvironment.evidenceRoot}.`,
+			`Goldband browser: durable state root is not writable in this sandbox; reports will use sandbox-safe temporary root ${runtimeEnvironment.evidenceRoot}.`,
 		);
 	}
 
@@ -945,11 +825,7 @@ export function prepareReviewProcessEnvironment(
 	env: NodeJS.ProcessEnv,
 	options: ReviewProcessEnvironmentOptions = {},
 ): ReviewProcessEnvironment {
-	const cleanEnv = {
-		...env,
-		...evidenceChildProcessEnvironment(env),
-	};
-	delete cleanEnv[REVIEW_EVIDENCE_DURABILITY_ENV];
+	const cleanEnv = { ...env };
 	delete cleanEnv[TRUSTED_CODEX_EXECUTABLE_ENV];
 	delete cleanEnv[TRUSTED_BROWSER_EXECUTABLE_ENV];
 	delete cleanEnv.BROWSE_SERVER_SCRIPT;
@@ -960,18 +836,13 @@ export function prepareReviewProcessEnvironment(
 		env,
 		options.home ?? homedir(),
 	);
-	// Contract lookup stays on the durable project registry even when evidence
-	// output must move to a sandbox-writable temporary directory.
-	cleanEnv[REVIEW_CONTRACT_ROOT_ENV] = evidenceRoot;
 	const probe = options.probeStateRoot ?? probeWritableStateRoot;
 	try {
 		probe(evidenceRoot);
 		return {
 			env: cleanEnv,
 			evidenceRoot,
-			coordinationRoot: prepareTemporaryReviewCoordinationRoot(
-				options.coordinationRoot ?? defaultReviewCoordinationRoot(evidenceRoot, "durable"),
-			),
+			coordinationRoot: prepareReviewCoordinationRoot(join(evidenceRoot, "review-coordination")),
 			durability: "durable",
 		};
 	} catch (error) {
@@ -980,78 +851,28 @@ export function prepareReviewProcessEnvironment(
 
 	const temporaryRoot = options.createTemporaryRoot
 		? options.createTemporaryRoot()
-		: mkdtempSync(join(reviewTemporaryDirectory(env), "goldband-review-state-"));
+		: mkdtempSync(join(tmpdir(), "goldband-review-state-"));
 	probe(temporaryRoot);
-	const coordinationRoot = prepareTemporaryReviewCoordinationRoot(
-		options.coordinationRoot ?? defaultReviewCoordinationRoot(temporaryRoot, "ephemeral"),
-	);
 	return {
 		env: {
 			...cleanEnv,
 			GOLDBAND_HOME: temporaryRoot,
-			[REVIEW_EVIDENCE_DURABILITY_ENV]: REVIEW_EVIDENCE_DURABILITY_EPHEMERAL,
 		},
 		evidenceRoot: temporaryRoot,
-		coordinationRoot,
+		coordinationRoot: prepareReviewCoordinationRoot(join(dirname(temporaryRoot),
+			`goldband-review-coordination-${typeof process.getuid === "function" ? process.getuid() : "current-user"}`)),
 		durability: "ephemeral",
 	};
 }
 
-function defaultReviewCoordinationRoot(
-	stateRoot: string,
-	durability: "durable" | "ephemeral",
-): string {
-	if (durability === "durable") return join(stateRoot, "review-coordination");
-	const identity = typeof process.getuid === "function"
-		? String(process.getuid())
-		: "current-user";
-	return join(dirname(stateRoot), `goldband-review-coordination-${identity}`);
-}
-
-function reviewTemporaryDirectory(env: NodeJS.ProcessEnv): string {
-	const runtimeOwnedEvidenceRoot = env[EVIDENCE_TEMP_ROOT_ENV];
-	if (
-		env[EVIDENCE_SANDBOX_ACTIVE_ENV] === "1" &&
-		runtimeOwnedEvidenceRoot &&
-		isAbsolute(runtimeOwnedEvidenceRoot) &&
-		resolve(runtimeOwnedEvidenceRoot) === runtimeOwnedEvidenceRoot
-	) {
-		// The outer evidence runtime creates, canonicalizes, and grants this root
-		// before entering Seatbelt. Re-probing it here can itself be denied and
-		// must not make the installed launcher fall back to an unauthorized /tmp.
-		return runtimeOwnedEvidenceRoot;
-	}
-	for (const key of [EVIDENCE_TEMP_ROOT_ENV, "TMPDIR", "TMP", "TEMP"] as const) {
-		const candidate = env[key];
-		if (!candidate || !isAbsolute(candidate) || !existsSync(candidate)) continue;
-		let metadata;
-		try {
-			metadata = lstatSync(candidate);
-		} catch {
-			continue;
-		}
-		if (!metadata.isDirectory() || metadata.isSymbolicLink()) continue;
-		if (typeof process.getuid === "function" && metadata.uid !== process.getuid()) continue;
-		return realpathSync(candidate);
-	}
-	return realpathSync(tmpdir());
-}
-
-function prepareTemporaryReviewCoordinationRoot(root: string): string {
+function prepareReviewCoordinationRoot(root: string): string {
 	mkdirSync(root, { recursive: true, mode: 0o700 });
 	const metadata = lstatSync(root);
 	if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
-		throw new Error(
-			`review coordination root must be a real directory: ${root}`,
-		);
+		throw new Error(`review coordination root must be a real directory: ${root}`);
 	}
-	if (
-		typeof process.getuid === "function" &&
-		metadata.uid !== process.getuid()
-	) {
-		throw new Error(
-			`review coordination root is not owned by the current user: ${root}`,
-		);
+	if (typeof process.getuid === "function" && metadata.uid !== process.getuid()) {
+		throw new Error(`review coordination root is not owned by the current user: ${root}`);
 	}
 	chmodSync(root, 0o700);
 	probeWritableStateRoot(root);
@@ -1263,14 +1084,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
 	if (PROMPT_CONTRACT_ACTION_SET.has(trustedAction)) {
 		promptContractUsage(trustedAction);
 	}
-	if (scope === "review") {
-		if (action === "contract") {
-			return reviewContract(
-				[name, ...rest].filter((value): value is string => value !== undefined),
-			);
-		}
-		usage();
-	}
+	if (scope === "review") usage();
 	if (scope === "browser") {
 		usage();
 	}

@@ -101,14 +101,10 @@ export type WorkflowRunOptions = {
   reviewHostTimeoutMs?: number;
   reviewPassTimeoutMs?: number;
   reviewClaudeMaxBudgetUsd?: number;
-  semanticOnly?: boolean;
-  evidenceManifestFile?: string;
-  closureArtifactFile?: string;
   workId?: string;
   ticketId?: string;
   inputFile?: string;
   goldbandHome?: string;
-  reviewReceiptTrustedConfig?: string;
   cwd?: string;
   iteration?: number;
   repeatedBlocker?: boolean;
@@ -149,29 +145,7 @@ export type ReviewFinding = {
   blocking?: boolean;
   specialist?: string;
   contributingSpecialists?: string[];
-  classification?: ReviewFindingClassification;
-  evidenceIds?: string[];
-  behaviorCellIds?: string[];
   reproductionStep?: string;
-};
-
-export type ReviewFindingClassification =
-  | 'verified-failure'
-  | 'coverage-gap'
-  | 'semantic-concern'
-  | 'runtime-incomplete';
-
-type ReviewClosureStatus =
-  | 'closed'
-  | 'still-open'
-  | 'direct-regression'
-  | 'evidence-incomplete';
-
-export type ReviewClosureResult = {
-  findingId: string;
-  status: ReviewClosureStatus;
-  summary: string;
-  evidenceIds?: string[];
 };
 
 export type QaCheck = {

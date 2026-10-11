@@ -80,7 +80,6 @@ function main() {
     runInstall(tmpHome, 'workflow');
     runInstall(tmpHome, 'workflow-codex');
     assertInstalledStandardInventory(tmpHome, inventory, capabilityContract);
-    installedContracts.assertInstalledPythonContract(tmpHome);
     assertInstalledManagedWorktreeSurface(tmpHome);
     assertInstalledWorkflowDistribution(tmpHome, LOOP_DIR);
     assertInstalledGbrainRetirement({
@@ -105,7 +104,6 @@ function main() {
       reinstall: (target) =>
         runInstall(copyHome, target, { GOLDBAND_FORCE_COPY: '1' }),
     });
-    installedContracts.assertInstalledPythonContract(copyHome);
     assertInstalledKnowledgeCliRuns(copyHome);
     assertInstalledCrossReviewCliRuns(copyHome);
     assertInstalledTaskEmissionCliRuns(copyHome);
@@ -503,10 +501,6 @@ function assertInstalledRuntimeSupportFiles(...runtimeRoots) {
     path.join('review', 'findings-schema.md'),
     path.join('review', 'checklist.md'),
     path.join('review', 'greptile-triage.md'),
-    path.join('review', 'review-evidence-manifest.md'),
-    path.join('review', 'examples', 'minimal-local-gate.json'),
-    path.join('review', 'schemas', 'review-evidence-manifest.schema.json'),
-    path.join('review', 'schemas', 'review-behavior-matrix.schema.json'),
     path.join('cross-review', 'core.cjs'),
     path.join('cross-review', 'cli.cjs'),
   ];

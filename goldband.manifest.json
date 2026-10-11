@@ -175,35 +175,38 @@
       "actions": [
         {
           "id": "code",
-          "description": "Evidence-backed or explicit semantic-only code review.",
+          "description": "Independent read-only semantic code review.",
           "runtime": "typed",
           "owner": "review-runtime",
           "dispatch": "trusted-launcher",
           "risk": "medium",
           "promptContract": {
             "relevantContext": [
-              "Claude: <skill-root>/bin/goldband review code. Codex: ~/.codex/goldband/workflow-runtime/bin/goldband review code. In target repo; automatic host, scope, contract, task IDs and continuation.",
-              "Default: execution evidence. Code-only request: --semantic-only. Scope: --staged, --base <ref>, --worktree or --diff-file <path>."
+              "Claude: <skill-root>/bin/goldband review code. Codex: ~/.codex/goldband/workflow-runtime/bin/goldband review code. Run in the target repository.",
+              "Default: current worktree. Narrow with --staged, --base <ref> or --diff-file <path>."
             ],
             "hardBoundaries": [
-              "Use installed entrypoint. Missing runtime or rule is an install failure.",
-              "Never fallback. Semantic-only has no execution or completion authority."
+              "Use the installed entrypoint. Missing runtime or rule is an install failure.",
+              "Semantic review does not run tests, authorize completion, or change task state."
             ],
             "verification": [
-              "Return report and typed artifact; state scope, unexecuted checks and prior blockers."
+              "Return findings and scope. State unexecuted checks and inaccessible context."
             ],
             "runtimeContract": {
-              "modes": ["diff", "work-map", "closure", "semantic-only"],
+              "modes": [
+                "diff"
+              ],
               "requiredInputs": {
-                "semantic-only": ["review-scope", "read-only-semantic-host"],
-                "diff": ["review-scope", "behavior-matrix", "evidence-provider-registry"],
-                "work-map": ["work-id", "ticket-id", "managed-lease", "verification-receipt", "behavior-matrix", "evidence-provider-registry"],
-                "closure": ["initial-review-artifact", "repaired-candidate", "rerun-evidence"]
+                "diff": [
+                  "review-scope",
+                  "read-only-semantic-host"
+                ]
               },
-              "outputs": ["non-authoritative-semantic-artifact", "typed-evidence", "classified-findings", "acceptance-lineage", "typed-verdict", "closure-results", "review-artifact", "provenance-readback"],
-              "sideEffects": {
-                "work-map-ticket-transition": "runtime-owner"
-              }
+              "outputs": [
+                "review-report",
+                "semantic-findings"
+              ],
+              "sideEffects": {}
             }
           }
         },

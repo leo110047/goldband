@@ -32,7 +32,7 @@ export function assertInstalledWorkflowDistribution(home, loopDir) {
     timeout: 10_000,
   });
   assert.equal(help.status, 0, `installed review help failed: ${help.stderr}`);
-  assert.match(help.stdout, /resolved automatically/);
+  assert.match(help.stdout, /host is inferred/);
   const dispatch = declaredDispatchContract(loopDir);
   for (const action of dispatch.trustedLauncher) {
     const probe = spawnSync(

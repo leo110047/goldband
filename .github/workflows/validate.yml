@@ -51,8 +51,6 @@ jobs:
         run: cd goldband-loop && bun run build
       - name: Check generated capability surfaces
         run: npm run check:manifest
-      - name: Check review contract freshness
-        run: npm run check:review-contracts
       - name: Test capability invocation validation
         run: npm run test:capability-invocations
       - name: Test thin workflow contracts
@@ -243,8 +241,10 @@ jobs:
         run: bash scripts/test-sandbox.sh
 
   macos-review-host:
-    name: macOS Seatbelt review evidence contracts
+    name: macOS workflow and native permission contracts
     runs-on: macos-latest
+    env:
+      GOLDBAND_REQUIRE_CODEX_EXECPOLICY: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -253,24 +253,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Install Python review runtime prerequisites
-        run: brew install python@3.14 uv
       - name: Install Codex CLI for execpolicy contract tests
         run: npm install -g @openai/codex
       - name: Install Goldband Loop dependencies
         run: cd goldband-loop && bun install --frozen-lockfile
-      - name: Review evidence - review-evidence-tests
-        run: bun test --cwd goldband-loop test/review-evidence.test.ts test/review-evidence-platform.test.ts
-        env:
-          GOLDBAND_REQUIRE_REVIEW_HOST_BOUNDARY: "1"
-      - name: Review evidence - work-map-review-tests
-        run: bun test --cwd goldband-loop test/work-map-review.test.ts
-        env:
-          GOLDBAND_REQUIRE_REVIEW_HOST_BOUNDARY: "1"
-      - name: Review evidence - installed-runtime-tests
-        run: bun test --cwd goldband-loop test/codex-review-launcher-install.test.ts test/review-receipt-authority-install.test.ts
-        env:
-          GOLDBAND_REQUIRE_REVIEW_HOST_BOUNDARY: "1"
+      - name: Semantic review and installed entrypoint tests
+        run: bun test --cwd goldband-loop test/review-semantic.test.ts test/goldband-review-cli.test.ts test/codex-review-launcher-install.test.ts
       - name: Build installer-owned Goldband Loop artifacts
         run: cd goldband-loop && bun run build
       - name: Test managed worktree Seatbelt enforcement on macOS
@@ -279,14 +267,14 @@ jobs:
           GOLDBAND_REQUIRE_LIVE_BOUNDARY: "1"
       - name: Show macOS workflow test ownership
         run: cd goldband-loop && bun run scripts/test-workflows.ts --list
-      - name: Test Goldband Loop workflow runtime on the macOS review host
+      - name: Test Goldband Loop workflow runtime on macOS
         run: cd goldband-loop && bun run test:workflows
-        env:
-          GOLDBAND_REQUIRE_REVIEW_HOST_BOUNDARY: "1"
 
   macos-free-suite:
     name: macOS free suite
     runs-on: macos-latest
+    env:
+      GOLDBAND_REQUIRE_CODEX_EXECPOLICY: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -295,8 +283,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Install Python review runtime prerequisites
-        run: brew install python@3.14 uv
       - name: Install Codex CLI for execpolicy contract tests
         run: npm install -g @openai/codex
       - name: Install Goldband Loop dependencies
@@ -309,8 +295,6 @@ jobs:
         run: cd goldband-loop && bun run scripts/test-free-shards.ts --list
       - name: Test Goldband Loop free suite on macOS
         run: cd goldband-loop && bun run test:free
-        env:
-          GOLDBAND_REQUIRE_REVIEW_HOST_BOUNDARY: "1"
 
   macos-pty-integration:
     name: macOS PTY and WebSocket integration

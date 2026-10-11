@@ -12,7 +12,7 @@ const {
 const root = path.resolve(import.meta.dirname, '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'review-advisory-'));
 const report =
-  '# review/code runtime report\n\n- runtime-evidence-incomplete: true\n- completion-authorized: false\n';
+  '# review/code report\n\nNo findings.\nTests were not executed.\n';
 const output = JSON.stringify({ workflow: 'review/code', output: report });
 const input = (command, tool_response) => ({
   hook_event_name: 'PostToolUse',
@@ -70,14 +70,13 @@ try {
     { exitCode: 0, output },
     output,
     { stdout: report },
-    `Goldband review: durable state root is not writable in this sandbox; evidence will use sandbox-safe temporary root /tmp/review.\n${output}`,
+    `Goldband review: durable state root is not writable in this sandbox; reports will use sandbox-safe temporary root /tmp/review.\n${output}`,
     `${output}\nGoldband review: temporary state root warning\n`,
   ]) {
     const message = reviewLaunchAdvisory(
       input('goldband review code --host codex', response),
     );
-    assert.match(message, /started but its evidence is incomplete/);
-    assert.doesNotMatch(message, /correct host launcher/);
+    assert.equal(message, null);
   }
   assert.equal(
     reviewLaunchAdvisory(input('goldband review code', { exit_code: 0 })),
@@ -177,13 +176,10 @@ try {
       }),
     );
     assert.equal(incomplete.status, 0, incomplete.stderr);
-    assert.match(
-      JSON.parse(incomplete.stdout).hookSpecificOutput.additionalContext,
-      /evidence is incomplete/,
-    );
+    assert.match(incomplete.stdout, /^(?:\s*|\{\s*\})$/);
   }
   console.log(
-    'ok - review launch advice, incomplete reports, silent unrelated commands, and isolated host adapters',
+    'ok - review launch advice, semantic reports, silent unrelated commands, and isolated host adapters',
   );
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });

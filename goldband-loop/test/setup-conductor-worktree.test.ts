@@ -8,18 +8,6 @@ const ROOT = path.resolve(import.meta.dir, '..');
 const SETUP_SCRIPT = path.join(ROOT, 'setup');
 
 describe('setup: Conductor worktree guard', () => {
-  test('same-directory Claude install provisions receipt authority before returning', () => {
-    const content = fs.readFileSync(SETUP_SCRIPT, 'utf-8');
-    const branch = content.slice(
-      content.indexOf('if [ ! -L "$claude_goldband" ] && same_dir_path'),
-      content.indexOf('if [ -L "$claude_goldband" ]', content.indexOf('if [ ! -L "$claude_goldband" ] && same_dir_path')),
-    );
-    expect(branch).toContain('create_internal_workflow_docs "$claude_goldband"');
-    expect(branch).toContain('provision-review-receipt-authority.ts');
-    expect(branch.indexOf('provision-review-receipt-authority.ts')).toBeLessThan(
-      branch.indexOf('return 0'),
-    );
-  });
 
   test('same-directory workflow docs preserve the executable source owner', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'goldband-workflow-root-'));

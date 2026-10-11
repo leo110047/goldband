@@ -1,33 +1,15 @@
-// Collection, persisted artifacts, and closure share the same full-patch budget.
+import { assertValidClaudeReviewMaxBudgetUsd } from "../workflows/review-budgets";
+
+// Review collection and prompt transport share the full-patch budget.
 export const MAX_REVIEW_DIFF_BYTES = 2 * 1024 * 1024;
 export const MAX_REVIEW_PROMPT_OVERHEAD_BYTES = 48 * 1024;
 export const REVIEW_RESOURCE_CLEANUP_TIMEOUT_MS = 30_000;
-
-export const REVIEW_HOST_EVIDENCE_POLICY = {
-  reviewHostEvidenceLane: "macos-review-contract-host",
-  reviewLocalEvidenceLane: "goldband-local-review-host",
-} as const;
-
-import { assertValidClaudeReviewMaxBudgetUsd } from '../workflows/review-budgets';
-
-export const REVIEW_CONTRACT_ROOT_ENV = "GOLDBAND_REVIEW_CONTRACT_ROOT";
-
 export const REVIEW_ACTIVE_ENV = "GOLDBAND_REVIEW_ACTIVE";
-const NESTED_REVIEW_ERROR =
-	"review/code cannot start inside an active review; reuse the current runtime report instead of launching another reviewer";
-export const REVIEW_EVIDENCE_DURABILITY_ENV =
-	"GOLDBAND_REVIEW_EVIDENCE_DURABILITY";
-export const REVIEW_EVIDENCE_DURABILITY_EPHEMERAL = "ephemeral";
+const NESTED_REVIEW_ERROR = "review/code cannot start inside an active review";
 export const REVIEW_SCOPE_FLAGS = [
-	"--staged",
-	"--worktree",
-	"--base",
-	"--diff-file",
-	"--include-untracked",
+	"--staged", "--worktree", "--base", "--diff-file", "--include-untracked",
 ] as const;
-
 export type ReviewScopeFlag = (typeof REVIEW_SCOPE_FLAGS)[number];
-
 type ReviewScopeOptions = {
 	staged?: boolean;
 	worktree?: boolean;
@@ -37,13 +19,10 @@ type ReviewScopeOptions = {
 };
 
 type ReviewExecutionOptions = ReviewScopeOptions & {
-	semanticOnly?: boolean;
-	evidenceManifestFile?: string;
-	closureArtifactFile?: string;
-	workId?: string;
-	ticketId?: string;
 	specialists?: "off" | "auto" | "all";
 	reviewClaudeMaxBudgetUsd?: number;
+	workId?: string;
+	ticketId?: string;
 };
 
 export const INDEPENDENT_REVIEWER_ERROR =
@@ -86,8 +65,8 @@ function assertValidReviewScopeOptions(options: ReviewScopeOptions): void {
 export function assertValidReviewExecutionOptions(
 	options: ReviewExecutionOptions,
 ): void {
-	if (options.semanticOnly && [options.evidenceManifestFile, options.closureArtifactFile, options.workId, options.ticketId].some((value) => value !== undefined)) {
-		throw new Error("--semantic-only is incompatible with --evidence-manifest, --closure-artifact, --work-id, and --ticket-id");
+	if (options.workId || options.ticketId) {
+		throw new Error("review/code no longer manages Work Map tickets; use an explicit diff scope");
 	}
 	assertValidReviewScopeOptions(options);
 	if (options.specialists && options.specialists !== "off") {

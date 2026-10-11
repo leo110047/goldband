@@ -103,36 +103,15 @@ describe('test-free-shards: Windows curation', () => {
 });
 
 describe('test-free-shards: platform ownership', () => {
-  test('Linux keeps mixed files while excluding only macOS review-host cases', () => {
-    const files = collectFreeTestFiles(ROOT);
-    expect(files).toContain('test/review-evidence.test.ts');
-    expect(files).toContain('test/review-contract-authoring.test.ts');
-    expect(files).toContain('test/work-map-review.test.ts');
-    expect(files).toContain('test/codex-review-launcher-install.test.ts');
-    expect(files).toContain('test/codex-review-contract-authoring-install.test.ts');
-    expect(files).toContain('test/review-receipt-authority-install.test.ts');
-    expect(files).toContain('test/workflows-runtime.test.ts');
-    expect(files).toContain('test/goldband-review-cli.test.ts');
+  test('portable review is included without platform-specific evidence exclusions', () => {
+    const files = collectFreeTestFiles();
+    expect(files).toContain('test/review-semantic.test.ts');
+    expect(files).not.toContain('test/review-evidence.test.ts');
+    const args = buildShardArgs(['test/review-semantic.test.ts'], 'linux');
+    expect(args).toContain('test/review-semantic.test.ts');
+    expect(args).not.toContain('--test-name-pattern');
   });
 
-  test('Linux shard arguments exclude only macOS review-host cases inside mixed files', () => {
-    const args = buildShardArgs([
-      'test/workflows-runtime.test.ts',
-      'test/goldband-review-cli.test.ts',
-    ], 'linux');
-    const patternIndex = args.indexOf('--test-name-pattern');
-    expect(patternIndex).toBeGreaterThan(0);
-    const pattern = args[patternIndex + 1]!;
-    expect(new RegExp(pattern).test(
-      'workflow runtime > review/code typed flow renders validated report',
-    )).toBe(false);
-    expect(new RegExp(pattern).test(
-      'workflow runtime > runtime rejects invocations outside manifest hostSupport',
-    )).toBe(true);
-  });
-});
-
-describe('test-free-shards: sharding', () => {
   test('each shard has a hard wall-clock deadline longer than its per-test timeout', () => {
     expect(FREE_SHARD_WALL_CLOCK_TIMEOUT_MS).toBe(10 * 60_000);
     expect(FREE_SHARD_WALL_CLOCK_TIMEOUT_MS).toBeGreaterThan(10_000);

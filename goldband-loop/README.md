@@ -31,91 +31,24 @@ not aliases.
 The generated [capability catalog](../docs/generated/capabilities.md) is the
 authoritative list of supported capability/action pairs and runtime status.
 
-Daily `review/code` needs no manifest argument: Goldband discovers the registered
-project contract in `~/.goldband/review-contracts` using Git identity. Read-only
-`review contract inspect` reports the expected registry entry even when missing.
-Sandbox evidence-output fallback preserves this durable lookup location.
+`review/code` collects a bounded diff and related code context, loads the shared
+review rules, and calls one independent reviewer using the host's native read-only
+permissions. Findings must name an exact location, concrete code observation,
+trigger and impact, and suggested verification. The runtime validates and
+normalizes findings, rejects scope or policy drift, and writes a plain JSON result
+and Markdown report. It does not execute project checks or mutate Work Map state.
 
-Real `review/code` runs resolve one canonical Git workspace. The repo root owns
-diff, snapshot, scope, and default manifest coordinates; an invocation
-subdirectory is retained only as the operation execution offset. The reviewed
-base's repo-root `goldband.review-evidence.json` is authoritative. If the base
-has none, use `goldband review contract import --manifest <path>` to register a
-runtime-owned contract for that Git common directory. Working-tree, index, and
-`--evidence-manifest` inputs are complete candidate extensions, never primary
-authorities. Required coverage and execution boundaries remain enforced;
-command and descriptive corrections need an explicit preservation assessment
-in the same independent review. `inspect` distinguishes boundary compatibility
-from changes still requiring semantic review. Unaccepted checks do not replace
-the prior lineage requirements, and old findings remain open until verified.
-A candidate may remove a repository manifest during migration
-only if the registered contract has exactly the reviewed baseline digest. `inspect` reads back repo root, invocation offset,
-base/candidate provenance, tracking state, sources, shadowing, and digests;
-`remove` deletes only the runtime-store entry. Manifest schema v2 is required.
-The only v1 transition is a committed v1 base paired with a v2 candidate, and
-it is accepted only when changing the base version marker alone passes the
-complete v2 validation. Every other v1 input is rejected with
-observed/supported versions, source, and remediation; safety fields are never
-inferred.
+The default scope is the current worktree. `--base`, `--staged`, and `--diff-file`
+select explicit scopes. After repairs, rerun the same entrypoint to inspect the
+current scope; failures and unchanged candidates do not create retry locks.
+Project tests, lint, typecheck, CI, and live checks remain separate responsibilities.
+No findings means only that this semantic pass reported no concrete concerns.
 
-For first-time project onboarding, run `goldband review contract help` to find
-the installed guide, public example, and JSON Schema. `review contract init`
-creates a non-overwriting, fail-closed repo-root scaffold, while
-`review contract validate --manifest <path>` invokes the production validator
-without running evidence, changing the store, or granting completion authority.
-
-The effective contract declares behavior cells and typed provider commands; the
-runtime executes each operation in its own read-only,
-default-deny read/write/network snapshot, verifies the pre/post tree digest, and requires reciprocal provider/cell
-ownership plus an exact RED exit code before one semantic host call. After a
-finding is repaired, repeat the installed `goldband review code` entrypoint with
-the same scope. It finds the unique signed unresolved lineage, validates its
-authoritative artifact and receipt, and runs one repair-delta-only closure call.
-Ambiguous records require an explicit `--closure-artifact` selection. Additional
-changed files outside the original review block automatic closure because they
-need separate review. Unchanged
-candidates and contracts stop before another provider or host call.
-Closure also accepts a repaired manifest and
-reruns newly added or modified affected cells; `closed` requires fresh passing
-evidence. Installed-runtime receipt plus Work Map requested-changes readback rejects
-caller-edited, cross-scope, or prior-attempt initial artifacts. The same OS user remains
-inside the trusted host boundary. The signed lineage and exclusive owner lock permit retries after failures while preserving
-original findings; completed closure cannot replay its old artifact. Prompt-redacted untracked files remain digest-bound and executable
-through a separate snapshot-only channel. Missing resolvable contracts, unsupported isolation,
-candidate drift, and provenance mismatch fail closed before semantic review.
-When the authoritative artifact has `hostCallCount=0` and deterministic-only
-findings, the same flag routes to an explicit pre-semantic evidence repair, not
-semantic closure. It keeps the original lineage, receipt, finding IDs, policy,
-and provider/operation authority; reruns only affected or newly strengthened
-typed cells; and invokes the lineage's first semantic host exactly once only
-after evidence is eligible. A failed repair emits a successor artifact with the
-blockers still open, while every repair artifact records predecessor digests and
-affected cells.
-On macOS, the default-deny profile imports Apple's common system process baseline
-for process startup, then exactly re-denies its syslog, Mach service, and shared-memory
-channels as well as broad network and system-socket access. Dynamically linked
-non-system Mach-O runtimes execute from a rewritten, ad-hoc-signed, content-attested
-private projection; the command cannot read the source package tree or write the
-projection. Only the candidate, isolated runner state, sealed runtime projection,
-and projected dependency roots are readable.
-
-The installed runtime also persists a signed acceptance lineage. It compares
-every successor manifest before evidence or host dispatch, preserves unresolved
-finding IDs across restarts, and forces repaired candidates through the exact
-initial artifact's state-appropriate evidence repair or scoped closure. A
-`manual` or `unsupported` gap may strengthen into a typed evidence disposition;
-reverse or lateral disposition changes remain blocked. Empty initial candidates fail before lineage
-creation. Standalone lineages include the normalized changed-file scope, while
-signed legacy records are read through only when their authoritative artifact
-proves the same scope. If that artifact is unavailable, an exact signed
-candidate-digest match still preserves the blocker; an unrelated candidate does
-not inherit the unverifiable broad scope. A new initial candidate that overlaps
-an unresolved changed-file scope must use closure, including repairs that add or
-remove files. Sorted per-path authority locks make overlap detection atomic while
-disjoint scopes remain independent. Optional base-committed
-`goldband.review-policy.json` sets per-cell minimum evidence levels and typed,
-auditable waivers. Reports keep `no-new-findings`, deterministic completeness,
-runtime completeness, closure completeness, and completion authority separate.
+Review manifests, providers, contract registries, acceptance lineage, signed
+review receipts, evidence repair, closure, and completion authorization are
+retired. The installer replaces obsolete runtime assets but preserves historical
+reports and external state. Retired CLI flags fail explicitly. Existing managed
+worktree project verification and Git integration safeguards remain in place.
 
 Managed parallel work uses two host commands:
 

@@ -61,30 +61,17 @@ marker, runtime, or rule is an installation failure and requires reinstall.
 The trusted snapshot also pins the installed Codex CLI by absolute path, so a
 reviewed repository cannot replace the nested reviewer through `PATH`.
 
-The launcher forces real mode. Without an explicit scope, it resolves the current
-valid managed lease's Work Map IDs, or reviews the whole current worktree.
-Explicit scopes and semantic-only mode do not inherit a managed task. Invalid
-existing managed markers fail rather than silently becoming standalone reviews.
-The installed configuration supplies the host; explicit host flags remain
-available to advanced callers of the underlying launcher. The Codex executable
-pins its host and rejects an additional caller-supplied host.
-Real review finds a unique signed unresolved lineage for the same repository,
-base, collection scope and overlapping files, or the same managed task. It then
-validates the authoritative artifact and receipt through the existing closure
-path. Repaired candidates automatically enter evidence repair or closure;
-ambiguous records require an explicit selection. Unchanged candidate and
-contract pairs stop before providers or host dispatch. Deliberate retries after
-an environment correction can still supply `--closure-artifact` explicitly.
-Newly changed files outside the original review block automatic closure before
-execution; closure only reassesses the original findings. Those additional
-changes need separate review, or an explicit artifact selection for a deliberate
-review limited to the original findings.
-The launcher rejects specialist fan-out and
-`--loop`, marks the child environment as an active review, and atomically leases
-the canonical repository plus normalized scope before starting the single host
-call. Child prompts contain semantic judgment inputs; read-only tools, approval,
-output schema, timeout, and non-recursion are runtime-owned. Launcher or runtime
-failure is terminal.
+The launcher forces real mode and defaults to the current worktree. The installed
+configuration supplies the host. The Codex executable pins its host and rejects
+an additional caller-supplied host. Each invocation is an independent semantic
+pass: it never resolves a review contract, resumes a lineage, authorizes closure,
+or advances a Work Map ticket. Repeat the same command after repairs.
+
+The launcher rejects specialist fan-out and `--loop`, and marks the child as an
+active review to prevent recursion. Read-only tools, approval policy, output
+schema, and timeout remain adapter-owned. Launcher or runtime failures are
+reported explicitly and do not prevent a later retry. Project verification is
+separate from the semantic report.
 
 Codex CLI browser work uses the same trusted launcher followed by
 `browser session --host codex <command> [args...]`. It does not depend on the

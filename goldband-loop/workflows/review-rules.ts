@@ -166,7 +166,7 @@ export function coreReviewRules(
   };
 }
 
-export function createReviewRulesSnapshot(repoRoot: string): RulesSnapshot {
+function createReviewRulesSnapshot(repoRoot: string): RulesSnapshot {
   return rulesResolver.createRulesSnapshot(
     withTrustedRulesDirectory({ repoRoot }),
   );

@@ -866,60 +866,6 @@ create_internal_workflow_docs() {
   fi
 }
 
-install_review_authoring_assets() {
-  local goldband_dir="$1"
-  local runtime_root="$2"
-  local repo_root guide_source example_source manifest_schema_source behavior_schema_source semantic_schema_source
-  repo_root="$(cd "$goldband_dir/.." && pwd -P)"
-
-  semantic_schema_source="$repo_root/schemas/review-semantic-result.schema.json"
-  [ -f "$semantic_schema_source" ] || semantic_schema_source="$goldband_dir/review/schemas/review-semantic-result.schema.json"
-  [ -f "$semantic_schema_source" ] || {
-    echo "goldband setup failed: missing semantic review schema" >&2
-    exit 1
-  }
-  guide_source="$repo_root/docs/review-evidence-manifest.md"
-  example_source="$repo_root/examples/review-evidence/minimal-local-gate.json"
-  manifest_schema_source="$repo_root/schemas/review-evidence-manifest.schema.json"
-  behavior_schema_source="$repo_root/schemas/review-behavior-matrix.schema.json"
-  [ -f "$guide_source" ] || guide_source="$goldband_dir/review/review-evidence-manifest.md"
-  [ -f "$example_source" ] || example_source="$goldband_dir/review/examples/minimal-local-gate.json"
-  [ -f "$manifest_schema_source" ] || manifest_schema_source="$goldband_dir/review/schemas/review-evidence-manifest.schema.json"
-  [ -f "$behavior_schema_source" ] || behavior_schema_source="$goldband_dir/review/schemas/review-behavior-matrix.schema.json"
-
-  [ -f "$guide_source" ] || {
-    echo "goldband setup failed: missing review manifest authoring guide" >&2
-    exit 1
-  }
-  [ -f "$example_source" ] || {
-    echo "goldband setup failed: missing review manifest example" >&2
-    exit 1
-  }
-  [ -f "$manifest_schema_source" ] || {
-    echo "goldband setup failed: missing review manifest schema" >&2
-    exit 1
-  }
-  [ -f "$behavior_schema_source" ] || {
-    echo "goldband setup failed: missing review behavior schema" >&2
-    exit 1
-  }
-
-  mkdir -p "$runtime_root/review/examples" "$runtime_root/review/schemas"
-  _link_or_copy "$semantic_schema_source" "$runtime_root/review/schemas/review-semantic-result.schema.json"
-  _link_or_copy \
-    "$guide_source" \
-    "$runtime_root/review/review-evidence-manifest.md"
-  _link_or_copy \
-    "$example_source" \
-    "$runtime_root/review/examples/minimal-local-gate.json"
-  _link_or_copy \
-    "$manifest_schema_source" \
-    "$runtime_root/review/schemas/review-evidence-manifest.schema.json"
-  _link_or_copy \
-    "$behavior_schema_source" \
-    "$runtime_root/review/schemas/review-behavior-matrix.schema.json"
-}
-
 # ─── Helper: create a minimal ~/.codex/skills/goldband runtime root ───────────
 # Codex scans ~/.codex/skills recursively. Exposing the whole repo here causes
 # duplicate skills when old per-workflow entries remain discoverable. Keep this
@@ -960,12 +906,11 @@ create_codex_runtime_root() {
     _link_or_copy "$goldband_dir/browse/bin" "$codex_goldband/browse/bin"
   fi
   # Review runtime assets (individual files, NOT the whole review/ dir which has SKILL.md)
-  for f in shared-rubric.md findings-schema.md checklist.md evidence-omission.md design-checklist.md greptile-triage.md TODOS-format.md; do
+  for f in shared-rubric.md findings-schema.md checklist.md design-checklist.md greptile-triage.md TODOS-format.md; do
     if [ -f "$goldband_dir/review/$f" ]; then
       _link_or_copy "$goldband_dir/review/$f" "$codex_goldband/review/$f"
     fi
   done
-  install_review_authoring_assets "$goldband_dir" "$codex_goldband"
   # ETHOS.md — referenced by "Search Before Building" in all skill preambles
   if [ -f "$goldband_dir/ETHOS.md" ]; then
     _link_or_copy "$goldband_dir/ETHOS.md" "$codex_goldband/ETHOS.md"
@@ -1010,6 +955,13 @@ install_codex_trusted_workflow_launcher() {
   rm -f "$codex_goldband/.review-launcher.json"
 }
 
+write_claude_runtime_config() {
+  local runtime_root="$1"
+  local temporary="$runtime_root/trusted-runtime.json.tmp-$$"
+  printf '%s\n' '{"schemaVersion":2,"runtimeHost":"claude"}' > "$temporary"
+  mv -f "$temporary" "$runtime_root/trusted-runtime.json"
+}
+
 create_claude_runtime_root() {
   local goldband_dir="$1"
   local claude_goldband="$2"
@@ -1020,9 +972,7 @@ create_claude_runtime_root() {
   if [ ! -L "$claude_goldband" ] && same_dir_path "$goldband_dir" "$claude_goldband"; then
     mkdir -p "$claude_goldband/workflows"
     create_internal_workflow_docs "$claude_goldband"
-    bun "$SOURCE_GOLDBAND_DIR/scripts/provision-review-receipt-authority.ts" \
-      --runtime-root "$claude_goldband" \
-      --authority-root "$HOME/.goldband/review-authority/claude"
+    write_claude_runtime_config "$claude_goldband"
     return 0
   fi
 
@@ -1055,19 +1005,16 @@ create_claude_runtime_root() {
   if [ -d "$goldband_dir/browse/bin" ]; then
     _link_or_copy "$goldband_dir/browse/bin" "$claude_goldband/browse/bin"
   fi
-  for f in shared-rubric.md findings-schema.md checklist.md evidence-omission.md design-checklist.md greptile-triage.md TODOS-format.md; do
+  for f in shared-rubric.md findings-schema.md checklist.md design-checklist.md greptile-triage.md TODOS-format.md; do
     if [ -f "$goldband_dir/review/$f" ]; then
       _link_or_copy "$goldband_dir/review/$f" "$claude_goldband/review/$f"
     fi
   done
-  install_review_authoring_assets "$goldband_dir" "$claude_goldband"
   if [ -f "$goldband_dir/ETHOS.md" ]; then
     _link_or_copy "$goldband_dir/ETHOS.md" "$claude_goldband/ETHOS.md"
   fi
   create_internal_workflow_docs "$claude_goldband"
-  bun "$SOURCE_GOLDBAND_DIR/scripts/provision-review-receipt-authority.ts" \
-    --runtime-root "$claude_goldband" \
-    --authority-root "$HOME/.goldband/review-authority/claude"
+  write_claude_runtime_config "$claude_goldband"
 }
 
 create_factory_runtime_root() {
@@ -1101,7 +1048,7 @@ create_factory_runtime_root() {
   if [ -d "$goldband_dir/browse/bin" ]; then
     _link_or_copy "$goldband_dir/browse/bin" "$factory_goldband/browse/bin"
   fi
-  for f in shared-rubric.md findings-schema.md checklist.md evidence-omission.md design-checklist.md greptile-triage.md TODOS-format.md; do
+  for f in shared-rubric.md findings-schema.md checklist.md design-checklist.md greptile-triage.md TODOS-format.md; do
     if [ -f "$goldband_dir/review/$f" ]; then
       _link_or_copy "$goldband_dir/review/$f" "$factory_goldband/review/$f"
     fi
@@ -1146,7 +1093,7 @@ create_opencode_runtime_root() {
   if [ -d "$goldband_dir/design/dist" ]; then
     _link_or_copy "$goldband_dir/design/dist" "$opencode_goldband/design/dist"
   fi
-  for f in shared-rubric.md findings-schema.md checklist.md evidence-omission.md design-checklist.md greptile-triage.md TODOS-format.md; do
+  for f in shared-rubric.md findings-schema.md checklist.md design-checklist.md greptile-triage.md TODOS-format.md; do
     if [ -f "$goldband_dir/review/$f" ]; then
       _link_or_copy "$goldband_dir/review/$f" "$opencode_goldband/review/$f"
     fi
@@ -1293,7 +1240,7 @@ if [ "$INSTALL_KIRO" -eq 1 ]; then
     _link_or_copy "$SOURCE_GOLDBAND_DIR/ETHOS.md" "$KIRO_GOLDBAND/ETHOS.md"
   fi
   # Review runtime assets (individual files, not whole dir)
-  for f in shared-rubric.md findings-schema.md checklist.md evidence-omission.md design-checklist.md greptile-triage.md TODOS-format.md; do
+  for f in shared-rubric.md findings-schema.md checklist.md design-checklist.md greptile-triage.md TODOS-format.md; do
     if [ -f "$SOURCE_GOLDBAND_DIR/review/$f" ]; then
       _link_or_copy "$SOURCE_GOLDBAND_DIR/review/$f" "$KIRO_GOLDBAND/review/$f"
     fi

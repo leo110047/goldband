@@ -68,19 +68,9 @@ Codex:       $goldband system health
 
 See the [workflow catalog](docs/generated/capabilities.md) for other actions.
 
-Review with `/goldband review code` in Claude or `$goldband review code` in Codex.
-The installed entrypoint resolves the host, Git project, contract, default scope,
-managed task IDs and repair continuation. Agents do not assemble launcher JSON
-or supply artifact paths. The default includes execution evidence; use
-`--semantic-only` for explicitly requested code inspection. A unique valid signed
-record resumes evidence repair or closure. Ambiguous or invalid records and
-newly changed files outside the original review and missing prerequisites block
-clearly; unchanged candidates and contracts do not
-start another reviewer.
+`review/code` runs one independent, read-only semantic review of the current worktree. Use `--base <ref>`, `--staged`, or `--diff-file <file>` to narrow scope. Findings identify the code path, trigger, impact, and suggested verification. Repeat the same entrypoint after repairs; each run reviews the current scope.
 
-Review with execution evidence requires a verification contract for the target project; begin with the [review quick start](docs/review-evidence-manifest.md#quick-start). Pure semantic review does not require one. Formal review requiring locally sandboxed test execution currently supports macOS only; Linux/Windows report incomplete when this evidence is unavailable. Successful installation or tests do not imply that review or deployment is complete.
-
-Python review gates in Claude/Codex require `pythonRuntime`: macOS Python 3.14 + uv, candidate `pyproject.toml`/`uv.lock`, and complete offline dependencies. Missing prerequisites block execution.
+No review manifest, contract registry, signed receipt, lineage, or closure authorization is required. Retired governance flags are rejected. The reviewer does not execute project tests or change ticket status. Continue running project tests, lint, type checks, CI, and relevant live checks separately; no findings does not establish runtime correctness.
 
 ## Update and Uninstall
 

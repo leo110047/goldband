@@ -2599,3 +2599,30 @@ receipts, revisions and claim details cannot change that stable task identity.
 Installed Claude/Codex probes cover entrypoints, lease binding, signed closure,
 partial-closure deduplication and native permissions. Revisit this design if
 real projects cannot identify a unique continuation without manual selection.
+
+## 2026-10-11: Retire review evidence governance and closure authorization
+
+Keep one independent semantic review pass, shared rules, related-code context,
+concrete findings, native read-only permissions, and honest report boundaries.
+Remove review manifests/providers, registry authoring, signed receipts, acceptance
+lineage, evidence repair, and closure/completion authorization. Their maintenance
+burden is established; additional defect-detection value beyond project checks
+and semantic review has not been demonstrated. This supersedes earlier review
+evidence and closure decisions, including their automatic continuation contracts.
+
+Project tests and CI remain project-owned. Work Map delivery uses existing project
+verification and explicit Git integration; semantic reports do not gate or mutate
+it. Analysis-only delivery is recorded with its declared artifact. Historical
+state remains readable but retired review references confer no authority.
+
+The tradeoff is explicit: Goldband no longer enforces a signed proof chain or
+tracks unresolved review findings. Reviewers and implementers must still report
+what was checked and what remains unverified. Installs replace obsolete runtime
+assets; historical external records are preserved.
+
+Keep the repository-and-scope execution lease as duplicate-call cost control,
+including shared coordination when report storage uses a temporary directory.
+It does not inspect evidence or authorize completion. Claude installation also
+retains the minimal trusted runtime configuration (`schemaVersion`, `runtimeHost`)
+to pin runtime selection and host identity; obsolete receipt fields are removed
+on both copied and same-directory reinstalls.

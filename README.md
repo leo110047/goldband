@@ -70,17 +70,11 @@ Codex:       $goldband system health
 
 一般實作涉及大量處理、資料實體化、快取、平行執行或效能改善宣稱時，Claude／Codex 的指引會導向共用 `performance-optimization` skill，檢查有研究案例支持的 agent 陷阱，不需先跑 planning。Review 會檢查改善證據與實際路徑；這些指引不代表自動量測 CPU／RAM，也不要求所有修改都跑 benchmark。
 
-包含執行驗證的程式碼審查需要先為目標專案設定驗證契約；純語意 `--semantic-only` 不需要。請從[審查入門](docs/review-evidence-manifest.md#quick-start)開始。需要本機隔離執行測試的正式審查目前僅支援 macOS；Linux／Windows 缺少這類證據時會回報未完成。測試或安裝成功也不代表審查、部署已完成。
+`review/code` 預設對目前 worktree 執行一次獨立語意審查。reviewer 會讀取 diff、相關程式與規則，並回報具體觸發條件、影響和建議驗證方式；不執行專案測試，也不授權結案或變更工作票狀態。
 
-日常使用 `/goldband review code`（Claude）或 `$goldband review code`（Codex）即可。
-Agent 呼叫 installed entrypoint，程式自動解析 host、Git 專案、驗證契約、預設範圍、
-managed task IDs 與修復後複查；無須讀 launcher JSON 或手填 artifact 路徑。
-預設包含執行驗證；使用者明確要求只看程式時才加 `--semantic-only`。
-既有未解決審查有唯一且有效的簽署紀錄時，同一命令會接續 evidence repair／closure；
-有多個符合紀錄、紀錄無效、加入原審查未涵蓋的檔案或必要設定不足時會明確阻擋。
-候選與契約未變時不重複啟動 reviewer。
+Claude 使用 `/goldband review code`，Codex 使用 `$goldband review code`。可用 `--base <ref>`、`--staged` 或 `--diff-file <file>` 指定範圍。修正後以相同入口重新審查；每次都檢查目前範圍，不需要 manifest、registry、lineage 或簽章憑證。舊治理參數會明確拒絕。
 
-Claude／Codex 的 Python 審查 gate 必須宣告 `pythonRuntime`：目前只支援 macOS Python 3.14 + uv，且 candidate 需有 `pyproject.toml`、`uv.lock` 與完整離線依賴；缺少條件會阻擋執行。主機工具支援系統、Homebrew（含 `opt`）、MacPorts，以及標準使用者 uv／Python 與 pyenv 實際版本目錄；shell shim 不受支援，詳見 [Python runtime 安裝位置](docs/review-evidence-manifest.md#python-314--uv-runtime)。
+專案原有的 test、lint、typecheck、CI 及需要的實際環境驗證仍須照常執行。報告中的「無 findings」不代表這些驗證已通過。
 
 ## 更新與移除
 
@@ -115,58 +109,3 @@ claude plugin uninstall goldband@goldband    # 移除 Claude plugin
 ## 授權
 
 [MIT License](LICENSE)。
-
-### 純語意與完整審查
-
-「只看程式」使用 `$goldband review code --semantic-only`（Claude 使用
-`/goldband review code --semantic-only`）。兩端沿用 installed launcher 與唯讀 host：
-讀取完整 scoped diff、必要 impact context、shared rubric 與 applicable Rules；不讀取或驗證
-manifest、不執行 evidence providers、candidate tests、dependency preparation 或下載套件。
-缺少 Python、uv、offline wheels 或資料庫不會阻擋此模式；host 本身仍須可用且已認證。
-
-「包含執行驗證」使用預設 `$goldband review code`。缺少或無效 evidence contract、執行前提
-不足時仍 fail closed，不會自動切換純語意模式。
-
-純語意 artifact 使用 `phase: semantic-only`、`evidenceStatus: not-declared`、
-`completionAuthorized: false`，沒有 behavior contract digest 或 runtime receipt。
-所有 findings 僅為 `semantic-concern`；零 finding 顯示 `No semantic concerns found`，不代表
-完整審查或測試通過。既有 blockers 以 `prior-blockers-open` 唯讀顯示，不能關閉或覆寫。
-`--semantic-only` 與 `--evidence-manifest`、`--closure-artifact`、`--work-id`、`--ticket-id` 互斥。
-
-同一 installed authority 內，相同 candidate、canonical scope、Rules／policy 的純語意重複呼叫會在 host 前拒絕，包含並行
-呼叫及先前 host 失敗的重試；此成本紀錄與 acceptance lineage 分開，不阻擋後續完整審查。
-Claude／Codex 各自安裝的 authority 延續既有隔離邊界，去重與 prior blocker 投影不跨 authority。
-結果格式見 [`review-semantic-result.schema.json`](schemas/review-semantic-result.schema.json)。
-
-### Project review evidence
-
-The installed `goldband review code` entrypoint discovers the current
-Git project's registered contract automatically in `~/.goldband/review-contracts`.
-Agents do not need to supply a manifest path. Use `goldband review contract inspect`
-to read the exact project identity, registry entry, and configuration status;
-inspection does not require write access to the state directory. Sandbox-local
-review output does not change the durable contract lookup location.
-
-The shared Claude/Codex launcher forwards soft cancellation and allows bounded
-resource cleanup. Container retries refuse existing resources for the same
-repository/review scope; inspect the previous broker before removing anything.
-See [isolated service lifecycle](docs/review-evidence-manifest.md#隔離容器服務)
-for cancellation and hard-kill recovery boundaries.
-
-Goldband's local authoring file is `~/.goldband/review-contracts/goldband/review-evidence.json`.
-Register a deliberate setup/update with `goldband review contract import --manifest <path>`.
-The files under `goldband-loop/test/fixtures/review-contracts` are versioned regression
-fixtures, not active project configuration; CI does not read a developer's home directory.
-
-Goldband's pre-push review runs its three macOS self-test recipes locally on the
-current candidate. It does not require committing or pushing that candidate to
-obtain CI evidence. CI still runs after push. The fixed local self-test runner
-uses native host permissions (not the general sealed evidence runner).
-
-Review check corrections are reviewed with their before/after definitions in
-the same independent review. Required coverage, execution permissions, fresh
-evidence, and unresolved finding history remain enforced. Legacy semantic
-findings can resolve their evidence through declared file coverage; unrelated
-passing tests cannot close them.
-
-Claude 與 Codex 的全域指引由同一份精簡政策產生；完整政策存放在各自的 `goldband-rules/`，依任務讀取。升級會移除 Goldband 舊版 Claude 自動載入連結，保留自訂規則。Codex plugin 依 installer catalog 提供 13 個相容 skills；Claude 提供 17 個。已安裝 Goldband Loop 時，也請重跑原本的 workflow 安裝指令，更新複製的執行環境與審查規準。

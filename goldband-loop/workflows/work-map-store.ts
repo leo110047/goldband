@@ -287,7 +287,6 @@ export class WorkMapStore {
 			input.actor,
 			(map) => {
 				const ticket = requiredTicket(map, input.ticketId);
-				const requestedChanges = ticket.evidence?.requestedChanges;
 				if (
 					!["claimed", "implemented"].includes(ticket.status) ||
 					!ticket.claim ||
@@ -301,7 +300,6 @@ export class WorkMapStore {
 				ticket.status = "implemented";
 				ticket.evidence = {
 					receipt: input.receipt,
-					...(requestedChanges ? { requestedChanges } : {}),
 				};
 				delete ticket.blockerReason;
 				if (map.status === "executing") map.status = "verifying";
@@ -324,22 +322,20 @@ export class WorkMapStore {
 			input.actor,
 			(map) => {
 				const ticket = requiredTicket(map, input.ticketId);
-				const requestedChanges = ticket.evidence?.requestedChanges;
 				if (
-					ticket.status !== "claimed" ||
+					!["claimed", "implemented"].includes(ticket.status) ||
 					ticket.verificationMode !== "analysis-only" ||
 					ticket.claim?.kind !== "analysis" ||
 					!input.analysis.artifactDigest
 				) {
 					throw new Error(`ticket is not an analysis claim: ${input.ticketId}`);
 				}
-				ticket.status = "implemented";
+				ticket.status = "verified";
 				ticket.evidence = {
 					analysis: input.analysis,
-					...(requestedChanges ? { requestedChanges } : {}),
 				};
 				delete ticket.blockerReason;
-				if (map.status === "executing") map.status = "verifying";
+				if (areTicketsDelivered(map.tickets) && map.fog.every((question) => question.status !== "unresolved")) map.status = "completed";
 				return map;
 			},
 		);
@@ -374,81 +370,6 @@ export class WorkMapStore {
 					throw new Error("lease claim state cannot roll back safely");
 				}
 				delete ticket.claim;
-				return map;
-			},
-		);
-	}
-
-	requestChanges(input: {
-		workId: string;
-		ticketId: string;
-		expectedRevision: number;
-		actor: string;
-		review: EvidenceReference;
-	}): WorkMapV1 {
-		return this.update(
-			input.workId,
-			input.expectedRevision,
-			"request-changes",
-			input.actor,
-			(map) => {
-				const ticket = requiredTicket(map, input.ticketId);
-				if (ticket.status !== "implemented") {
-					throw new Error(`ticket is not implemented: ${input.ticketId}`);
-				}
-				ticket.status = "claimed";
-				ticket.evidence = { requestedChanges: input.review };
-				if (!ticket.claim) {
-					throw new Error(`ticket claim is missing: ${input.ticketId}`);
-				}
-				ticket.claim.attempt += 1;
-				if (map.status === "verifying") map.status = "executing";
-				return map;
-			},
-		);
-	}
-
-	verifyTicket(input: {
-		workId: string;
-		ticketId: string;
-		expectedRevision: number;
-		actor: string;
-		review: EvidenceReference;
-	}): WorkMapV1 {
-		return this.update(
-			input.workId,
-			input.expectedRevision,
-			"verify-ticket",
-			input.actor,
-			(map) => {
-				const ticket = requiredTicket(map, input.ticketId);
-				const subject =
-					ticket.verificationMode === "analysis-only"
-						? ticket.evidence?.analysis?.artifactDigest
-						: ticket.evidence?.receipt?.treeDigest;
-				const reviewedSubject =
-					ticket.verificationMode === "analysis-only"
-						? input.review.artifactDigest
-						: input.review.treeDigest;
-				if (ticket.status !== "implemented" || !subject) {
-					throw new Error(
-						`ticket lacks implemented verification evidence: ${input.ticketId}`,
-					);
-				}
-				if (subject !== reviewedSubject) {
-					throw new Error(
-						"review and verification receipt tree digests differ",
-					);
-				}
-				ticket.status = "verified";
-				ticket.evidence!.review = input.review;
-				if (
-					ticket.verificationMode === "analysis-only" &&
-					areTicketsDelivered(map.tickets) &&
-					map.fog.every((question) => question.status !== "unresolved")
-				) {
-					map.status = "completed";
-				}
 				return map;
 			},
 		);
@@ -579,12 +500,13 @@ export class WorkMapStore {
 			input.actor,
 			(map) => {
 				const ticket = requiredTicket(map, input.ticketId);
-				if (ticket.status !== "verified" || !ticket.evidence?.review) {
-					throw new Error(`ticket is not verified: ${input.ticketId}`);
+				if (!["implemented", "verified"].includes(ticket.status) || !ticket.evidence?.receipt) {
+					throw new Error(`ticket lacks project verification: ${input.ticketId}`);
 				}
 				if (!/^[a-f0-9]{40,64}$/.test(input.commit)) {
 					throw new Error("integrated commit must be a Git object id");
 				}
+				ticket.status = "verified";
 				ticket.integratedCommit = input.commit;
 				if (
 					areTicketsDelivered(map.tickets) &&
@@ -947,7 +869,6 @@ export function renderWorkMapMarkdown(map: WorkMapV1): string {
 			`- Lease: ${ticket.claim?.leaseId ? `\`${ticket.claim.leaseId}\`` : "none"}`,
 			`- Claim attempt: ${ticket.claim?.attempt ?? "none"}`,
 			`- Receipt: ${ticket.evidence?.receipt?.id ? `\`${ticket.evidence.receipt.id}\`` : "none"}`,
-			`- Review: ${ticket.evidence?.review?.id ? `\`${ticket.evidence.review.id}\`` : "none"}`,
 			`- Integrated commit: ${ticket.integratedCommit ? `\`${ticket.integratedCommit}\`` : "none"}`,
 			"",
 			"Acceptance criteria:",

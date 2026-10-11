@@ -2,116 +2,26 @@
 
 This document explains **why** goldband is built the way it is. For setup and commands, see CLAUDE.md. For contributing, see CONTRIBUTING.md.
 
-## Evidence-first review runtime
+## Semantic review runtime
 
-`workflows/review.ts` owns review orchestration,
-`workflows/review-contract-resolution.ts` owns baseline selection and provenance,
-`workflows/review-contract-store.ts` owns the local per-repository store, and
-`workflows/review-evidence.ts` owns deterministic behavior/evidence contracts.
-The reviewed base's repo-root manifest owns the baseline. Without one, an
-explicitly imported store entry bound to the Git common-directory path,
-filesystem instance, and remote identity may supply it. Working-tree, index,
-HEAD, and caller-provided manifests are candidate extensions: the runtime
-rejects deletion or contract downgrade before any provider or semantic host
-dispatch. The artifact binds canonical workspace coordinates, source and import
-provenance, tracking state, and baseline/candidate/explicit/effective digests.
-Import/remove are explicit CLI mutations with private regular-file checks and
-atomic writes; review never mutates the repository or store.
+`review/code` collects a bounded diff and related code context, loads the shared
+review rules, and calls one independent reviewer using the host's native read-only
+permissions. Findings must name an exact location, concrete code observation,
+trigger and impact, and suggested verification. The runtime validates and
+normalizes findings, rejects scope or policy drift, and writes a plain JSON result
+and Markdown report. It does not execute project checks or mutate Work Map state.
 
-`workflows/review-contract-cli.ts` owns the authoring surface. `validate` reads
-through the same stable manifest source and production validator as import but
-does not resolve or mutate store state. `init` exclusively creates a repo-bounded
-high-risk unsupported scaffold, so onboarding cannot fabricate host eligibility.
-The installed guide, public example, and JSON Schemas are discoverable assets;
-JSON Schema assists structural editing while runtime validation retains graph,
-candidate, lineage, and runner authority.
+The default scope is the current worktree. `--base`, `--staged`, and `--diff-file`
+select explicit scopes. After repairs, rerun the same entrypoint to inspect the
+current scope; failures and unchanged candidates do not create retry locks.
+Project tests, lint, typecheck, CI, and live checks remain separate responsibilities.
+No findings means only that this semantic pass reported no concrete concerns.
 
-The resolved code validates the behavior
-matrix and provider registry, materializes isolated base/candidate snapshots,
-executes bounded argument arrays under a default-deny read/write/network OS
-sandbox with the platform common process baseline plus explicit candidate,
-runner-state, sealed runtime-projection, and dependency roots, and binds
-records to the current candidate before the semantic host can start.
-Non-system Mach-O dependencies are copied into a private per-review projection,
-rewritten to projected loader paths, ad-hoc signed, and content-attested after
-transformation. Evidence commands cannot read the source package tree or write
-the projection. The macOS adapter exactly re-denies inherited syslog, Mach service,
-and shared-memory channels rather than relying only on broad operation denies.
-Prompt-redacted untracked files remain content-digest-bound and are copied only
-through the executable snapshot channel.
-
-`workflows/review-container-contract.ts` owns project-declared container settings;
-`workflows/review-container-evidence.ts` owns the Docker broker and lifecycle.
-This runtime-owned runner accepts immutable, already available Linux image IDs,
-non-root users, bounded resources, explicit fixture environment values, private
-tmpfs paths, and ordered service readiness commands. Every operation gets a new
-internal bridge with isolated gateway mode, fresh service containers, and the
-same read-only candidate mount. The broker alone uses the local Docker socket;
-candidate code receives no socket, host credentials, published ports, external
-network, host paths, or arbitrary Docker options. Image preparation belongs to
-the project and happens before evidence execution; evidence never builds or pulls.
-The service recipe and image identities join the existing candidate/execution
-binding and receipt. Setup failure, deadline expiry, changed source, dead services,
-or failed cleanup remain runtime-incomplete. No project or test-suite IDs are
-recognized by the adapter. The ordinary sealed and named self-test lanes retain
-their existing boundaries.
-
-The shared launcher supervises the runtime with the existing review pass budget
-and forwards soft cancellation, allowing the broker's separate 30-second
-cleanup budget before escalation. Broker cancellation stops further operations.
-Docker resources carry session, canonical repository/review scope, and broker
-PID labels. The first evidence container reserves a deterministic scope
-name atomically in Docker before any service or candidate starts; cleanup selects
-only this session's labeled container IDs, including when a concurrent create loses.
-Before creating another session, the broker refuses matching
-containers or networks and provides bounded, read-only inspection commands.
-SIGKILL cannot execute cleanup: refusal prevents overlapping retries without
-automatically deleting resources whose previous owner may still be live.
-
-Before executing providers, `plan-evidence` uses the same prompt builders as host
-dispatch to admit fixed metadata and reserve variable evidence bytes. Initial
-admission uses the selected records' complete field bounds under the unchanged
-16 KiB evidence projection limit; closure admission uses
-the selected operation identities, bounded environment diagnostics, validated CI
-provenance and output markers. Reservation records never become execution evidence.
-Prompt-only references share repeated large before/after contracts and closure
-execution contexts losslessly; persisted artifacts retain the original values.
-Both paths keep the 48 KiB overhead budget and validate final bytes before dispatch.
-
-The initial host sees one immutable full diff plus bounded matrix, evidence,
-Rules, and impact projections. It looks for omissions; it does not rerun gates
-or decide whether a command passed. Runtime classification only permits
-candidate-bound replayable failures to become verified blockers.
-
-Closure is a distinct conditional invocation over an initial artifact whose
-complete payload and standalone or Work Map scope match an installed-runtime receipt, and a
-repaired candidate. Runtime derives the repair delta, selects affected behavior
-cells, reruns their evidence, and permits one host response over original
-finding IDs. It does not resend the unchanged original diff or reopen the full
-findings inventory. Work Map closure additionally requires the exact requested-changes
-artifact and immediately following claim attempt. The same-permission host user is
-trusted; reviewed code, model output, and artifact input are not. After those checks,
-runtime atomically claims the receipt with at-most-once semantics; crash or later failure
-requires a new initial review. Reports, telemetry, and Work Map artifacts retain the
-candidate/evidence/host-call chain.
-
-`workflows/review-lineage.ts` owns cross-run authority. Before any evidence
-provider or semantic host dispatch, it locks and verifies a signed lineage
-record under the installed receipt authority. The record inherits required
-cells/providers, Work Map or standalone acceptance, selected Rules, minimum
-evidence levels, and unresolved finding IDs. Existing contracts are monotonic;
-additive coverage remains valid. Open blockers require the exact authoritative
-artifact and scoped closure. Empty initial candidates are rejected before the
-lineage lock or record is created. Standalone lineage identity includes the
-normalized changed-file scope; legacy broad-scope records migrate only when the
-signed artifact digest proves the same scope. When the artifact cannot be
-verified, an exact signed candidate-digest match still preserves the blocker;
-other candidates do not inherit the unverifiable scope. Any initial candidate
-whose paths overlap an unresolved scope in the same collection authority must
-use closure. Sorted per-path locks cover overlap discovery through lineage
-finalization; disjoint scopes do not share those locks. Typed waivers are loaded only from
-`goldband.review-policy.json` in the base commit and are persisted in the signed
-audit record; candidate files and model prose cannot authorize them.
+Review manifests, providers, contract registries, acceptance lineage, signed
+review receipts, evidence repair, closure, and completion authorization are
+retired. The installer replaces obsolete runtime assets but preserves historical
+reports and external state. Retired CLI flags fail explicitly. Existing managed
+worktree project verification and Git integration safeguards remain in place.
 
 ## The core idea
 

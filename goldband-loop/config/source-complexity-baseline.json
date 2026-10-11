@@ -21,20 +21,19 @@
     },
     "bin/goldband.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        68,
         49,
+        42,
         30,
-        26,
         25,
+        24,
         18,
         15,
-        14,
         13
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
-        87,
-        61,
         57,
+        56,
+        55,
         51
       ]
     },
@@ -492,8 +491,7 @@
       "lint/complexity/noExcessiveLinesPerFunction": [
         162,
         126,
-        87,
-        71
+        87
       ]
     },
     "lib/review-execution-lease.ts": {
@@ -577,7 +575,7 @@
         16
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
-        134
+        120
       ]
     },
     "scripts/one-way-doors.ts": {
@@ -609,7 +607,7 @@
     },
     "scripts/test-free-shards.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        22,
+        21,
         17
       ]
     },
@@ -658,60 +656,6 @@
         5
       ]
     },
-    "workflows/review-contract-cli.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        19
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        52
-      ]
-    },
-    "workflows/review-contract-resolution.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        44,
-        38
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        106,
-        65
-      ]
-    },
-    "workflows/review-evidence.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        45,
-        32,
-        30,
-        30,
-        29,
-        28,
-        27,
-        27,
-        23,
-        22,
-        20,
-        16,
-        16,
-        15,
-        15,
-        15,
-        15,
-        14,
-        14,
-        14
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        91,
-        87,
-        78,
-        69,
-        67,
-        56
-      ],
-      "lint/complexity/useMaxParams": [
-        7,
-        5
-      ]
-    },
     "workflows/review-impact.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
         30,
@@ -724,46 +668,22 @@
         63
       ]
     },
-    "workflows/review-lineage.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        14,
-        14,
-        13
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        67
-      ],
-      "lint/complexity/useMaxParams": [
-        5
-      ]
-    },
     "workflows/review.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        97,
-        22,
-        17,
+        16,
         16
       ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        168,
-        77,
-        74,
-        71,
-        62,
-        55
-      ],
       "lint/complexity/useMaxParams": [
-        10,
+        8,
         7,
         6,
-        5,
         5
       ]
     },
     "workflows/run.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        44,
-        32
+        34,
+        25
       ]
     },
     "workflows/runtime.ts": {
@@ -865,11 +785,11 @@
       "lint/complexity/noExcessiveCognitiveComplexity": [
         30,
         16,
-        15,
+        13,
         13
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
-        78
+        77
       ],
       "lint/complexity/useMaxParams": [
         5
@@ -877,11 +797,11 @@
     },
     "workflows/work-map.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        40
+        37
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
         83,
-        66,
+        62,
         56
       ]
     }

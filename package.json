@@ -9,7 +9,6 @@
     "test:repo-environment": "node scripts/test-repo-environment.mjs",
     "generate:manifest": "node scripts/generate-goldband-surfaces.mjs",
     "check:manifest": "node scripts/generate-goldband-surfaces.mjs --check",
-    "check:review-contracts": "bun run scripts/check-review-contracts.ts",
     "test:capability-invocations": "node scripts/test-capability-invocations.mjs",
     "test:workflow-contracts": "node scripts/test-workflow-contracts.mjs",
     "test:decision-guidance": "bash scripts/verify-decision-guidance.sh && node scripts/test-guidance-migration.mjs",

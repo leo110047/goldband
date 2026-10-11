@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -15,14 +14,13 @@ import { writeLease } from '../lib/managed-worktree-contract';
 import { createGitExecutionContext } from '../lib/managed-worktree-git';
 import { prepareManagedCommit } from '../lib/managed-worktree-integration';
 import {
-  readAndValidateVerificationReceipt,
   recordVerification,
 } from '../lib/verification-receipt';
 import {
   probeManagedBoundary,
   runManagedCommand,
 } from '../lib/managed-worktree-boundary';
-import { ticketContractDigest, type WorkMapCreateInput } from '../workflows/work-map';
+import { type WorkMapCreateInput } from '../workflows/work-map';
 import { WorkMapStore } from '../workflows/work-map-store';
 
 const fixtures: string[] = [];
@@ -37,7 +35,7 @@ afterEach(() => {
 });
 
 describe('managed worktree contract', () => {
-  test('bound finish integrates a current schema-v2 evidence chain', () => {
+  test('bound finish integrates project-verified code without a review artifact', () => {
     const fixture = createFixture();
     const store = new WorkMapStore({
       cwd: fixture.repo,
@@ -57,59 +55,6 @@ describe('managed worktree contract', () => {
       command: [process.execPath, '-e', 'process.exit(0)'],
       cwd: lease.worktreePath,
     });
-    const implemented = store.read('work-a');
-    const ticket = implemented.tickets[0]!;
-    const receipt = readAndValidateVerificationReceipt({
-      lease,
-      map: implemented,
-      ticket,
-    });
-    const artifact = {
-      schemaVersion: 2,
-      id: 'review-a',
-      workId: implemented.id,
-      ticketId: ticket.id,
-      mapRevision: implemented.revision,
-      ticketDigest: ticketContractDigest(ticket),
-      receiptDigest: receipt.reference.digest,
-      reviewedDiffDigest: receipt.receipt.candidate.reviewDiffDigest,
-      candidateDigest: 'b'.repeat(64),
-      treeDigest: receipt.reference.treeDigest,
-      findings: [],
-      evidenceRecords: [],
-      evidenceChain: {
-        behaviorContractDigest: 'c'.repeat(64),
-        candidateDigest: 'b'.repeat(64),
-        scopeDigest: 'd'.repeat(64),
-        completeness: {
-          complete: true,
-          hostEligible: true,
-          blockingCellIds: [],
-          coverageGapCellIds: [],
-          runtimeIncompleteCellIds: [],
-        },
-        recordsDigest: createHash('sha256').update('[]').digest('hex'),
-        hostCallCount: 1,
-        phase: 'initial',
-      },
-      createdAt: new Date().toISOString(),
-    };
-    fs.writeFileSync(
-      path.join(path.dirname(receipt.path), 'review-a-work-map-review.json'),
-      `${JSON.stringify(artifact, null, 2)}\n`,
-      { mode: 0o600 },
-    );
-    store.verifyTicket({
-      workId: implemented.id,
-      ticketId: ticket.id,
-      expectedRevision: implemented.revision,
-      actor: 'review-code-readback',
-      review: {
-        id: 'review-a',
-        digest: createHash('sha256').update(JSON.stringify(artifact)).digest('hex'),
-        treeDigest: receipt.reference.treeDigest,
-      },
-    });
 
     const result = finishManagedWorktree({
       name: lease.name,
@@ -126,40 +71,8 @@ describe('managed worktree contract', () => {
     );
   }, 10_000);
 
-  test('bound finish rejects a legacy schema-v1 review artifact', () => {
-    const fixture = createFixture();
-    const store = new WorkMapStore({
-      cwd: fixture.repo,
-      goldbandHome: fixture.state,
-      idFactory: () => 'work-a',
-    });
-    store.create(workMapInput(), 'codex');
-    const lease = createManagedWorktree({
-      name: 'bound-legacy-review',
-      repoRoot: fixture.repo,
-      stateRoot: fixture.state,
-      ticketId: 'ticket-a',
-    });
-    fs.writeFileSync(path.join(lease.worktreePath, 'tracked.txt'), 'legacy review candidate\n');
-    recordVerification({
-      stage: 'check',
-      command: [process.execPath, '-e', 'process.exit(0)'],
-      cwd: lease.worktreePath,
-    });
-    markTicketReviewed(store, lease, 1);
 
-    expect(() =>
-      finishManagedWorktree({
-        name: lease.name,
-        repoRoot: fixture.repo,
-        stateRoot: fixture.state,
-        message: 'must require typed evidence',
-      }),
-    ).toThrow('requires a schema-v2 evidence chain');
-    expect(fs.existsSync(lease.worktreePath)).toBe(true);
-  });
-
-  test('bound finish preserves an unreviewed candidate', () => {
+  test('bound finish preserves a candidate without project verification', () => {
     const fixture = createFixture();
     const store = new WorkMapStore({
       cwd: fixture.repo,
@@ -174,11 +87,6 @@ describe('managed worktree contract', () => {
       ticketId: 'ticket-a',
     });
     fs.writeFileSync(path.join(lease.worktreePath, 'tracked.txt'), 'implemented only\n');
-    recordVerification({
-      stage: 'check',
-      command: [process.execPath, '-e', 'process.exit(0)'],
-      cwd: lease.worktreePath,
-    });
     expect(() =>
       finishManagedWorktree({
         name: lease.name,
@@ -186,75 +94,13 @@ describe('managed worktree contract', () => {
         stateRoot: fixture.state,
         message: 'must not integrate',
       }),
-    ).toThrow('not verified');
+    ).toThrow('lacks project verification');
     expect(fs.existsSync(lease.worktreePath)).toBe(true);
-    expect(store.read('work-a').tickets[0]?.status).toBe('implemented');
+    expect(store.read('work-a').tickets[0]?.status).toBe('claimed');
   });
 
-  test('bound finish rejects a review artifact for a different diff', () => {
-    const fixture = createFixture();
-    const store = new WorkMapStore({
-      cwd: fixture.repo,
-      goldbandHome: fixture.state,
-      idFactory: () => 'work-a',
-    });
-    store.create(workMapInput(), 'codex');
-    const lease = createManagedWorktree({
-      name: 'bound-wrong-diff',
-      repoRoot: fixture.repo,
-      stateRoot: fixture.state,
-      ticketId: 'ticket-a',
-    });
-    fs.writeFileSync(path.join(lease.worktreePath, 'tracked.txt'), 'candidate\n');
-    recordVerification({
-      stage: 'check',
-      command: [process.execPath, '-e', 'process.exit(0)'],
-      cwd: lease.worktreePath,
-    });
-    const implemented = store.read('work-a');
-    const ticket = implemented.tickets[0]!;
-    const receipt = readAndValidateVerificationReceipt({ lease, map: implemented, ticket });
-    const artifact = {
-      schemaVersion: 1,
-      id: 'review-wrong-diff',
-      workId: implemented.id,
-      ticketId: ticket.id,
-      mapRevision: implemented.revision,
-      ticketDigest: ticketContractDigest(ticket),
-      receiptDigest: receipt.reference.digest,
-      reviewedDiffDigest: 'a'.repeat(64),
-      treeDigest: receipt.reference.treeDigest,
-      findings: [],
-      createdAt: new Date().toISOString(),
-    };
-    fs.writeFileSync(
-      path.join(path.dirname(receipt.path), 'review-wrong-diff-work-map-review.json'),
-      `${JSON.stringify(artifact, null, 2)}\n`,
-      { mode: 0o600 },
-    );
-    store.verifyTicket({
-      workId: implemented.id,
-      ticketId: ticket.id,
-      expectedRevision: implemented.revision,
-      actor: 'review-code-readback',
-      review: {
-        id: artifact.id,
-        digest: createHash('sha256').update(JSON.stringify(artifact)).digest('hex'),
-        treeDigest: receipt.reference.treeDigest,
-      },
-    });
-    expect(() =>
-      finishManagedWorktree({
-        name: lease.name,
-        repoRoot: fixture.repo,
-        stateRoot: fixture.state,
-        message: 'must not integrate an unreviewed diff',
-      }),
-    ).toThrow('review artifact provenance is invalid');
-    expect(fs.existsSync(lease.worktreePath)).toBe(true);
-  });
 
-  test('bound finish rejects an executable-mode change after review', () => {
+  test('bound finish rejects an executable-mode change after project verification', () => {
     const fixture = createFixture();
     const store = new WorkMapStore({
       cwd: fixture.repo,
@@ -275,7 +121,6 @@ describe('managed worktree contract', () => {
       command: [process.execPath, '-e', 'process.exit(0)'],
       cwd: lease.worktreePath,
     });
-    markTicketReviewed(store, lease);
     fs.chmodSync(script, 0o755);
 
     expect(() =>
@@ -304,19 +149,12 @@ describe('managed worktree contract', () => {
       owner: 'codex',
       leaseId: 'lease-a',
     });
-    const implemented = store.markImplemented({
+    store.markImplemented({
       workId: created.id,
       ticketId: 'ticket-a',
       expectedRevision: claimed.revision,
       actor: 'recorder',
       receipt: { id: 'receipt-a', digest: 'a'.repeat(64), treeDigest: 'b'.repeat(64) },
-    });
-    store.verifyTicket({
-      workId: created.id,
-      ticketId: 'ticket-a',
-      expectedRevision: implemented.revision,
-      actor: 'review',
-      review: { id: 'review-a', digest: 'c'.repeat(64), treeDigest: 'b'.repeat(64) },
     });
     let injected = false;
     const commit = 'd'.repeat(40);
@@ -972,64 +810,6 @@ function workMapInput(): WorkMapCreateInput {
       },
     ],
   };
-}
-
-function markTicketReviewed(
-  store: WorkMapStore,
-  lease: ManagedWorktreeLease,
-  schemaVersion: 1 | 2 = 2,
-): void {
-  const implemented = store.read('work-a');
-  const ticket = implemented.tickets[0]!;
-  const receipt = readAndValidateVerificationReceipt({ lease, map: implemented, ticket });
-  const artifact = {
-    schemaVersion,
-    id: 'review-mode',
-    workId: implemented.id,
-    ticketId: ticket.id,
-    mapRevision: implemented.revision,
-    ticketDigest: ticketContractDigest(ticket),
-    receiptDigest: receipt.reference.digest,
-    reviewedDiffDigest: receipt.receipt.candidate.reviewDiffDigest,
-    treeDigest: receipt.reference.treeDigest,
-    findings: [],
-    ...(schemaVersion === 2 ? {
-      candidateDigest: 'b'.repeat(64),
-      evidenceRecords: [],
-      evidenceChain: {
-        behaviorContractDigest: 'c'.repeat(64),
-        candidateDigest: 'b'.repeat(64),
-        scopeDigest: 'd'.repeat(64),
-        completeness: {
-          complete: true,
-          hostEligible: true,
-          blockingCellIds: [],
-          coverageGapCellIds: [],
-          runtimeIncompleteCellIds: [],
-        },
-        recordsDigest: createHash('sha256').update('[]').digest('hex'),
-        hostCallCount: 1,
-        phase: 'initial',
-      },
-    } : {}),
-    createdAt: new Date().toISOString(),
-  };
-  fs.writeFileSync(
-    path.join(path.dirname(receipt.path), `${artifact.id}-work-map-review.json`),
-    `${JSON.stringify(artifact, null, 2)}\n`,
-    { mode: 0o600 },
-  );
-  store.verifyTicket({
-    workId: implemented.id,
-    ticketId: ticket.id,
-    expectedRevision: implemented.revision,
-    actor: 'review-code-readback',
-    review: {
-      id: artifact.id,
-      digest: createHash('sha256').update(JSON.stringify(artifact)).digest('hex'),
-      treeDigest: receipt.reference.treeDigest,
-    },
-  });
 }
 
 function metadataSnapshot(lease: ManagedWorktreeLease): Record<string, string> {

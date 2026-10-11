@@ -1,15 +1,12 @@
 import { afterEach, expect, spyOn, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import Ajv from 'ajv/dist/2020';
-import schema from '../../schemas/review-semantic-result.schema.json';
-import { buildReviewRuntimeArgs } from '../bin/goldband.ts';
 import { adapterFor } from '../workflows/host-adapter';
+import * as workflowPaths from '../workflows/paths';
 import { getWorkflow } from '../workflows/registry';
 import { runWorkflow } from '../workflows/runtime';
-import { validateInitialReviewArtifact, readClosureArtifact } from '../workflows/review-evidence';
 
 const roots: string[] = [];
 const spies: Array<{ mockRestore(): void }> = [];
@@ -31,134 +28,93 @@ function fixture() {
   return { cwd, goldbandHome: join(root, 'state'), mode: 'mock' as const, host: 'mock' as const, worktree: true, git };
 }
 function host(findings: unknown[] = []) {
-  const spy = spyOn(Object.getPrototypeOf(adapterFor('mock')), 'runJson').mockResolvedValue({ parsed: { findings }, raw: JSON.stringify({ findings }) });
+  const spy = spyOn(Object.getPrototypeOf(adapterFor('mock')), 'runJson')
+    .mockResolvedValue({ parsed: { findings }, text: JSON.stringify({ findings }) });
   spies.push(spy); return spy;
 }
-function artifact(result: Awaited<ReturnType<typeof runWorkflow>>) {
-  const file = result.artifacts.find((file) => file.endsWith('-semantic-only.json'))!;
-  return { file, value: JSON.parse(readFileSync(file, 'utf8')) };
-}
 const workflow = () => getWorkflow('review/code');
+function artifact(result: Awaited<ReturnType<typeof runWorkflow>>) {
+  return JSON.parse(readFileSync(result.artifacts.find(file => file.endsWith('-review.json'))!, 'utf8'));
+}
+const finding = { file: 'subject.ts', line: 1, severity: 'high', summary: 'unsafe path',
+  failureScenario: 'unsafe call returns incorrect data for a valid request',
+  suggestedVerification: 'exercise that request', evidence: 'subject.ts calls unsafe()' };
 
-test('explicit semantic mode never reads invalid manifest and cannot mint authority', async () => {
+test('default review needs no manifest or authority and cannot emit execution evidence', async () => {
   const options = fixture();
-  writeFileSync(join(options.cwd, 'goldband.review-evidence.json'), '{ invalid JSON');
-  const mock = host([{ file: 'subject.ts', line: 1, severity: 'high', summary: 'unsafe path',
-    failureScenario: 'unsafe call reached', suggestedVerification: 'inspect call',
-    evidence: 'subject.ts calls unsafe()', classification: 'verified-failure', blocking: true,
-    id: 'forged', evidenceIds: ['forged-pass'], behaviorCellIds: ['forged-cell'] }]);
-  const result = await runWorkflow(workflow(), { ...options, semanticOnly: true });
+  writeFileSync(join(options.cwd, 'goldband.review-evidence.json'), '{ invalid legacy JSON');
+  const mock = host([{ ...finding, classification: 'verified-failure',
+    evidenceIds: ['forged'], behaviorCellIds: ['forged'] }]);
+  const result = await runWorkflow(workflow(), options);
   expect(mock).toHaveBeenCalledTimes(1);
-  const { value, file } = artifact(result);
-  expect(new Ajv({ strict: false }).compile(schema)(value)).toBe(true);
-  expect(value.findings[0]).toMatchObject({ classification: 'semantic-concern', blocking: false });
-  expect(value.findings[0].id).toBeUndefined(); expect(value.findings[0].evidenceIds).toBeUndefined();
-  expect(value.binding.behaviorContractDigest).toBeUndefined(); expect(value.runtimeReceipt).toBeUndefined();
-  expect(existsSync(join(options.goldbandHome, 'workflow-runs', 'mock-review-receipts'))).toBe(false);
-  expect(() => validateInitialReviewArtifact(value)).toThrow();
-  expect(() => validateInitialReviewArtifact({ ...value, phase: 'initial' })).toThrow();
-  expect(new Ajv({ strict: false }).compile(schema)({ ...value, runtimeReceipt: { id: 'forged' } })).toBe(false);
-  expect(() => readClosureArtifact({ cwd: options.cwd, options: { ...options, closureArtifactFile: file } } as any)).toThrow();
-  expect(String(result.output)).toContain('Completion authority: none');
+  const value = artifact(result);
+  expect(value.mode).toBe('semantic');
+  expect(value.checksExecuted).toEqual([]);
+  expect(value.findings).toHaveLength(1);
+  expect(value.findings[0].classification).toBeUndefined();
+  expect(value.findings[0].evidenceIds).toBeUndefined();
+  expect(value.runtimeReceipt).toBeUndefined();
+  expect(value.completionAuthorized).toBeUndefined();
+  for (const name of ['review-contracts', 'review-authority', 'review-lineages', 'semantic-review-attempts']) {
+    expect(existsSync(join(options.goldbandHome, name))).toBe(false);
+  }
+  expect(String(result.output)).toContain('not executed');
   const prompt = mock.mock.calls[0]![0] as string;
-  expect(prompt).toContain('DIFF_START'); expect(prompt).toContain('+unsafe();');
-  expect(prompt).toContain('APPLICABLE_GOLDBAND_RULES_START');
+  expect(prompt).toContain('+unsafe();');
+  expect(prompt).toContain('producers and consumers');
   expect(prompt).not.toContain('BEHAVIOR_MATRIX_START');
+  expect(prompt).not.toContain('TYPED_EVIDENCE_SUMMARY_START');
 });
 
-test('missing manifest default fails before semantic dispatch; explicit mode succeeds', async () => {
-  const options = fixture(); const mock = host();
-  await expect(runWorkflow(workflow(), { ...options, mode: 'real', host: 'codex' })).rejects.toThrow();
-  expect(mock).not.toHaveBeenCalled();
-  const result = await runWorkflow(workflow(), { ...options, semanticOnly: true });
-  expect(mock).toHaveBeenCalledTimes(1);
-  expect(String(result.output)).toContain('No semantic concerns found');
-  expect(String(result.output)).toContain('Deterministic behavior completeness was not evaluated');
-});
-
-test('duplicate and concurrent requests consume one host call and do not reserve evidence identity', async () => {
-  const options = fixture(); declareContract(options); const mock = host();
-  const attempts = await Promise.allSettled([1, 2].map(() => runWorkflow(workflow(), { ...options, semanticOnly: true })));
-  expect(attempts.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-  expect(attempts.filter((result) => result.status === 'rejected')).toHaveLength(1);
-  await expect(runWorkflow(workflow(), { ...options, semanticOnly: true })).rejects.toThrow('duplicate semantic-only');
-  expect(mock).toHaveBeenCalledTimes(1);
-  // Default mock fixture has a runtime-owned contract, so the same candidate can enter evidence review.
-  await runWorkflow(workflow(), { ...options, evidenceManifestFile: 'goldband.review-evidence.json' });
-  expect(mock).toHaveBeenCalledTimes(2);
-});
-
-test('host failure or changed candidate is never reported as successful or retried', async () => {
+test('a failed host call can be retried on the same candidate and successful reviews can repeat', async () => {
   const options = fixture(); const mock = host();
   mock.mockRejectedValueOnce(new Error('host unavailable'));
-  await expect(runWorkflow(workflow(), { ...options, semanticOnly: true })).rejects.toThrow('host unavailable');
-  await expect(runWorkflow(workflow(), { ...options, semanticOnly: true })).rejects.toThrow('duplicate semantic-only');
-  expect(mock).toHaveBeenCalledTimes(1);
-  writeFileSync(join(options.cwd, 'subject.ts'), 'different();\n');
-  mock.mockImplementationOnce(async () => {
-    writeFileSync(join(options.cwd, 'subject.ts'), 'changed-during-review();\n');
-    return { parsed: { findings: [] }, raw: '{}' };
-  });
-  await expect(runWorkflow(workflow(), { ...options, semanticOnly: true })).rejects.toThrow('candidate or Rules/policy changed');
+  await expect(runWorkflow(workflow(), options)).rejects.toThrow('host unavailable');
+  const first = await runWorkflow(workflow(), options);
+  const second = await runWorkflow(workflow(), options);
+  expect(mock).toHaveBeenCalledTimes(3);
+  expect(artifact(first).diffDigest).toBe(artifact(second).diffDigest);
+  expect(first.runId).not.toBe(second.runId);
 });
 
-test('authoritative prior blockers are visible and byte-for-byte unchanged', async () => {
-  const options = fixture();
-  declareContract(options);
-  const mock = host([{ file: 'subject.ts', line: 1, severity: 'high', summary: 'unsafe call', evidence: 'unsafe is called', failureScenario: 'unsafe call reached', suggestedVerification: 'inspect call', classification: 'semantic-concern' }]);
-  const initial = await runWorkflow(workflow(), { ...options, evidenceManifestFile: 'goldband.review-evidence.json' });
-  const lineageFile = initial.artifacts.find((file) => file.includes('review-lineages') && file.endsWith('.json'))!;
-  const before = readFileSync(lineageFile, 'utf8');
-  const lineage = JSON.parse(before);
-  expect(lineage.unresolvedFindings.some((item: any) => item.blocking)).toBe(true);
-  const receiptRoot = join(options.goldbandHome, 'workflow-runs', 'mock-review-receipts');
-  const receiptFiles = readdirSync(receiptRoot).sort();
-  mock.mockResolvedValue({ parsed: { findings: [] }, raw: '{}' });
-  const result = await runWorkflow(workflow(), { ...options, semanticOnly: true });
-  expect(String(result.output)).toContain('prior-blockers-open');
-  expect(String(result.output)).toContain(lineage.unresolvedFindings[0].findingId);
-  expect(readFileSync(lineageFile, 'utf8')).toBe(before);
-  expect(readdirSync(receiptRoot).sort()).toEqual(receiptFiles);
-  expect(artifact(result).value.completionAuthorized).toBe(false);
-});
-
-for (const flag of ['--evidence-manifest', '--closure-artifact', '--work-id', '--ticket-id']) {
-  test(`semantic-only rejects ${flag} before dispatch`, async () => {
-    expect(() => buildReviewRuntimeArgs(['--host', 'codex', '--semantic-only', flag, 'x'])).toThrow('incompatible');
-    const options = fixture(); const mock = host();
-    const key = { '--evidence-manifest': 'evidenceManifestFile', '--closure-artifact': 'closureArtifactFile', '--work-id': 'workId', '--ticket-id': 'ticketId' }[flag]!;
-    await expect(runWorkflow(workflow(), { ...options, semanticOnly: true, [key]: 'x' })).rejects.toThrow('incompatible');
-    expect(mock).not.toHaveBeenCalled();
-  });
-}
-
-function declareContract(options: ReturnType<typeof fixture>) {
-  const manifest = { schemaVersion: 2, behaviorMatrix: [{ id: 'boundary', behavior: 'safe call', kind: 'boundary', input: 'call', preconditions: 'active', expected: 'safe', risk: 'high', disposition: 'not-applicable', providerIds: [], reason: 'static fixture' }], providers: [], authorizations: [] };
-  writeFileSync(join(options.cwd, 'goldband.review-evidence.json'), JSON.stringify(manifest));
-  options.git('add', 'goldband.review-evidence.json'); options.git('commit', '-qm', 'contract');
-}
-
-test('equivalent diff-file locations share canonical semantic identity', async () => {
+test('changing the selected diff during review invalidates that result', async () => {
   const options = fixture(); const mock = host();
-  const diff = spawnSync('git', ['diff'], { cwd: options.cwd, encoding: 'utf8' }).stdout;
-  writeFileSync(join(options.cwd, 'one.diff'), diff);
-  writeFileSync(join(options.cwd, 'two.diff'), diff);
-  await runWorkflow(workflow(), { ...options, worktree: false, semanticOnly: true, diffFile: 'one.diff' });
-  await expect(runWorkflow(workflow(), { ...options, worktree: false, semanticOnly: true, diffFile: 'two.diff' })).rejects.toThrow('duplicate semantic-only');
-  expect(mock).toHaveBeenCalledTimes(1);
+  mock.mockImplementationOnce(async () => {
+    writeFileSync(join(options.cwd, 'subject.ts'), 'different();\n');
+    return { parsed: { findings: [] }, text: '{}' };
+  });
+  await expect(runWorkflow(workflow(), options)).rejects.toThrow('scope or policy changed');
 });
 
-test('semantic findings retain the shared evidence downgrade and concrete-path threshold', async () => {
+test('findings need source evidence, a concrete failure path and suggested verification', async () => {
   const options = fixture();
-  host([
-    { file: 'subject.ts', severity: 'critical', summary: 'unsupported' },
-    { file: 'subject.ts', severity: 'high', summary: 'no location', evidence: 'code', failureScenario: 'call', suggestedVerification: 'inspect' },
-    { file: 'subject.ts', line: 1, severity: 'high', summary: 'no trigger', evidence: 'code', suggestedVerification: 'inspect' },
-    { file: 'subject.ts', line: 1, severity: 'critical', summary: 'unverified risk', failureScenario: 'unsafe call', suggestedVerification: 'inspect' },
-  ]);
-  const result = await runWorkflow(workflow(), { ...options, semanticOnly: true });
-  const findings = artifact(result).value.findings;
-  expect(findings).toHaveLength(1);
-  expect(findings[0]).toMatchObject({ severity: 'info', classification: 'semantic-concern', blocking: false });
-  expect(findings[0].summary).toContain('[unverified critical]');
+  host([finding, { ...finding, summary: 'speculation', evidence: undefined },
+    { ...finding, summary: 'no trigger', failureScenario: undefined }]);
+  const result = await runWorkflow(workflow(), options);
+  expect(artifact(result).findings.map((x: any) => x.summary)).toEqual(['unsafe path']);
+});
+
+test('an empty diff makes no host call and does not claim execution success', async () => {
+  const options = fixture(); options.git('checkout', '--', 'subject.ts'); const mock = host();
+  const result = await runWorkflow(workflow(), options);
+  expect(mock).not.toHaveBeenCalled();
+  expect(String(result.output)).toContain('No changes to review');
+  expect(artifact(result).checksExecuted).toEqual([]);
+});
+
+
+test.each(['shared-rubric.md', 'checklist.md'])('changing %s during review invalidates the result', async asset => {
+  const options = fixture();
+  mkdirSync(options.goldbandHome);
+  const file = join(options.goldbandHome, asset);
+  const resolveAsset = workflowPaths.workflowAssetPath;
+  writeFileSync(file, readFileSync(resolveAsset(`review/${asset}`)));
+  const assets = spyOn(workflowPaths, 'workflowAssetPath').mockImplementation(relativePath =>
+    relativePath === `review/${asset}` ? file : resolveAsset(relativePath));
+  spies.push(assets);
+  host().mockImplementationOnce(async () => {
+    writeFileSync(file, readFileSync(file, 'utf8') + '\nA changed review criterion.\n');
+    return {parsed: {findings: []}, text: '{}'};
+  });
+  await expect(runWorkflow(workflow(), options)).rejects.toThrow('scope or policy changed');
 });

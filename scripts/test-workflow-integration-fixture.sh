@@ -1,11 +1,24 @@
 copy_distribution_fixture_inputs() {
   cp -R "$ROOT_DIR/scripts" "$TMP_ROOT/scripts"
-  mkdir -p "$TMP_ROOT/docs" "$TMP_ROOT/examples/review-evidence" "$TMP_ROOT/schemas"
-  cp "$ROOT_DIR/docs/review-evidence-manifest.md" "$TMP_ROOT/docs/review-evidence-manifest.md"
-  cp "$ROOT_DIR/examples/review-evidence/minimal-local-gate.json" "$TMP_ROOT/examples/review-evidence/minimal-local-gate.json"
-  cp "$ROOT_DIR/schemas/review-evidence-manifest.schema.json" "$TMP_ROOT/schemas/review-evidence-manifest.schema.json"
-  cp "$ROOT_DIR/schemas/review-semantic-result.schema.json" "$TMP_ROOT/schemas/review-semantic-result.schema.json"
-  cp "$ROOT_DIR/schemas/review-behavior-matrix.schema.json" "$TMP_ROOT/schemas/review-behavior-matrix.schema.json"
+}
+
+complete_distribution_fixture_inputs() {
+  node --input-type=module - "$ROOT_DIR" "$TMP_ROOT" <<'EOF_DISTRIBUTION'
+import { cpSync, existsSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+const [source, fixture] = process.argv.slice(2);
+const { SOURCE_INPUTS, workflowSourceInputManifest } = await import(
+  pathToFileURL(join(source, 'scripts/lib/workflow-distribution-contract.mjs')).href);
+for (const input of SOURCE_INPUTS) {
+  const target = join(fixture, input);
+  if (!existsSync(target) && existsSync(join(source, input))) {
+    mkdirSync(dirname(target), { recursive: true });
+    cpSync(join(source, input), target, { recursive: true });
+  }
+}
+workflowSourceInputManifest(join(fixture, 'goldband-loop'));
+EOF_DISTRIBUTION
 }
 
 create_minimal_real_setup_fixture() {
@@ -61,7 +74,6 @@ EOF_BROWSE
 
 write_minimal_review_assets() {
   local loop_dir="$1"
-  mkdir -p "$loop_dir/review/examples" "$loop_dir/review/schemas"
   cat > "$loop_dir/review/checklist.md" <<'EOF_CHECKLIST'
 # test checklist
 EOF_CHECKLIST
@@ -80,9 +92,19 @@ EOF_GREPTILE
   cat > "$loop_dir/review/TODOS-format.md" <<'EOF_TODOS'
 # test todos format
 EOF_TODOS
-  cp "$ROOT_DIR/docs/review-evidence-manifest.md" "$loop_dir/review/review-evidence-manifest.md"
-  cp "$ROOT_DIR/examples/review-evidence/minimal-local-gate.json" "$loop_dir/review/examples/minimal-local-gate.json"
-  cp "$ROOT_DIR/schemas/review-evidence-manifest.schema.json" "$loop_dir/review/schemas/review-evidence-manifest.schema.json"
-  cp "$ROOT_DIR/schemas/review-semantic-result.schema.json" "$loop_dir/review/schemas/review-semantic-result.schema.json"
-  cp "$ROOT_DIR/schemas/review-behavior-matrix.schema.json" "$loop_dir/review/schemas/review-behavior-matrix.schema.json"
+}
+
+run_minimal_real_setup() {
+  local home_dir="$1"
+  local setup_path="$2"
+  shift 2
+  PATH="$TMP_ROOT/test-bin:$PATH" \
+    HOME="$home_dir" \
+    GOLDBAND_SKIP_BUILD=1 \
+    GOLDBAND_SKIP_GENERATE=1 \
+    GOLDBAND_SKIP_PLAYWRIGHT=1 \
+    GOLDBAND_REQUIRE_PLAYWRIGHT=0 \
+    GOLDBAND_SKIP_COREUTILS=1 \
+    GOLDBAND_FORCE_COPY="${GOLDBAND_FORCE_COPY:-0}" \
+    "$setup_path" "$@"
 }

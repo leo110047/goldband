@@ -43,6 +43,7 @@ create_fake_goldband_loop() {
   write_fake_config_bin "$loop_dir"
   write_fake_repo_mode_bin "$loop_dir"
   write_fake_setup_script "$loop_dir"
+  complete_distribution_fixture_inputs
 }
 create_fake_loop_metadata() {
   local loop_dir="$1"
@@ -332,21 +333,6 @@ EOF_RUNTIME_BIN
 # shellcheck source=scripts/test-workflow-integration-fixture.sh
 source "$ROOT_DIR/scripts/test-workflow-integration-fixture.sh"
 
-run_minimal_real_setup() {
-  local home_dir="$1"
-  local setup_path="$2"
-  shift 2
-  PATH="$TMP_ROOT/test-bin:$PATH" \
-    HOME="$home_dir" \
-    GOLDBAND_SKIP_BUILD=1 \
-    GOLDBAND_SKIP_GENERATE=1 \
-    GOLDBAND_SKIP_PLAYWRIGHT=1 \
-    GOLDBAND_REQUIRE_PLAYWRIGHT=0 \
-    GOLDBAND_SKIP_COREUTILS=1 \
-    GOLDBAND_FORCE_COPY="${GOLDBAND_FORCE_COPY:-0}" \
-    "$setup_path" "$@"
-}
-
 seed_host_legacy_entry() {
   local host="$1" home_dir="$2" source_dir="$3" skills_dir generated_skill
   case "$host" in
@@ -449,7 +435,9 @@ create_minimal_real_setup_fixture "$SELF_SOURCE"
 write_skill "$SELF_SOURCE/.agents/skills/external-tool" "external-tool"
 write_skill "$SELF_SOURCE/.agents/skills/goldband-custom" "goldband-custom"
 printf '%s\n' 'self-source sentinel' >> "$SELF_SOURCE/SKILL.md"
+printf '%s\n' '{"schemaVersion":2,"runtimeHost":"claude","reviewReceiptKeyFile":"obsolete"}' > "$SELF_SOURCE/trusted-runtime.json"
 run_minimal_real_setup "$SELF_HOME" "$SELF_SOURCE/setup" --profile standard --quiet >/tmp/goldband-loop-self-standard.log
+node -e 'const assert = require("node:assert/strict"); assert.deepEqual(require(process.argv[1]), {schemaVersion:2,runtimeHost:"claude"});' "$SELF_SOURCE/trusted-runtime.json"
 if [ -L "$SELF_SOURCE/SKILL.md" ]; then
   echo "self-source standard rewrote SKILL.md as a symlink" >&2
   exit 1
@@ -475,6 +463,10 @@ assert_absent "$COPY_HOME/.claude/skills/goldband-workflow-upgrade"
 assert_exists "$COPY_HOME/.claude/skills/goldband/SKILL.md"
 assert_contains "$(cat "$COPY_HOME/.claude/skills/goldband/SKILL.md")" "fixture host selector: claude"
 assert_exists "$COPY_HOME/.claude/skills/goldband/workflows/review/code.workflow.md"
+node -e 'const assert = require("node:assert/strict"); assert.deepEqual(require(process.argv[1]), {schemaVersion:2,runtimeHost:"claude"});' "$COPY_HOME/.claude/skills/goldband/trusted-runtime.json"
+printf '%s\n' '{"schemaVersion":2,"runtimeHost":"claude","reviewReceiptStore":"obsolete"}' > "$COPY_HOME/.claude/skills/goldband/trusted-runtime.json"
+GOLDBAND_FORCE_COPY=1 run_minimal_real_setup "$COPY_HOME" "$COPY_SOURCE/setup" --host claude --profile standard --quiet >/tmp/goldband-loop-copy-reinstall.log
+node -e 'const assert = require("node:assert/strict"); assert.deepEqual(require(process.argv[1]), {schemaVersion:2,runtimeHost:"claude"});' "$COPY_HOME/.claude/skills/goldband/trusted-runtime.json"
 CODEX_LEGACY_HOME="$TMP_ROOT/codex-legacy-home"
 CODEX_LEGACY_SOURCE="$TMP_ROOT/codex-legacy-source/goldband-loop"
 create_minimal_real_setup_fixture "$CODEX_LEGACY_SOURCE"
@@ -592,8 +584,11 @@ printf 'same-version-stale-layout\n' > "$CUSTOM_HOME/.codex/skills/goldband/.ins
 STALE_STATUS_OUTPUT="$(HOME="$CUSTOM_HOME" "$TMP_ROOT/install.sh" status 2>&1 || true)"
 assert_contains "$STALE_STATUS_OUTPUT" "workflow contract drift"
 printf '%s\n' "$TMP_ROOT/custom-loop-source.missing" > "$CUSTOM_HOME/.codex/skills/goldband/.installed-source"
+# Make the fallback checkout unavailable too when testing missing source reporting.
+mv "$TMP_ROOT/goldband-loop" "$TMP_ROOT/goldband-loop-unavailable"
 MISSING_SOURCE_OUTPUT="$(HOME="$CUSTOM_HOME" "$TMP_ROOT/install.sh" status 2>&1 || true)"
 assert_contains "$MISSING_SOURCE_OUTPUT" "workflow contract source unavailable"
+mv "$TMP_ROOT/goldband-loop-unavailable" "$TMP_ROOT/goldband-loop"
 CODEX_REQUIREMENTS_FILE="$TMP_ROOT/etc/codex/requirements.toml" HOME="$TMP_HOME" "$TMP_ROOT/install.sh" uninstall >/tmp/goldband-loop-uninstall.log
 assert_absent "$TMP_HOME/.codex/prompts/goldband.md"
 assert_exists "$TMP_HOME/.codex/prompts/custom.md"

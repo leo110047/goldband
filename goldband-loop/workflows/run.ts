@@ -38,12 +38,7 @@ function parseArgs(args: string[]): { capability: string; action: string; option
     else if (arg === '--review-host-timeout-seconds') options.reviewHostTimeoutMs = takeSeconds(args, ++index, arg);
     else if (arg === '--review-pass-timeout-seconds') options.reviewPassTimeoutMs = takeSeconds(args, ++index, arg);
     else if (arg === '--review-claude-max-budget-usd') options.reviewClaudeMaxBudgetUsd = takeUsd(args, ++index, arg);
-    else if (arg === '--evidence-manifest') options.evidenceManifestFile = takeValue(args, ++index, arg);
-    else if (arg === '--closure-artifact') options.closureArtifactFile = takeValue(args, ++index, arg);
-    else if (arg === '--work-id') options.workId = takeValue(args, ++index, arg);
-    else if (arg === '--ticket-id') options.ticketId = takeValue(args, ++index, arg);
     else if (arg === '--goldband-home') options.goldbandHome = takeValue(args, ++index, arg);
-    else if (arg === '--review-receipt-trusted-config') options.reviewReceiptTrustedConfig = takeValue(args, ++index, arg);
     else if (arg === '--loop') loop = true;
     else if (arg === '--max-iterations') options.maxIterations = takeNumber(args, ++index, arg);
     else usageError(`unknown argument: ${arg}`);
@@ -55,9 +50,9 @@ function parseArgs(args: string[]): { capability: string; action: string; option
 
 function setBooleanOption(arg: string | undefined, options: WorkflowRunOptions): boolean {
   const key = { '--staged': 'staged', '--worktree': 'worktree',
-    '--include-untracked': 'includeUntracked', '--semantic-only': 'semanticOnly' }[arg ?? ''];
+    '--include-untracked': 'includeUntracked' }[arg ?? ''];
   if (!key) return false;
-  options[key as 'staged' | 'worktree' | 'includeUntracked' | 'semanticOnly'] = true;
+  options[key as 'staged' | 'worktree' | 'includeUntracked'] = true;
   return true;
 }
 
@@ -81,9 +76,6 @@ function validateOptions(
   if (options.goldbandHome && !isAbsolute(options.goldbandHome)) {
     usageError('--goldband-home requires an absolute path');
   }
-  if (options.reviewReceiptTrustedConfig && !isAbsolute(options.reviewReceiptTrustedConfig)) {
-    usageError('--review-receipt-trusted-config requires an absolute path');
-  }
   if (options.specialists && !['off', 'auto', 'all'].includes(options.specialists)) {
     usageError(`invalid --specialists: ${options.specialists}`);
   }
@@ -94,21 +86,12 @@ function validateOptions(
   if (hasReviewOnlyOverride && `${capability}/${action}` !== 'review/code') {
     usageError('review timeout and budget options are only valid for review/code');
   }
-  if (
-    (options.semanticOnly || options.evidenceManifestFile || options.closureArtifactFile) &&
-    `${capability}/${action}` !== 'review/code'
-  ) {
-    usageError('evidence manifest and closure artifact options are only valid for review/code');
-  }
   if (`${capability}/${action}` === 'review/code') {
     if (
       options.reviewClaudeMaxBudgetUsd !== undefined &&
       options.host !== 'claude'
     ) {
       usageError('--review-claude-max-budget-usd requires --host claude');
-    }
-    if (Boolean(options.workId) !== Boolean(options.ticketId)) {
-      usageError('--work-id and --ticket-id must be supplied together');
     }
     try {
       assertValidReviewExecutionOptions(options);
@@ -168,7 +151,7 @@ function usageError(message: string): never {
 }
 
 function usage(): void {
-  console.error('Usage: bun run workflows/run.ts <capability> <action> [--loop] [--max-iterations <n>] [--input <file>] [--base <ref>] [--mode mock|real] [--host mock|claude|codex] [--work-id <id> --ticket-id <id>] [--semantic-only] [--evidence-manifest <file>] [--closure-artifact <initial-review-artifact>] [--review-host-timeout-seconds <60-1800>] [--review-pass-timeout-seconds <60-1800>] [--review-claude-max-budget-usd <0.01-100.00>] [--staged|--worktree|--include-untracked|--diff-file <file>]');
+  console.error('Usage: bun run workflows/run.ts <capability> <action> [--loop] [--max-iterations <n>] [--input <file>] [--base <ref>] [--mode mock|real] [--host mock|claude|codex] [--review-host-timeout-seconds <60-1800>] [--review-pass-timeout-seconds <60-1800>] [--review-claude-max-budget-usd <0.01-100.00>] [--staged|--worktree|--include-untracked|--diff-file <file>]');
 }
 
 main().catch((error) => {
