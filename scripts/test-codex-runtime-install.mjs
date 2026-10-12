@@ -73,15 +73,8 @@ assert.ok(profileFiles.length > 0, 'codex profile fixture inventory is empty');
 
 const installedConfigPath = path.join(home, '.codex', 'config.toml');
 const installedConfig = fs.readFileSync(installedConfigPath, 'utf8');
-const localConfigPath = path.join(
-  process.cwd(),
-  'codex',
-  'local',
-  'config.toml',
-);
-const expectedConfigStatus = fs.existsSync(localConfigPath)
-  ? '[OK] codex-config (generated base + local overlay)'
-  : '[OK] codex-config (generated base only)';
+const expectedConfigStatus =
+  '[OK] codex-config (valid user settings; defaults are not enforced)';
 assert.match(
   installedConfig,
   /model = "gpt-5\.6-sol"/,
@@ -92,32 +85,15 @@ assert.doesNotMatch(
   /model = "gpt-5\.5"/,
   'codex-config install must not retain the previous GPT-5.5 default',
 );
-assert.match(
-  installedConfig,
-  /status_line = \["model-with-reasoning", "project-root", "git-branch", "context-remaining", "five-hour-limit", "weekly-limit"\]/,
-  'codex-config install must use the shared operational TUI status line',
-);
-assert.doesNotMatch(
-  installedConfig,
-  /"current-dir"|"context-used"/,
-  'codex-config install must not retain duplicate path or redundant context status items',
-);
-
-const unsupportedProjectionSource = path.join(
-  home,
-  'unsupported-multiline.config.toml',
-);
-fs.writeFileSync(
-  unsupportedProjectionSource,
-  ['values = [', '  "one",', ']'].join('\n'),
-);
-const unsupportedProjectionCheck = spawnSync(
+const multilineSource = path.join(home, 'multiline.config.toml');
+fs.writeFileSync(multilineSource, ['values = [', '  "one",', ']'].join('\n'));
+const multilineSyntaxCheck = spawnSync(
   'bash',
   [
     '-c',
-    'source shell/install/codex.sh; codex_config_projection_source_supported "$1"',
-    'goldband-config-projection-check',
-    unsupportedProjectionSource,
+    'REPO_DIR="$PWD"; source shell/install/codex.sh; codex_toml_syntax_valid "$1"',
+    'goldband-config-syntax-check',
+    multilineSource,
   ],
   {
     cwd: process.cwd(),
@@ -126,9 +102,9 @@ const unsupportedProjectionCheck = spawnSync(
   },
 );
 assert.equal(
-  unsupportedProjectionCheck.status,
-  1,
-  'unsupported multiline source values must fail the ownership projection closed',
+  multilineSyntaxCheck.status,
+  0,
+  'valid multiline TOML must be supported by the native parser',
 );
 const unavailableSyntaxCheck = spawnSync(
   'bash',
@@ -300,8 +276,7 @@ fs.writeFileSync(
 );
 statusResult = runStatus();
 assert.equal(statusResult.status, 0);
-assert.doesNotMatch(stripAnsi(statusResult.stdout), /\[OK\] codex-config/);
-assert.match(stripAnsi(statusResult.stdout), /\[legacy copy\] codex-config/);
+assert.match(stripAnsi(statusResult.stdout), /\[OK\] codex-config/);
 
 fs.writeFileSync(
   installedConfigPath,
@@ -311,24 +286,20 @@ fs.writeFileSync(
   ),
 );
 statusResult = runStatus();
-assert.equal(statusResult.status, 2);
-assert.match(
-  stripAnsi(statusResult.stdout),
-  /\[stale\] codex-config — managed content differs from current sources/,
+assert.equal(statusResult.status, 0);
+assert.match(stripAnsi(statusResult.stdout), /\[OK\] codex-config/);
+
+fs.writeFileSync(
+  installedConfigPath,
+  configWithAppManagedAdditions.replace('model = "gpt-5.6-sol"', ''),
 );
-assert.match(
-  stripAnsi(statusResult.stdout),
-  /Codex app compatible shared config.*重跑 \.\/install\.sh codex-full/,
-);
-assert.match(
-  stripAnsi(statusResult.stdout),
-  /stale: ~\/\.codex\/config\.toml/,
-  'Codex app status must distinguish a stale config from a missing config',
-);
+statusResult = runStatus();
+assert.equal(statusResult.status, 0);
+assert.match(stripAnsi(statusResult.stdout), /\[OK\] codex-config/);
 assert.doesNotMatch(
   stripAnsi(statusResult.stdout),
-  /missing: .*~\/\.codex\/config\.toml/,
-  'Codex app status must not call an existing stale config missing',
+  /stale: .*~\/\.codex\/config\.toml/,
+  'Omitting a preference is valid user configuration, not installation drift',
 );
 
 fs.writeFileSync(installedConfigPath, configWithAppManagedAdditions);

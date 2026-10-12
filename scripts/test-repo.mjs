@@ -28,13 +28,6 @@ export const TEST_SUITES = [
     args: ['run', 'check:manifest'],
   }),
   suite({
-    id: 'root:review-contracts',
-    label: 'Review contract freshness',
-    cwd: ROOT,
-    command: npmCmd,
-    args: ['run', 'check:review-contracts'],
-  }),
-  suite({
     id: 'root:capability-invocations',
     label: 'Root capability invocation validation',
     cwd: ROOT,
@@ -131,6 +124,20 @@ export const TEST_SUITES = [
     cwd: ROOT,
     command: npmCmd,
     args: ['run', 'test:auto-update'],
+  }),
+  suite({
+    id: 'root:config-preservation',
+    label: 'Root personal settings and optional status line preservation',
+    cwd: ROOT,
+    command: npmCmd,
+    args: ['run', 'test:config-preservation'],
+  }),
+  suite({
+    id: 'root:launchers',
+    label: 'Root shell launcher tests',
+    cwd: ROOT,
+    command: npmCmd,
+    args: ['run', 'test:launchers'],
   }),
   suite({
     id: 'mcp:test',

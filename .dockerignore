@@ -19,7 +19,6 @@ codex/local/
 node_modules/
 **/node_modules/
 docs/**
-!docs/review-evidence-manifest.md
 .DS_Store
 **/.DS_Store
 .goldband-sandbox-unmounted-probe

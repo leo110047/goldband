@@ -10,7 +10,7 @@
     "ios-qa/scripts/*.ts",
     "scripts/*.{ts,mjs}",
     "supabase/functions/*/index.ts",
-    "workflows/{run,work-map-cli,review-contract-cli}.ts",
+    "workflows/{run,work-map-cli}.ts",
     "**/*.test.ts"
   ],
   "project": [

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { relative, resolve, sep } from "node:path";
+import { relative, sep } from "node:path";
 
 export type ReviewWorkspaceCoordinates = {
 	repositoryRoot: string;
@@ -38,14 +38,4 @@ export function resolveReviewWorkspace(
 		);
 	}
 	return { repositoryRoot, invocationDirectory, invocationOffset };
-}
-
-export function workspacePath(root: string, offset: string): string {
-	const target = resolve(root, offset || ".");
-	if (target !== root && !target.startsWith(`${root}${sep}`)) {
-		throw new Error(
-			"review execution offset escapes the canonical repository snapshot",
-		);
-	}
-	return target;
 }

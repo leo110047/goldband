@@ -34,13 +34,13 @@ telemetry:
 
 ```bash
 TMP_DIR=$(mktemp -d)
-printf '%s\n' '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"notes/random-notes.md","content":"temporary"}}' \
+printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"notes/random-notes.md","content":"ghp_%036d"}}\n' 0 \
   | GOLDBAND_USAGE_FILE="$TMP_DIR/usage-events.jsonl" \
     CLAUDE_SESSION_ID="demo-run" \
     node hooks/scripts/hooks/hook-router.js >/tmp/goldband-demo-hook.out
 ```
 
-That fixture should be denied by `doc-file-blocker` and written to the JSONL
+That fixture should be denied by `secret-detector` and written to the JSONL
 usage file.
 
 ## Export to OTLP
@@ -65,7 +65,7 @@ In Jaeger, select service `goldband` and click **Find Traces**. The demo trace
 should show a span named similar to:
 
 ```text
-hook-decision:doc-file-blocker
+hook-decision:secret-detector
 ```
 
 The span attributes include `goldband.run_id=demo-run`,

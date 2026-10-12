@@ -23,7 +23,7 @@ Conventions:
 - `$goldband plan create`: Create a versioned Work Map for tracked work.
 - `$goldband plan sync`: Preview, inspect, or synchronize a Work Map tracker projection.
 - `$goldband qa app`: Run product QA and record evidence.
-- `$goldband review code`: Evidence-first code review.
+- `$goldband review code`: Independent read-only semantic code review.
 - `$goldband review security`: Review security and trust boundaries.
 - `$goldband safety freeze`: Enable read-only freeze-mode for a Claude session.
 - `$goldband safety guard`: Enable careful-mode for a Claude session.

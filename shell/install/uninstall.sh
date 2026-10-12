@@ -1,17 +1,23 @@
 # This file must be sourced by bash, not executed directly.
 
 do_uninstall() {
+    local result=0
     echo -e "${YELLOW}移除安裝...${NC}"
     uninstall_claude_skills
     uninstall_claude_guidance
-    uninstall_claude_paths
-    uninstall_claude_settings
+    if uninstall_claude_settings; then
+        uninstall_claude_paths
+    else
+        echo "[錯誤] Claude settings were preserved; keeping Claude assets referenced by them." >&2
+        result=1
+    fi
     uninstall_codex_skills
     uninstall_codex_prompt
     uninstall_codex_paths
     uninstall_codex_requirements
     uninstall_style_gate
-    echo -e "${GREEN}完成${NC}"
+    if [ "$result" -eq 0 ]; then echo -e "${GREEN}完成${NC}"; fi
+    return "$result"
 }
 
 uninstall_claude_skills() {
@@ -35,7 +41,7 @@ remove_profile_skills() {
     skills_csv="${skills_line#skills=}"
     read_profile_skill_array "$skills_csv" skill_array
     for skill in "${skill_array[@]}"; do
-        rm -rf "${skills_dir:?}/$skill"
+        remove_repo_component "$REPO_DIR/skills/global/$skill" "${skills_dir:?}/$skill"
     done
     rm -f "$profile_file"
 }
@@ -65,15 +71,12 @@ uninstall_claude_guidance() {
 
 uninstall_claude_paths() {
     retire_claude_rule_autoload
-    local paths=(
-        "$CLAUDE_DIR/commands"
-        "$CLAUDE_DIR/goldband-rules"
-        "$CLAUDE_DIR/hooks/scripts"
-        "$SHELL_UPDATE_BIN"
-        "$SHELL_LAUNCHERS_FILE"
-    )
-    remove_paths "${paths[@]}"
-    remove_statusline_command
+    remove_repo_component "$REPO_DIR/commands" "$CLAUDE_DIR/commands"
+    remove_repo_component "$REPO_DIR/rules" "$CLAUDE_DIR/goldband-rules"
+    remove_repo_component "$REPO_DIR/hooks/scripts" "$CLAUDE_DIR/hooks/scripts"
+    remove_repo_component "$REPO_DIR/shell/goldband-self-update.sh" "$SHELL_UPDATE_BIN"
+    remove_repo_component "$REPO_DIR/shell/goldband-launchers.sh" "$SHELL_LAUNCHERS_FILE"
+    remove_repo_component "$REPO_DIR/hooks/statusline-command.sh" "$CLAUDE_DIR/statusline-command.sh"
     remove_shell_launcher_block "$ZSHRC_FILE"
     remove_empty_dir "$CLAUDE_BIN_DIR"
     remove_empty_dir "$CLAUDE_SHELL_DIR"
@@ -92,21 +95,48 @@ remove_paths() {
     done
 }
 
-remove_statusline_command() {
-    local path="$CLAUDE_DIR/statusline-command.sh"
-    if [ -L "$path" ] || [ -f "$path" ]; then
-        rm "$path"
-        echo -e "  ${GREEN}[移除] statusline-command.sh${NC}"
-    fi
-}
-
 uninstall_claude_settings() {
     local settings_json="$CLAUDE_DIR/settings.json"
-    if [ -f "$settings_json" ] && command -v jq &> /dev/null; then
-        cp "$settings_json" "${settings_json}.bak"
-        jq 'del(.hooks) | del(.statusLine)' "$settings_json" > "${settings_json}.tmp" \
-            && mv "${settings_json}.tmp" "$settings_json"
-        echo -e "  ${GREEN}[移除] settings.json 中的 hooks/statusLine 設定（已備份為 .bak）${NC}"
+    [ -f "$settings_json" ] || return 0
+    command -v jq >/dev/null 2>&1 || { echo "[錯誤] Claude settings uninstall requires jq" >&2; return 1; }
+    local hooks_content existing_hooks preserved tmp
+    hooks_content="$(read_expanded_hooks_content "$REPO_DIR/hooks/hooks.json" "$CLAUDE_DIR/hooks")" || return 1
+    existing_hooks="$(jq '.hooks // {}' "$settings_json")" || return 1
+    preserved="$(merge_claude_hooks_json "$existing_hooks" "$hooks_content" remove)" || return 1
+    tmp="$(mktemp "${settings_json}.tmp.XXXXXX")" || return 1
+    if ! jq --argjson hooks "$preserved" --arg command "$(claude_statusline_command)" \
+        --arg legacy "bash $CLAUDE_DIR/statusline-command.sh" \
+        --arg quoted "bash \"$CLAUDE_DIR/statusline-command.sh\"" '
+        if has("hooks") then
+            if ($hooks | length) == 0 then del(.hooks) else .hooks = $hooks end
+        else . end
+        | if .statusLine.command? == $command or .statusLine.command? == $legacy or .statusLine.command? == $quoted
+          then del(.statusLine) else . end
+    ' "$settings_json" > "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    replace_claude_settings "$settings_json" "$tmp" || return 1
+    echo -e "  ${GREEN}[移除] Goldband hooks/statusLine；保留個人設定${NC}"
+}
+
+remove_repo_component() {
+    local src="$1"
+    local dest="$2"
+    [ -e "$dest" ] || [ -L "$dest" ] || return 0
+    if [ -L "$dest" ]; then
+        if repo_link_points_to "$dest" "$src"; then rm "$dest"; fi
+    elif [ -d "$src" ] && [ -d "$dest" ]; then
+        local entry
+        for entry in "$src"/* "$src"/.[!.]* "$src"/..?*; do
+            [ -e "$entry" ] || [ -L "$entry" ] || continue
+            remove_repo_component "$entry" "$dest/$(basename "$entry")" || return 1
+        done
+        remove_empty_dir "$dest"
+    elif [ -f "$src" ] && [ -f "$dest" ] && cmp -s "$src" "$dest"; then
+        rm "$dest"
+    else
+        echo "  [保留] Custom or modified path: $dest"
     fi
 }
 
@@ -134,20 +164,26 @@ uninstall_codex_prompt() {
 }
 
 uninstall_codex_paths() {
+    # The shared config and local rule approvals always belong to the user.
+    remove_repo_component "$REPO_DIR/codex/AGENTS.md" "$CODEX_AGENTS_FILE"
+    remove_repo_component "$REPO_DIR/rules" "$CODEX_DIR/goldband-rules"
+    remove_repo_component "$REPO_DIR/codex/agents" "$CODEX_CUSTOM_AGENTS_DIR"
+    remove_repo_component "$REPO_DIR/codex/hooks.json" "$CODEX_HOOKS_FILE"
+    remove_repo_component "$REPO_DIR/codex/hooks" "$CODEX_HOOKS_DIR"
+    remove_repo_component "$REPO_DIR/codex/rules/default.rules" "$CODEX_RULES_DIR/goldband.rules"
+    remove_repo_component "$REPO_DIR/hooks/scripts/lib/rules-resolver.js" "$CODEX_REVIEW_RUNTIME_FILE"
     local codex_paths=(
-        "$CODEX_CONFIG_FILE"
-        "$CODEX_AGENTS_FILE"
-        "$CODEX_DIR/goldband-rules"
-        "$CODEX_CUSTOM_AGENTS_DIR"
-        "$CODEX_HOOKS_FILE"
-        "$CODEX_HOOKS_DIR"
-        "$CODEX_RULES_DIR"
         "$CODEX_DIR/goldband/workflow-runtime"
         "$CODEX_DIR/goldband/review-runtime"
     )
     local profile_path
     while IFS= read -r profile_path; do
-        [ -n "$profile_path" ] && codex_paths+=("$profile_path")
+        [ -n "$profile_path" ] || continue
+        if codex_profile_installed_from "$REPO_DIR/codex/profiles/$(basename "$profile_path")" "$profile_path"; then
+            rm "$profile_path"
+        elif [ -e "$profile_path" ] || [ -L "$profile_path" ]; then
+            echo "  [保留] Custom or modified Codex profile: $profile_path"
+        fi
     done < <(codex_profile_paths)
     remove_paths "${codex_paths[@]}"
 }

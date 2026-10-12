@@ -163,7 +163,7 @@ const GENERIC_DESTINATIONS = new Set([
 const MAP_TRANSITIONS: Record<WorkMapStatus, readonly WorkMapStatus[]> = {
 	shaping: ["mapped", "blocked", "cancelled"],
 	mapped: ["executing", "blocked", "cancelled"],
-	executing: ["verifying", "blocked", "cancelled"],
+	executing: ["verifying", "completed", "blocked", "cancelled"],
 	verifying: ["executing", "completed", "blocked", "cancelled"],
 	blocked: ["shaping", "mapped", "executing", "verifying", "cancelled"],
 	completed: [],
@@ -172,11 +172,11 @@ const MAP_TRANSITIONS: Record<WorkMapStatus, readonly WorkMapStatus[]> = {
 
 const TICKET_TRANSITIONS: Record<
 	WorkTicketStatus,
-	readonly WorkTicketStatus[]
+	readonly (WorkTicketStatus | { status: WorkTicketStatus; verificationMode: VerificationMode })[]
 > = {
 	draft: ["ready", "blocked", "cancelled"],
 	ready: ["claimed", "blocked", "cancelled"],
-	claimed: ["ready", "implemented", "blocked", "cancelled"],
+	claimed: ["ready", "implemented", { status: "verified", verificationMode: "analysis-only" }, "blocked", "cancelled"],
 	implemented: ["claimed", "verified", "blocked", "cancelled"],
 	verified: [],
 	blocked: ["draft", "ready", "claimed", "implemented", "cancelled"],
@@ -358,11 +358,14 @@ export function assertMapTransition(
 }
 
 export function assertTicketTransition(
-	from: WorkTicketStatus,
+	ticket: Pick<WorkTicket, "status" | "verificationMode">,
 	to: WorkTicketStatus,
 ): void {
+	const from = ticket.status;
 	if (from === to) return;
-	if (!TICKET_TRANSITIONS[from].includes(to)) {
+	if (!TICKET_TRANSITIONS[from].some((transition) =>
+		typeof transition === "string" ? transition === to :
+			transition.status === to && transition.verificationMode === ticket.verificationMode)) {
 		throw new Error(`invalid ticket status transition: ${from} -> ${to}`);
 	}
 }
@@ -403,7 +406,7 @@ export function assertWorkMapTransition(
 				`Work Map ticket is missing from prior revision: ${ticket.id}`,
 			);
 		}
-		assertTicketTransition(previous.status, ticket.status);
+		assertTicketTransition(previous, ticket.status);
 	}
 }
 
@@ -463,11 +466,6 @@ function validateWorkMap(map: WorkMapV1): void {
 					`ticket ${ticket.id} requires verification receipt evidence`,
 				);
 			}
-		}
-		if (ticket.status === "verified" && !ticket.evidence?.review) {
-			throw new Error(
-				`ticket ${ticket.id} requires review evidence`,
-			);
 		}
 		if (ticket.blockerReason && ticket.status !== "blocked") {
 			throw new Error(

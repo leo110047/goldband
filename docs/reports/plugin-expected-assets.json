@@ -77,7 +77,12 @@
       }
     },
     "runtimeDependencies": [
-      "scripts/lib/telemetry-schema.cjs",
+      "hooks/scripts/lib/telemetry-schema.cjs",
+      "hooks/scripts/lib/hook-router/secret-patterns.js",
+      "hooks/scripts/lib/hook-router/shell-commands.js",
+      "hooks/scripts/lib/hook-router/shell-policy.js",
+      "hooks/scripts/lib/hook-router/shell-output.js",
+      "hooks/scripts/lib/hook-router/shell-invocation.js",
       "hooks/scripts/lib/rules-resolver.js"
     ],
     "hookScripts": [
@@ -113,7 +118,12 @@
       "codex/hooks/telemetry.js",
       "codex/hooks/telemetry-schema.cjs",
       "codex/hooks/review-launch-advisory.js",
-      "codex/hooks/session-state.js"
+      "codex/hooks/session-state.js",
+      "codex/hooks/secret-patterns.js",
+      "codex/hooks/shell-commands.js",
+      "codex/hooks/shell-policy.js",
+      "codex/hooks/shell-output.js",
+      "codex/hooks/shell-invocation.js"
     ],
     "reason": "Codex plugins exist but package Codex skills/apps/MCP, not Claude Code settings. Root Codex install remains install.sh."
   },

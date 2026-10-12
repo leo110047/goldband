@@ -59,7 +59,13 @@ const MANAGED_COMMANDS = [
   'codex/hooks/module-loader.js',
   'codex/hooks/telemetry-schema.cjs',
   'codex/hooks/review-launch-advisory.js',
+  'hooks/scripts/lib/telemetry-schema.cjs',
   'codex/hooks/session-state.js',
+  'codex/hooks/secret-patterns.js',
+  'codex/hooks/shell-commands.js',
+  'codex/hooks/shell-policy.js',
+  'codex/hooks/shell-output.js',
+  'codex/hooks/shell-invocation.js',
 ];
 
 export function buildPluginArtifacts() {
@@ -105,16 +111,40 @@ export function buildPluginArtifacts() {
     'rules',
     path.join(PLUGIN_ROOT_PATH, 'rules'),
   );
-  addFileArtifact(
-    artifacts,
-    'scripts/lib/telemetry-schema.cjs',
-    path.join(PLUGIN_ROOT_PATH, 'scripts', 'lib', 'telemetry-schema.cjs'),
-  );
   addSharedAdapterArtifacts(artifacts);
   return artifacts;
 }
 
 function addSharedAdapterArtifacts(artifacts) {
+  for (const file of [
+    'shell-commands.js',
+    'shell-output.js',
+    'shell-invocation.js',
+    'shell-policy.js',
+    'secret-patterns.js',
+  ]) {
+    addFileArtifact(
+      artifacts,
+      `hooks/scripts/lib/hook-router/${file}`,
+      path.join(ROOT_DIR, 'codex', 'hooks', file),
+    );
+  }
+  addFileArtifact(
+    artifacts,
+    'scripts/lib/telemetry-schema.cjs',
+    path.join(
+      PLUGIN_ROOT_PATH,
+      'hooks',
+      'scripts',
+      'lib',
+      'telemetry-schema.cjs',
+    ),
+  );
+  addFileArtifact(
+    artifacts,
+    'scripts/lib/telemetry-schema.cjs',
+    path.join(ROOT_DIR, 'hooks', 'scripts', 'lib', 'telemetry-schema.cjs'),
+  );
   addFileArtifact(
     artifacts,
     'hooks/scripts/lib/skill-activation/session-state.js',
@@ -186,6 +216,30 @@ function runtimeDependencyPaths(prefix) {
   return REVIEW_RULE_RUNTIME_FILES.map((file) => `${prefix}/${file}`);
 }
 
+function buildExpectedCodexAssets() {
+  return {
+    distribution: 'installer',
+    reviewRuntimeDependencies: runtimeDependencyPaths('hooks/scripts/lib'),
+    hookRuntimeDependencies: [
+      'codex/hooks/capability-routing.generated.json',
+      'codex/hooks/cross-review-gate.js',
+      'codex/hooks/high-risk-policy.js',
+      'codex/hooks/module-loader.js',
+      'codex/hooks/telemetry.js',
+      'codex/hooks/telemetry-schema.cjs',
+      'codex/hooks/review-launch-advisory.js',
+      'codex/hooks/session-state.js',
+      'codex/hooks/secret-patterns.js',
+      'codex/hooks/shell-commands.js',
+      'codex/hooks/shell-policy.js',
+      'codex/hooks/shell-output.js',
+      'codex/hooks/shell-invocation.js',
+    ],
+    reason:
+      'Codex plugins exist but package Codex skills/apps/MCP, not Claude Code settings. Root Codex install remains install.sh.',
+  };
+}
+
 function buildExpectedAssets({ commands, hookConfig, rules, sourceSkills }) {
   return {
     schemaVersion: 1,
@@ -203,7 +257,12 @@ function buildExpectedAssets({ commands, hookConfig, rules, sourceSkills }) {
       skills: [...sourceSkills, 'goldband-rules'],
       hooks: summarizeHooks(hookConfig.hooks),
       runtimeDependencies: [
-        'scripts/lib/telemetry-schema.cjs',
+        'hooks/scripts/lib/telemetry-schema.cjs',
+        'hooks/scripts/lib/hook-router/secret-patterns.js',
+        'hooks/scripts/lib/hook-router/shell-commands.js',
+        'hooks/scripts/lib/hook-router/shell-policy.js',
+        'hooks/scripts/lib/hook-router/shell-output.js',
+        'hooks/scripts/lib/hook-router/shell-invocation.js',
         ...runtimeDependencyPaths('hooks/scripts/lib'),
       ],
       hookScripts: [
@@ -215,22 +274,7 @@ function buildExpectedAssets({ commands, hookConfig, rules, sourceSkills }) {
       rulesManifest: 'rules/manifest.json',
       generatedRuleSkill: relativePath(GENERATED_RULE_SKILL_PATH),
     },
-    codex: {
-      distribution: 'installer',
-      reviewRuntimeDependencies: runtimeDependencyPaths('hooks/scripts/lib'),
-      hookRuntimeDependencies: [
-        'codex/hooks/capability-routing.generated.json',
-        'codex/hooks/cross-review-gate.js',
-        'codex/hooks/high-risk-policy.js',
-        'codex/hooks/module-loader.js',
-        'codex/hooks/telemetry.js',
-        'codex/hooks/telemetry-schema.cjs',
-        'codex/hooks/review-launch-advisory.js',
-        'codex/hooks/session-state.js',
-      ],
-      reason:
-        'Codex plugins exist but package Codex skills/apps/MCP, not Claude Code settings. Root Codex install remains install.sh.',
-    },
+    codex: buildExpectedCodexAssets(),
     outOfScope: [
       'goldband-loop workflow runtime',
       'Playwright/browser/iOS toolchains',

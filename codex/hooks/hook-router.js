@@ -9,6 +9,7 @@ const {
   classifyHighRiskToolUse,
   findHighRiskBash,
   findHighRiskPatch,
+  secretDecisionForPatch,
 } = require('./high-risk-policy');
 const { recordHookTelemetry } = require('./telemetry');
 const { reviewLaunchAdvisory } = require('./review-launch-advisory');
@@ -31,11 +32,6 @@ function loadCrossReviewGate() {
 
 const { armFromPrompt, evaluateCrossReviewGate } = loadCrossReviewGate();
 
-const ADVISORY_SECRET_PATTERNS = [
-  /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/,
-  /\bsk-(?:proj-)?[A-Za-z0-9_-]{24,}\b/,
-  /(?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token)\s*[=:]\s*['"][A-Za-z0-9_-]{20,}['"]/i,
-];
 const CODEX_STOP_BLOCK_EXIT_CODE = 2;
 
 let workflowHints;
@@ -179,14 +175,6 @@ function resultPermissionRequestDeny(decision) {
 
 function writeResult(result) {
   writeJson(result ?? {});
-}
-
-function secretWarningForPatch(command) {
-  const patch = String(command || '');
-  if (ADVISORY_SECRET_PATTERNS.some((pattern) => pattern.test(patch))) {
-    return 'Patch content contains credential-shaped text. Verify it is a fixture/example and not a real secret before committing.';
-  }
-  return null;
 }
 
 function buildPostToolUseFailureContext(input) {
@@ -354,15 +342,9 @@ function evaluatePreToolUseResult(input) {
   const command = input.tool_input?.command || '';
   const toolName = input.tool_name || '';
   const contexts = [];
-  if (toolName === 'Bash' && shouldWarnDevServer(command)) {
-    contexts.push(
-      'Dev server commands are allowed, but prefer a persistent terminal or tmux so logs remain available.',
-    );
-  }
-
   if (toolName === 'apply_patch') {
-    const secretWarning = secretWarningForPatch(command);
-    if (secretWarning) contexts.push(secretWarning);
+    const secretDecision = secretDecisionForPatch(command);
+    if (secretDecision) contexts.push(secretDecision.message);
   }
 
   if (isProbablyMutatingMcp(toolName)) {
@@ -394,10 +376,6 @@ function evaluateInput(input) {
   if (eventName === 'PostToolUse') return evaluatePostToolUseResult(input);
   if (eventName === 'Stop') return evaluateStopResult(input);
   return null;
-}
-
-function shouldWarnDevServer(command) {
-  return /\b(npm run dev|pnpm( run)? dev|yarn dev|bun run dev)\b/.test(command);
 }
 
 function isProbablyMutatingMcp(toolName) {

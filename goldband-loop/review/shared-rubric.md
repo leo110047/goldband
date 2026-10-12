@@ -54,11 +54,15 @@ Insufficient evidence requiring human judgment is `info` in `/review` and
 
 ## Finding validity
 
-Every code finding must prove:
+Every finding needs an exact source location, concrete evidence, and practical
+impact. Apply the standard for the claim:
 
-- exact `file` and `line`;
-- a concrete input or runtime state with a reachable execution path;
-- the incorrect result, expected result, and practical impact.
+- Product defect: a reachable input or state, incorrect result, and expected
+  behavior.
+- Verification gap: an explicit requirement or concrete risk, missing or
+  ineffective evidence, and the check needed. In `failureScenario`, describe
+  the contract violation that could escape detection; do not claim it occurred.
+  Prior proof of a product defect is not required.
 
 Category, policy, recommendation, verification, and specialist metadata do not
 validate unsupported findings. Suppress speculation; do not display confidence

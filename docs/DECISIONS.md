@@ -2599,3 +2599,117 @@ receipts, revisions and claim details cannot change that stable task identity.
 Installed Claude/Codex probes cover entrypoints, lease binding, signed closure,
 partial-closure deduplication and native permissions. Revisit this design if
 real projects cannot identify a unique continuation without manual selection.
+
+## 2026-10-11: Retire review evidence governance and closure authorization
+
+Keep one independent semantic review pass, shared rules, related-code context,
+concrete findings, native read-only permissions, and honest report boundaries.
+Remove review manifests/providers, registry authoring, signed receipts, acceptance
+lineage, evidence repair, and closure/completion authorization. Their maintenance
+burden is established; additional defect-detection value beyond project checks
+and semantic review has not been demonstrated. This supersedes earlier review
+evidence and closure decisions, including their automatic continuation contracts.
+
+Project tests and CI remain project-owned. Work Map delivery uses existing project
+verification and explicit Git integration; semantic reports do not gate or mutate
+it. Analysis-only delivery is recorded with its declared artifact. Historical
+state remains readable but retired review references confer no authority.
+
+The tradeoff is explicit: Goldband no longer enforces a signed proof chain or
+tracks unresolved review findings. Reviewers and implementers must still report
+what was checked and what remains unverified. Installs replace obsolete runtime
+assets; historical external records are preserved.
+
+Keep the repository-and-scope execution lease as duplicate-call cost control,
+including shared coordination when report storage uses a temporary directory.
+It does not inspect evidence or authorize completion. Claude installation also
+retains the minimal trusted runtime configuration (`schemaVersion`, `runtimeHost`)
+to pin runtime selection and host identity; obsolete receipt fields are removed
+on both copied and same-directory reinstalls.
+
+## 2026-10-12: Share hook policy without requiring identical host automation
+
+Secret classification and shell command extraction have one source under
+`hooks/scripts/lib/hook-router/`; the existing distribution generator emits
+Codex copies and the Claude plugin. Host adapters own input/output conversion.
+Documentation naming and dev-server process choices are guidance, not denial
+policies. Tool writes have no path-only secret exemption; removed patch lines
+are excluded so cleanup remains possible. Host-specific modes and automation
+remain explicit in `ARCHITECTURE.md` rather than being copied for symmetry.
+
+Command extraction preserves explicit code and input/output edges. Shared policy
+evaluation also scans unknown launchers for signatures requiring both a command
+name and specific arguments, without requiring an exhaustive wrapper registry.
+Name-only rules (`env`, `printenv`, `sudo`, `gparted`) apply only at
+actual command positions, including extracted child commands; arguments such
+as an `env` directory or a `sudo` query target cannot activate them. Known data
+consumers keep their argument boundaries. Codex's formatting rule treats `mkfs`
+and `mkfs.*` as one family. Actual commands block on a literal `/dev/...`
+argument or any argument containing `$`; unknown-launcher candidates require
+the literal device argument. The dollar-sign rule is conservative, including
+quoted literal dollars and non-target arguments, without variable expansion.
+A name or help query alone does not match this rule. Literal image files remain
+allowed. The policy also covers `mke2fs`, `newfs_apfs`, and destructive `wipefs`
+options; it preserves known wipefs listing/no-act and fdisk list operations.
+Wipefs long options accept their native unambiguous abbreviations.
+Fdisk's list exception checks Linux and macOS option meanings without assuming
+the local OS is the execution target. A macOS write cannot gain that exception
+from a list-shaped geometry value or MBR template filename.
+Option values are not flags: `wipefs -t -n` must not activate a no-act exemption.
+Codex also recognizes the `git push -f` alias, while a push-option value `-f`
+does not count as force. These are policy decisions; shell syntax stays frozen.
+Explicit SSH remote command strings are code for both hosts. Ambiguous unquoted
+signatures are conservatively rejected. Extraction or evaluation errors,
+including stack overflow, exceeded work limits, or unresolved descriptor and
+literal-output transformations needed by shell/SQL consumers, return native
+denials rather than an unchecked hook error. Native permissions remain
+execution authority.
+Shared regression inputs state each host's expected result separately.
+
+The false-positive cost is explicit: even harmless input such as
+`echo "a\\tb" | bash` or `printf "%d\n" 1 | bash` is denied when its output
+transformation is unsupported. This affects Codex's default-on high-risk policy
+and Claude's opt-in careful mode. We accept that cost without adding more output
+formats or shell syntax. Parser capabilities are frozen at the documented scope;
+the hook is a bounded heuristic, not an authorization boundary.
+
+## 2026-10-12: Preserve Shared Host Settings and Make Status Lines Optional
+
+The main Codex config and Claude settings belong to the user. This supersedes
+value ownership in the 2026-07-21 Codex config freshness decision.
+
+- Codex merges portable and local defaults only when the main config is absent.
+  Existing files are validated but kept byte-for-byte, including omitted keys,
+  comments, and runtime state. A deleted preference stays omitted. Later defaults
+  do not propagate automatically; no per-machine ownership registry is introduced.
+- Status validates TOML rather than equality with a template. It separately advises
+  manual review of `shell_environment_policy` differences. This table (including
+  `exclude`) is a recommendation, not enforced policy. Our optional requirements
+  install constrains only approval policies/reviewers, sandbox modes, and web search
+  modes; it does not enforce environment-variable exclusions. Native rules and hooks
+  remain separately installed controls, not a substitute for that missing boundary.
+- Config operations require Python 3.11+ tomllib. Invalid input or unavailable
+  parsing preserves the file. Core/full installs still process independent agents,
+  hooks, rules, profiles, skills, and launchers, then report a nonzero partial result.
+- The reserved `goldband.rules` portable baseline updates after backing up an old
+  copy, including installations without symlink support. Personal approvals in
+  `default.rules` remain untouched.
+- Claude retains the user's model, permission mode, custom hooks, and status line.
+  Optional status-line targets replace only their own setting, never unrelated
+  defaults. Explicit Codex status-line edits can normalize TOML and remove comments;
+  ordinary installation and background refresh never do so.
+- Both hosts back up changed personal settings before atomic replacement, retaining
+  `.bak` and `.bak.previous`. No-op operations do not rotate backups. Historical
+  backups from earlier installers are not deleted automatically.
+- Uninstall preserves the shared Codex config, personal rules, custom Claude hooks,
+  and non-Goldband status lines. It removes recognized Goldband hooks, exact known
+  status-line commands, source links, and matching copies; modified/unknown files
+  remain. Named profiles reuse the existing ownership comparison, ignoring host
+  runtime state while preserving changed preferences. Unreadable Claude settings or
+  missing jq retain those settings and referenced assets, but do not block independent
+  Codex removal; uninstall returns a nonzero partial result.
+
+`npm run test:config-preservation` covers both hosts, local Git updates, omitted
+preferences, invalid input, parser failure, independent component refresh, status
+advice, status-line scope, backup retention, and uninstall ownership. Config
+validation, real execpolicy checks, and independent review remain separate evidence.

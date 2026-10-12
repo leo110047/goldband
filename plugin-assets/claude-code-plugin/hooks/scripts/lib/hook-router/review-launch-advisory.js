@@ -84,7 +84,7 @@ function toolResult(input) {
 
 function runtimeReport(text) {
   let report = text.trim();
-  if (!report.startsWith('# review/code runtime report')) {
+  if (!report.startsWith('# review/code report')) {
     try {
       // A host can merge launcher stderr warnings with the final JSON stdout.
       const start = report.search(/^\{/m);
@@ -99,7 +99,7 @@ function runtimeReport(text) {
       return null;
     }
   }
-  return report.startsWith('# review/code runtime report') ? report : null;
+  return report.startsWith('# review/code report') ? report : null;
 }
 
 function reviewLaunchAdvisory(input) {
@@ -114,11 +114,7 @@ function reviewLaunchAdvisory(input) {
 
   const result = toolResult(input);
   const report = result.texts.map(runtimeReport).find(Boolean);
-  if (report) {
-    return /^- runtime-evidence-incomplete: true\s*$/m.test(report)
-      ? "Goldband review started but its evidence is incomplete. Read this run's report and evidence artifact; resolve the reported environment blocker before rerunning the same candidate. This is not a successful review."
-      : null;
-  }
+  if (report) return null;
   // A compound shell's exit code can belong to another command, or the review
   // may never have run. Require a launcher diagnostic before attributing it.
   return result.failed && (command === 'single' || result.launchError)

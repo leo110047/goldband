@@ -99,6 +99,12 @@ Advisory-only checks for now:
 
 ## Advisory Engineering Guidance
 
+Follow the project's documentation conventions. Update existing documentation
+when it fits; create a document when requested or needed for the task. File names
+and locations alone are not a reason to block a write. For development servers,
+choose a terminal/process mechanism that keeps logs accessible and supports
+cleanup; tmux is optional.
+
 Prefer:
 
 - immutable updates over in-place mutation

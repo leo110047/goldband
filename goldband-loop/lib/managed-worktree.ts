@@ -818,11 +818,11 @@ function validateBoundEvidence(lease: ManagedWorktreeLease): void {
 	);
 	if (
 		!ticket ||
-		ticket.status !== "verified" ||
+		!["implemented", "verified"].includes(ticket.status) ||
 		ticket.claim?.leaseId !== lease.id ||
 		ticketContractDigest(ticket) !== lease.workMap.ticketContractDigest
 	) {
-		throw new Error("managed worktree ticket is not verified for this lease");
+		throw new Error("managed worktree ticket lacks project verification for this lease");
 	}
 	const receipt = readAndValidateVerificationReceipt({
 		lease,
@@ -831,59 +831,11 @@ function validateBoundEvidence(lease: ManagedWorktreeLease): void {
 	});
 	if (
 		!ticket.evidence?.receipt ||
-		!ticket.evidence.review ||
 		ticket.evidence.receipt.digest !== receipt.reference.digest ||
 		ticket.evidence.receipt.treeDigest !== receipt.reference.treeDigest ||
-		ticket.evidence.review.treeDigest !== receipt.reference.treeDigest ||
 		computeCandidateState(lease).treeDigest !== receipt.reference.treeDigest
 	) {
-		throw new Error("managed worktree evidence chain is stale or mismatched");
-	}
-	const reviewPath = path.join(
-		path.dirname(receipt.path),
-		`${ticket.evidence.review.id}-work-map-review.json`,
-	);
-	const review = readJson(reviewPath) as Record<string, unknown>;
-	const reviewDigest = createHash("sha256")
-		.update(JSON.stringify(review))
-		.digest("hex");
-	if (
-		reviewDigest !== ticket.evidence.review.digest ||
-		review.workId !== map.id ||
-		review.ticketId !== ticket.id ||
-		review.ticketDigest !== ticketContractDigest(ticket) ||
-		review.receiptDigest !== receipt.reference.digest ||
-		review.treeDigest !== receipt.reference.treeDigest ||
-		review.reviewedDiffDigest !== receipt.receipt.candidate.reviewDiffDigest
-	) {
-		throw new Error("managed worktree review artifact provenance is invalid");
-	}
-	if (review.schemaVersion !== 2) {
-		throw new Error("managed worktree review artifact requires a schema-v2 evidence chain");
-	}
-	const chain = review.evidenceChain as Record<string, unknown> | undefined;
-	const records = review.evidenceRecords;
-	const completeness = chain?.completeness as Record<string, unknown> | undefined;
-	if (
-		!chain ||
-		!Array.isArray(records) ||
-		typeof review.candidateDigest !== "string" ||
-		chain.candidateDigest !== review.candidateDigest ||
-		typeof chain.behaviorContractDigest !== "string" ||
-		typeof chain.scopeDigest !== "string" ||
-		typeof chain.recordsDigest !== "string" ||
-		createHash("sha256").update(JSON.stringify(records)).digest("hex") !==
-			chain.recordsDigest ||
-		!completeness ||
-		typeof completeness.complete !== "boolean" ||
-		typeof completeness.hostEligible !== "boolean" ||
-		!Array.isArray(completeness.blockingCellIds) ||
-		!Array.isArray(completeness.coverageGapCellIds) ||
-		!Array.isArray(completeness.runtimeIncompleteCellIds) ||
-		(chain.phase !== "initial" && chain.phase !== "closure") ||
-		(chain.hostCallCount !== 0 && chain.hostCallCount !== 1)
-	) {
-		throw new Error("managed worktree review evidence chain is invalid");
+		throw new Error("managed worktree verification receipt is stale or mismatched");
 	}
 }
 

@@ -5,7 +5,9 @@ if [ -n "${GOLDBAND_SHELL_LAUNCHERS_LOADED:-}" ]; then
 fi
 GOLDBAND_SHELL_LAUNCHERS_LOADED=1
 
-_goldband_self_update_bin() {
+# Claude shell snapshots omit single-underscore completion functions.
+# Keep every helper in the captured dependency chain with a double underscore.
+__goldband_self_update_bin() {
   if [ -n "${GOLDBAND_SELF_UPDATE_BIN:-}" ]; then
     printf '%s\n' "$GOLDBAND_SELF_UPDATE_BIN"
   else
@@ -13,16 +15,16 @@ _goldband_self_update_bin() {
   fi
 }
 
-_goldband_prelaunch_update() {
+__goldband_prelaunch_update() {
   local command_name="${1:-}"
   local update_bin
-  update_bin="$(_goldband_self_update_bin)"
+  update_bin="$(__goldband_self_update_bin)"
   if [ -x "$update_bin" ]; then
     "$update_bin" "$command_name" || true
   fi
 }
 
-_goldband_runtime_bin() {
+__goldband_runtime_bin() {
   local candidate
   local candidates=("$HOME/.codex/goldband/workflow-runtime/bin/goldband" "$HOME/.claude/skills/goldband/bin/goldband")
   if [ -n "${CLAUDECODE:-}${CLAUDE_PLUGIN_ROOT:-}" ]; then
@@ -42,7 +44,7 @@ _goldband_runtime_bin() {
 
 goldband() {
   local runtime_bin
-  if ! runtime_bin="$(_goldband_runtime_bin)"; then
+  if ! runtime_bin="$(__goldband_runtime_bin)"; then
     echo "goldband: workflow runtime is not installed; run ./install.sh workflow-auto" >&2
     return 127
   fi
@@ -50,11 +52,11 @@ goldband() {
 }
 
 claude() {
-  _goldband_prelaunch_update "claude"
+  __goldband_prelaunch_update "claude"
   command claude "$@"
 }
 
 codex() {
-  _goldband_prelaunch_update "codex"
+  __goldband_prelaunch_update "codex"
   command codex "$@"
 }

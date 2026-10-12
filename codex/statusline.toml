@@ -1,0 +1,3 @@
+# Applied only by ./install.sh codex-statusline.
+[tui]
+status_line = ["model-with-reasoning", "project-root", "git-branch", "context-remaining", "five-hour-limit", "weekly-limit"]

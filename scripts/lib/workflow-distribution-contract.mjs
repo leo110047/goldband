@@ -11,14 +11,9 @@ const OPTIONAL_GENERATED_SOURCE_INPUTS = new Set([
 ]);
 
 export const SOURCE_INPUTS = [
-  'docs/review-evidence-manifest.md',
-  'examples/review-evidence/minimal-local-gate.json',
   'goldband.manifest.json',
   'hooks/scripts/lib/rules-resolver.js',
   'rules',
-  'schemas/review-semantic-result.schema.json',
-  'schemas/review-behavior-matrix.schema.json',
-  'schemas/review-evidence-manifest.schema.json',
   'shell/install',
   'scripts/generate-goldband-surfaces.mjs',
   'scripts/lib/workflow-distribution-contract.mjs',

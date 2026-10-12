@@ -1,16 +1,12 @@
 #!/usr/bin/env bun
 
-import { REVIEW_HOST_EVIDENCE_POLICY } from "../lib/review-runtime-contract";
 import { spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import {
 	copyFileSync,
 	cpSync,
 	chmodSync,
 	existsSync,
-	lstatSync,
 	mkdirSync,
-	readFileSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
@@ -23,18 +19,9 @@ const REVIEW_ASSETS = [
 	"shared-rubric.md",
 	"findings-schema.md",
 	"checklist.md",
-	"evidence-omission.md",
 	"design-checklist.md",
 	"greptile-triage.md",
 	"TODOS-format.md",
-] as const;
-
-const REVIEW_AUTHORING_ASSETS = [
-	{ source: "../schemas/review-semantic-result.schema.json", target: "review/schemas/review-semantic-result.schema.json" },
-	{ source: "../docs/review-evidence-manifest.md", target: "review/review-evidence-manifest.md" },
-	{ source: "../examples/review-evidence/minimal-local-gate.json", target: "review/examples/minimal-local-gate.json" },
-	{ source: "../schemas/review-evidence-manifest.schema.json", target: "review/schemas/review-evidence-manifest.schema.json" },
-	{ source: "../schemas/review-behavior-matrix.schema.json", target: "review/schemas/review-behavior-matrix.schema.json" },
 ] as const;
 
 export interface CodexReviewLauncherInstallOptions {
@@ -209,15 +196,6 @@ function assertRequiredSources(paths: string[]): void {
 	}
 }
 
-function copyReviewAuthoringAssets(sourceRoot: string, stageRoot: string): void {
-	for (const asset of REVIEW_AUTHORING_ASSETS) {
-		const source = join(sourceRoot, asset.source);
-		const target = join(stageRoot, asset.target);
-		mkdirSync(dirname(target), { recursive: true });
-		copyFileSync(source, target);
-	}
-}
-
 export function installCodexReviewLauncher(
 	options: CodexReviewLauncherInstallOptions,
 ): CodexReviewLauncherMarker {
@@ -228,7 +206,6 @@ export function installCodexReviewLauncher(
 	const bunPath = requireAbsolute("bunPath", options.bunPath);
 	const codexPath = requireAbsolute("codexPath", options.codexPath);
 	const browserPath = requireAbsolute("browserPath", options.browserPath);
-	const reviewReceiptKeyFile = join(dirname(runtimeRoot), "review-receipt.key");
 	const marker: CodexReviewLauncherMarker = {
 		schemaVersion: 1,
 		argvPrefix: [bunPath, join(runtimeRoot, "bin", "goldband.js")],
@@ -269,27 +246,19 @@ export function installCodexReviewLauncher(
 	assertRequiredSources([
 		launcherEntry,
 		runtimeEntry,
-		join(sourceRoot, "workflows", "review-contract-cli.ts"),
 		browserServerEntry,
 		rulesResolverSource,
 		join(rulesSource, "manifest.json"),
-		...REVIEW_AUTHORING_ASSETS.map((asset) => join(sourceRoot, asset.source)),
 	]);
 
 	const stageRoot = `${runtimeRoot}.tmp-${process.pid}`;
 	const backupRoot = `${runtimeRoot}.backup`;
 	mkdirSync(dirname(runtimeRoot), { recursive: true });
-	ensureReviewReceiptAuthorityKey(reviewReceiptKeyFile);
 	recoverInterruptedRuntimeSwap(runtimeRoot, backupRoot);
 	rmSync(stageRoot, { recursive: true, force: true });
 	try {
 		installEntry(stageRoot, runtimeRoot, bunPath, launcherEntry);
 		bundle(bunPath, runtimeEntry, join(stageRoot, "workflows", "run.ts"));
-		bundle(
-			bunPath,
-			join(sourceRoot, "workflows", "review-contract-cli.ts"),
-			join(stageRoot, "workflows", "review-contract-cli.ts"),
-		);
 		const stagedBrowserExecutable = join(stageRoot, "browse", "browse");
 		mkdirSync(dirname(stagedBrowserExecutable), { recursive: true });
 		copyFileSync(browserPath, stagedBrowserExecutable);
@@ -306,7 +275,6 @@ export function installCodexReviewLauncher(
 			if (!existsSync(source)) throw new Error(`review asset missing: ${source}`);
 			copyFileSync(source, join(stageRoot, "review", asset));
 		}
-		copyReviewAuthoringAssets(sourceRoot, stageRoot);
 		const stagedRulesResolver = join(
 			stageRoot,
 			"review",
@@ -321,7 +289,6 @@ export function installCodexReviewLauncher(
 				{
 					schemaVersion: 2,
 					runtimeHost: "codex",
-					...REVIEW_HOST_EVIDENCE_POLICY,
 					codexExecutable: codexPath,
 					browserExecutable: join(runtimeRoot, "browse", "browse"),
 					browserServerScript: join(
@@ -337,9 +304,6 @@ export function installCodexReviewLauncher(
 						"rules-resolver.js",
 					),
 					rulesDirectory: join(runtimeRoot, "review", "rules"),
-					reviewReceiptKeyFile,
-					reviewReceiptAuthorityRoot: dirname(runtimeRoot),
-					reviewReceiptStore: join(dirname(runtimeRoot), "review-receipts"),
 				},
 				null,
 				2,
@@ -374,27 +338,6 @@ export function installCodexReviewLauncher(
 	}
 
 	return marker;
-}
-
-function ensureReviewReceiptAuthorityKey(file: string): void {
-	if (!existsSync(file)) {
-		writeFileSync(file, `${randomBytes(32).toString("hex")}\n`, {
-			mode: 0o600,
-			flag: "wx",
-		});
-		return;
-	}
-	const stat = lstatSync(file);
-	if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0) {
-		throw new Error(`review receipt authority key has unsafe permissions: ${file}`);
-	}
-	if (typeof process.getuid === "function" && stat.uid !== process.getuid()) {
-		throw new Error(`review receipt authority key has the wrong owner: ${file}`);
-	}
-	const value = readFileSync(file, "utf8").trim();
-	if (!/^[a-f0-9]{64}$/.test(value)) {
-		throw new Error(`review receipt authority key is invalid: ${file}`);
-	}
 }
 
 function parseArgs(args: string[]): CodexReviewLauncherInstallOptions {

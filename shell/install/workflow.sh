@@ -150,14 +150,6 @@ install_workflow_claude_command_selector() {
     link_component "$src" "$dest" "Goldband workflow selector command"
 }
 
-print_review_platform_notice() {
-    case "$(uname -s 2>/dev/null || true)" in
-        Darwin) return 0 ;;
-    esac
-    echo -e "${YELLOW}注意：此平台可使用其他 Goldband Loop workflows，但 review/code executable sealed evidence 只支援 macOS Seatbelt。${NC}" >&2
-    echo -e "${YELLOW}需要執行 evidence 的 review 會 fail closed 為 runtime-incomplete，不會啟動 semantic review 或取得 completion authority。${NC}" >&2
-}
-
 install_workflow_host() {
     local host="$1"
     local profile="${2:-standard}"
@@ -202,7 +194,6 @@ install_workflow_host() {
     cleanup_workflow_user_entries
     write_workflow_installed_versions "$host" "$version"
     write_workflow_installed_contracts "$host" "$repo_dir"
-    print_review_platform_notice
     if ! is_windows_host; then
         install_shell_launchers
     fi

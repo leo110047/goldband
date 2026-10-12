@@ -322,7 +322,7 @@ auto_refresh_safe_target() {
         hooks|rules|codex-hooks|codex-rules)
             auto_refresh_security_target_allowed
             ;;
-        skills-core|skills-dev|skills-full|claude-guidance|commands|launchers|\
+        skills-core|skills-dev|skills-full|claude-guidance|claude-statusline|codex-statusline|commands|launchers|\
         codex-core|codex-full|codex-config|codex-agents|codex-prompts|codex-skills|\
         workflow|workflow-codex|workflow-auto)
             return 0
@@ -339,6 +339,8 @@ auto_refresh_install_target() {
         skills-dev) install_skills_dev ;;
         skills-full) install_skills ;;
         claude-guidance) install_claude_guidance ;;
+        claude-statusline) install_claude_statusline refresh ;;
+        codex-statusline) install_codex_statusline refresh ;;
         commands) install_commands ;;
         rules) install_rules ;;
         hooks) install_hooks ;;

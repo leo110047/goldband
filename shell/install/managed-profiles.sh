@@ -60,7 +60,7 @@ install_codex_skills_profile() {
         --
     )
 
-    prepare_codex_skills_directory
+    prepare_codex_skills_directory || return 1
     if [ "${#selected_skills[@]}" -gt 0 ]; then
         install_args+=("${selected_skills[@]}")
     fi
@@ -136,23 +136,23 @@ install_managed_skill_profile() {
     done
     local selected_skills=("$@")
 
-    cleanup_managed_profile_entries "$target_dir" "$profile_file"
+    cleanup_managed_profile_entries "$target_dir" "$profile_file" || return 1
 
     local installed=0
     if [ "${#selected_skills[@]}" -gt 0 ]; then
-        install_selected_profile_skills "$target_dir" "$missing_label" "${selected_skills[@]}"
+        install_selected_profile_skills "$target_dir" "$missing_label" "${selected_skills[@]}" || return 1
         installed="$SELECTED_PROFILE_SKILLS_INSTALLED"
     else
         SELECTED_PROFILE_SKILLS_INSTALLED=0
     fi
     if [ "${#extra_links[@]}" -gt 0 ]; then
-        install_profile_extra_links "$target_dir" "${extra_links[@]}"
+        install_profile_extra_links "$target_dir" "${extra_links[@]}" || return 1
     fi
 
     if [ "${#selected_skills[@]}" -gt 0 ]; then
-        "$profile_writer" "$profile" "${selected_skills[@]}"
+        "$profile_writer" "$profile" "${selected_skills[@]}" || return 1
     else
-        "$profile_writer" "$profile"
+        "$profile_writer" "$profile" || return 1
     fi
 
     echo -e "  ${GREEN}[安裝] ${label}: $profile (${installed} 個)${NC}"

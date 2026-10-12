@@ -267,7 +267,9 @@ describe("verification receipt", () => {
 			artifactPath: "reports/ticket-a.md",
 		});
 		const map = fixture.store.read("work-a");
-		expect(map.tickets[0]?.status).toBe("implemented");
+		expect(map.status).toBe("completed");
+		expect(map.tickets[0]?.evidence?.review).toBeUndefined();
+		expect(map.tickets[0]?.status).toBe("verified");
 		expect(
 			readAndValidateAnalysisArtifact({
 				store: fixture.store,
@@ -285,80 +287,26 @@ describe("verification receipt", () => {
 		).toThrow();
 	});
 
-	test("analysis requested changes records a fresh artifact on the next attempt", () => {
+	test("legacy implemented analysis can finish by recording its artifact without review authority", () => {
 		const fixture = createFixture("analysis-only");
+		const map = fixture.store.read("work-a");
+		const claimed = fixture.store.claimTicket({workId: map.id, ticketId: "ticket-a",
+			expectedRevision: map.revision, owner: "analysis-recorder", leaseId: "legacy-analysis", kind: "analysis"});
+		fixture.store.update(map.id, claimed.revision, "legacy-record", "fixture", value => {
+			value.status = "verifying";
+			value.tickets[0]!.status = "implemented";
+			value.tickets[0]!.evidence = {analysis: {id: "legacy-artifact", digest: "a".repeat(64), artifactDigest: "b".repeat(64)}};
+			return value;
+		});
 		fs.mkdirSync(path.join(fixture.repo, "reports"));
-		const report = path.join(fixture.repo, "reports", "ticket-a.md");
-		fs.writeFileSync(report, "first analysis\n");
-		const first = recordAnalysisArtifact({
-			cwd: fixture.repo,
-			env: { ...process.env, GOLDBAND_HOME: fixture.state },
-			workId: "work-a",
-			ticketId: "ticket-a",
-			artifactPath: "reports/ticket-a.md",
-		});
-		const implemented = fixture.store.read("work-a");
-		fixture.store.requestChanges({
-			workId: "work-a",
-			ticketId: "ticket-a",
-			expectedRevision: implemented.revision,
-			actor: "review",
-			review: {
-				id: "review-analysis",
-				digest: "a".repeat(64),
-				artifactDigest: first.artifactDigest,
-			},
-		});
-		fs.writeFileSync(report, "revised analysis\n");
-		const second = recordAnalysisArtifact({
-			cwd: fixture.repo,
-			env: { ...process.env, GOLDBAND_HOME: fixture.state },
-			workId: "work-a",
-			ticketId: "ticket-a",
-			artifactPath: "reports/ticket-a.md",
-		});
-		expect(second.claimAttempt).toBe(2);
-		expect(second.id).not.toBe(first.id);
-		expect(fixture.store.read("work-a").tickets[0]?.status).toBe("implemented");
-	});
-
-	test("requested changes starts a new TDD attempt that cannot reuse old RED", () => {
-		const fixture = createFixture("tdd");
-		const lease = createManagedWorktree({
-			name: "tdd-retry",
-			repoRoot: fixture.repo,
-			stateRoot: fixture.state,
-			ticketId: "ticket-a",
-		});
-		recordVerification({
-			stage: "red",
-			seam: "unit seam",
-			expectedSignal: "expected failure",
-			command: [process.execPath, "-e", "console.error('expected failure'); process.exit(1)"],
-			cwd: lease.worktreePath,
-		});
-		recordVerification({
-			stage: "green",
-			seam: "unit seam",
-			command: [process.execPath, "-e", "process.exit(0)"],
-			cwd: lease.worktreePath,
-		});
-		const implemented = fixture.store.read("work-a");
-		fixture.store.requestChanges({
-			workId: "work-a",
-			ticketId: "ticket-a",
-			expectedRevision: implemented.revision,
-			actor: "review",
-			review: { id: "review-a", digest: "a".repeat(64), treeDigest: "b".repeat(64) },
-		});
-		expect(() =>
-			recordVerification({
-				stage: "green",
-				seam: "unit seam",
-				command: [process.execPath, "-e", "process.exit(0)"],
-				cwd: lease.worktreePath,
-			}),
-		).toThrow("requires an earlier RED");
+		fs.writeFileSync(path.join(fixture.repo, "reports", "ticket-a.md"), "current analysis\n");
+		const artifact = recordAnalysisArtifact({cwd: fixture.repo,
+			env: {...process.env, GOLDBAND_HOME: fixture.state}, workId: map.id,
+			ticketId: "ticket-a", artifactPath: "reports/ticket-a.md"});
+		const completed = fixture.store.read(map.id);
+		expect(completed.status).toBe("completed");
+		expect(completed.tickets[0]!.evidence?.analysis?.id).toBe(artifact.id);
+		expect(completed.tickets[0]!.evidence?.review).toBeUndefined();
 	});
 
 	test("existing-tests rejects a successful command outside the planning contract", () => {

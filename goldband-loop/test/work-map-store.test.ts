@@ -43,7 +43,7 @@ describe("WorkMapStore", () => {
 		expect(isDirectoryLockContention(new Error("unknown"))).toBe(false);
 	});
 
-	test("owns claim, implementation, review, and integration transitions", () => {
+	test("owns claim, implementation and integration transitions", () => {
 		const { repo, home } = fixture();
 		const store = createStore(repo, home, "work-a");
 		const created = store.create(input(), "codex");
@@ -67,17 +67,7 @@ describe("WorkMapStore", () => {
 			actor: "recorder",
 			receipt,
 		});
-		const verified = store.verifyTicket({
-			workId: created.id,
-			ticketId: "ticket-a",
-			expectedRevision: implemented.revision,
-			actor: "review-readback",
-			review: {
-				id: "review-a",
-				digest: "c".repeat(64),
-				treeDigest: receipt.treeDigest,
-			},
-		});
+		const verified = implemented;
 		const integrated = store.markIntegrated({
 			workId: created.id,
 			ticketId: "ticket-a",
@@ -91,7 +81,6 @@ describe("WorkMapStore", () => {
 			"create",
 			"claim-ticket",
 			"mark-implemented",
-			"verify-ticket",
 			"integrate-ticket",
 		]);
 	});
@@ -126,17 +115,7 @@ describe("WorkMapStore", () => {
 			actor: "recorder",
 			receipt,
 		});
-		const verified = store.verifyTicket({
-			workId: created.id,
-			ticketId: "ticket-a",
-			expectedRevision: implemented.revision,
-			actor: "review-readback",
-			review: {
-				id: "review-a",
-				digest: "c".repeat(64),
-				treeDigest: receipt.treeDigest,
-			},
-		});
+		const verified = implemented;
 		expect(verified.frontier).toEqual([]);
 		const integrated = store.markIntegrated({
 			workId: created.id,
@@ -244,13 +223,7 @@ describe("WorkMapStore", () => {
 			actor: "analysis-recorder",
 			analysis: { id: "analysis-a", digest: "b".repeat(64), artifactDigest: analysisDigest },
 		});
-		const verifiedAnalysis = store.verifyTicket({
-			workId: created.id,
-			ticketId: "ticket-a",
-			expectedRevision: implementedAnalysis.revision,
-			actor: "review-readback",
-			review: { id: "review-a", digest: "c".repeat(64), artifactDigest: analysisDigest },
-		});
+		const verifiedAnalysis = implementedAnalysis;
 		expect(verifiedAnalysis.frontier).toEqual(["ticket-b"]);
 		const claimedCode = store.claimTicket({
 			workId: created.id,
@@ -267,13 +240,7 @@ describe("WorkMapStore", () => {
 			actor: "recorder",
 			receipt,
 		});
-		const verifiedCode = store.verifyTicket({
-			workId: created.id,
-			ticketId: "ticket-b",
-			expectedRevision: implementedCode.revision,
-			actor: "review-readback",
-			review: { id: "review-b", digest: "f".repeat(64), treeDigest: receipt.treeDigest },
-		});
+		const verifiedCode = implementedCode;
 		const completed = store.markIntegrated({
 			workId: created.id,
 			ticketId: "ticket-b",

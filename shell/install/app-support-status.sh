@@ -14,9 +14,9 @@ show_codex_app_shared_config_status() {
 
     if [ ! -e "$CODEX_CONFIG_FILE" ]; then
         missing+=("~/.codex/config.toml")
-    elif ! is_current_generated_codex_config "$CODEX_CONFIG_FILE"; then
+    elif ! is_valid_codex_config "$CODEX_CONFIG_FILE"; then
         case "$CODEX_CONFIG_FRESHNESS_REASON" in
-            invalid-toml) invalid+=("~/.codex/config.toml") ;;
+            invalid-toml|incompatible-table) invalid+=("~/.codex/config.toml") ;;
             syntax-unverifiable|source-missing|source-unsupported) unverifiable+=("~/.codex/config.toml") ;;
             *) stale+=("~/.codex/config.toml") ;;
         esac

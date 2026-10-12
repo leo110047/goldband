@@ -202,8 +202,13 @@ for (const file of fixtures.source.usageFiles) {
   assert.ok(file.startsWith('/tmp/sanitized') || file.startsWith('/repo'));
 }
 for (const candidate of fixtures.candidates) {
+  assert.ok(
+    ['retired-doc-file-blocker', 'retired-dev-server-blocker'].includes(
+      candidate.fixture.coverage.policy,
+    ),
+  );
   assert.equal(candidate.replay_verification.verified, true);
-  assert.equal(candidate.replay_verification.decision, 'block');
+  assert.equal(candidate.replay_verification.decision, 'allow');
   assert.equal(candidate.replay_verification.exitCodeMatches, true);
   assert.equal(candidate.replay_verification.decisionMatches, true);
   assert.equal(candidate.replay_verification.stderrIncludesMatch, true);

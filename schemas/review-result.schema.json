@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://goldband.dev/schemas/review-result.schema.json",
-  "title": "Goldband Evidence-first Review Result",
+  "title": "Goldband Semantic Review Findings",
   "type": "object",
   "additionalProperties": false,
   "required": ["findings"],
@@ -10,7 +10,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["file", "severity", "summary", "classification"],
+        "required": ["file", "line", "severity", "summary", "evidence", "failureScenario", "suggestedVerification"],
         "properties": {
           "id": { "type": ["string", "null"] },
           "file": { "type": "string", "minLength": 1 },
@@ -22,9 +22,6 @@
           "category": { "type": ["string", "null"] },
           "ruleId": { "type": ["string", "null"] },
           "policySource": { "type": ["string", "null"] },
-          "classification": { "enum": ["verified-failure", "coverage-gap", "semantic-concern", "runtime-incomplete"] },
-          "evidenceIds": { "type": ["array", "null"], "items": { "type": "string" } },
-          "behaviorCellIds": { "type": ["array", "null"], "items": { "type": "string" } },
           "failureScenario": { "type": ["string", "null"] },
           "reproductionStep": { "type": ["string", "null"] },
           "suggestedVerification": { "type": ["string", "null"] },

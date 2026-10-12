@@ -1,6 +1,8 @@
 # goldband Codex global defaults
 #
-# Keep runtime controls here.
+# Initial defaults only: existing user config files are never merged on update.
+# shell_environment_policy is a recommendation, not a managed requirement.
+# Rules, hooks, and explicitly installed requirements have separate ownership.
 # Put long-form behavior and workflow guidance in AGENTS.md.
 
 sandbox_mode = "workspace-write"
@@ -21,7 +23,6 @@ exclude = ["*_SECRET", "*_KEY", "*_TOKEN", "*_PASSWORD", "*_CREDENTIAL"]
 [tui]
 notifications = true
 notification_method = "auto"
-status_line = ["model-with-reasoning", "project-root", "git-branch", "context-remaining", "five-hour-limit", "weekly-limit"]
 
 [tui.model_availability_nux]
 "gpt-5.6-sol" = 4

@@ -58,6 +58,11 @@ const SECRET_PATTERNS = [
     pattern: /sk-ant-[A-Za-z0-9\-_]{20,}/,
   },
   { name: 'OpenAI API Key', severity: 'high', pattern: /sk-[A-Za-z0-9]{48,}/ },
+  {
+    name: 'OpenAI project API Key',
+    severity: 'warn',
+    pattern: /sk-proj-[A-Za-z0-9_-]{24,}/,
+  },
   // Generic signatures are advisory only to reduce false positives.
   {
     name: 'Generic API Key assignment',
@@ -72,6 +77,7 @@ const SECRET_PATTERNS = [
   },
 ];
 
+// File exclusions apply only to the opt-in Git style gate, never tool writes.
 function isSecretScanExcluded(filePath) {
   if (!filePath) return true;
   if (/\.env\.example$/.test(filePath)) return true;
@@ -98,7 +104,23 @@ function detectSecrets(content) {
   return detected;
 }
 
+function classifySecretContent(content) {
+  const detected = detectSecrets(content);
+  if (detected.length === 0) return null;
+  const high = detected.filter((item) => item.severity === 'high');
+  const selected = high.length > 0 ? high : detected;
+  const names = selected.map((item) => item.name).join(', ');
+  return {
+    severity: high.length > 0 ? 'high' : 'warn',
+    message:
+      high.length > 0
+        ? `BLOCKED: Potential secrets detected: ${names}. Use environment variables or a secrets manager.`
+        : `WARNING: Potential credential-shaped text (advisory): ${names}. Review before commit.`,
+  };
+}
+
 module.exports = {
+  classifySecretContent,
   SECRET_PATTERNS,
   isSecretScanExcluded,
   detectSecrets,

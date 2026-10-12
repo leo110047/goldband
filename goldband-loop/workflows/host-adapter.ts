@@ -7,7 +7,6 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { evidenceTemporaryDirectory } from '../lib/evidence-runtime-contract';
 import { superviseCommand } from '../scripts/process-supervisor.mjs';
 import {
   formatClaudeReviewBudgetUsd,
@@ -16,7 +15,6 @@ import {
   type ClaudeBillingMode,
   type ClaudeReviewBudgetPolicy,
 } from './review-budgets';
-import type { ReviewFinding } from './types';
 
 type HostResult = {
   text: string;
@@ -115,75 +113,15 @@ class MockHostAdapter implements HostAdapter {
     _cwd?: string,
     _options?: HostRunOptions,
   ): Promise<HostResult> {
-    const contractReview = prompt.includes('REVIEW_CONTRACT_CHANGES_START')
-      ? { preserved: true, summary: 'Mock-only contract assessment; this is not live review evidence.' }
-      : null;
-    if (prompt.includes('# Scoped Closure Review')) {
-      const payloadText = prompt
-        .split('CLOSURE_INPUT_START\n')[1]
-        ?.split('\nCLOSURE_INPUT_END')[0];
-      const payload = payloadText
-        ? JSON.parse(payloadText) as {
-          originalFindings?: Array<{ id?: string; behaviorCellIds?: string[] }>;
-          rerunEvidence?: Array<{ id?: string; cellIds?: string[] }>;
-        }
-        : {};
-      const ids = (payload.originalFindings ?? [])
-        .map((finding) => finding.id)
-        .filter((id): id is string => Boolean(id));
-      const parsed = {
-        contractReview,
-        results: [...new Set(ids)].map((findingId) => {
-          const cells = new Set(
-            payload.originalFindings?.find((finding) => finding.id === findingId)?.behaviorCellIds ?? [],
-          );
-          const evidenceIds = (payload.rerunEvidence ?? [])
-            .filter((record) => record.cellIds?.some((cellId) => cells.has(cellId)))
-            .map((record) => record.id)
-            .filter((id): id is string => Boolean(id));
-          return {
-            findingId,
-            status: evidenceIds.length > 0 ? 'closed' : 'evidence-incomplete',
-            summary: 'Mock closure confirms the repair for the original finding.',
-            evidenceIds,
-          };
-        }),
-      };
-      return { text: JSON.stringify(parsed), parsed };
-    }
-    const findings = mockFindingsForPrompt(prompt);
-    const parsed = { findings, contractReview };
+    const findings = [{ file: 'src/example.ts', line: 2,
+        severity: prompt.includes('GOLDBAND_HIGH_SEMANTIC_FIXTURE') ? 'high' : 'medium',
+        summary: 'Mock review finding with concrete diff evidence.', evidence: '+ riskyChange();',
+        failureScenario: 'A valid request reaches riskyChange() and returns the wrong result.',
+        recommendation: 'Add a guard and a focused regression test.',
+        suggestedVerification: 'Run the focused mock review regression test.' }];
+    const parsed = { findings };
     return { text: JSON.stringify(parsed), parsed };
   }
-}
-
-function mockFindingsForPrompt(prompt: string): ReviewFinding[] {
-  const behaviorCellId = /BEHAVIOR_MATRIX_START\n\[\{\"id\":\"([^\"]+)/.exec(prompt)?.[1];
-  return [mockFinding(
-    1,
-    behaviorCellId,
-    prompt.includes('GOLDBAND_HIGH_SEMANTIC_FIXTURE') ? 'high' : 'medium',
-  )];
-}
-
-function mockFinding(
-  index: number,
-  behaviorCellId?: string,
-  severity: ReviewFinding['severity'] = 'medium',
-): ReviewFinding {
-  return {
-    file: 'src/example.ts',
-    line: index + 1,
-    severity,
-    summary: `Mock review finding ${index} with concrete diff evidence.`,
-    evidence: '+ riskyChange();',
-    failureScenario: 'A valid request reaches riskyChange() and returns the wrong result.',
-    recommendation: 'Add a guard and a focused regression test.',
-    suggestedVerification: 'Run the focused mock review regression test.',
-    classification: 'semantic-concern',
-    reproductionStep: 'Run the focused mock review regression test.',
-    behaviorCellIds: behaviorCellId ? [behaviorCellId] : undefined,
-  };
 }
 
 class CodexHostAdapter implements HostAdapter {
@@ -197,7 +135,7 @@ class CodexHostAdapter implements HostAdapter {
     options: HostRunOptions,
   ): Promise<HostResult> {
     const dir = mkdtempSync(join(
-      evidenceTemporaryDirectory(process.env) ?? tmpdir(),
+      tmpdir(),
       'goldband-codex-',
     ));
     const schemaFile = join(dir, 'schema.json');
