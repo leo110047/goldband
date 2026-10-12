@@ -126,6 +126,13 @@ export const TEST_SUITES = [
     args: ['run', 'test:auto-update'],
   }),
   suite({
+    id: 'root:launchers',
+    label: 'Root shell launcher tests',
+    cwd: ROOT,
+    command: npmCmd,
+    args: ['run', 'test:launchers'],
+  }),
+  suite({
     id: 'mcp:test',
     label: 'MCP server tests',
     cwd: join(ROOT, 'mcp', 'server'),

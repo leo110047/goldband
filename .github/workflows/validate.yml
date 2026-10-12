@@ -81,6 +81,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Install launcher test prerequisite
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes zsh
       - name: Install Node dependencies
         run: npm ci
       - name: Install Goldband Loop dependencies
@@ -111,6 +115,8 @@ jobs:
         run: npm run test:eval-budget-cap
       - name: Test auto-update installer refresh
         run: npm run test:auto-update
+      - name: Test Bash and zsh launchers
+        run: npm run test:launchers
       - name: Test goldband MCP server
         run: |
           npm ci --prefix mcp/server

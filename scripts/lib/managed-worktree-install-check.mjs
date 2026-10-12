@@ -55,7 +55,7 @@ function assertShellRuntimeSelection(home) {
       'bash',
       [
         '-c',
-        'source "$1"; _goldband_runtime_bin',
+        'source "$1"; __goldband_runtime_bin',
         'goldband-test',
         path.join(home, '.claude', 'shell', 'goldband-launchers.sh'),
       ],
