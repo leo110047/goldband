@@ -2732,3 +2732,18 @@ advisory, and workflow-entry telemetry; the Codex prompt hook keeps
 cross-review arming. `prompt-trigger` remains a valid telemetry category so
 older JSONL still validates. `scripts/test-hook-noise-policy.mjs` asserts that
 task-shaped prompts produce no routing context on either host.
+
+## 2026-10-12: Telemetry Has No Upload Path
+
+Goldband Loop telemetry stays on the local machine. The inherited Supabase
+backend is removed: `goldband-loop/supabase/` (edge functions, migrations,
+project config), `goldband-telemetry-sync`, the background sync started by
+`goldband-telemetry-log`, and the install ping in `goldband-update-check`. The
+`telemetry` tiers remain valid config values but only control the local usage
+log.
+
+Why: the configured project was inherited, not verifiably owned by this
+repository, so enabling a non-`off` tier could send usage data to a third
+party. Keeping an unowned upload path is riskier than removing it. Manual OTLP
+export to a user-chosen endpoint is unchanged. GitHub version checks in
+`goldband-update-check` remain governed by `update_check`.

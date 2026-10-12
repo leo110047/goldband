@@ -252,8 +252,14 @@ administrator or managed policy. goldband does not stage
 
 ## Goldband Telemetry
 
-Goldband telemetry is local-only. It writes JSONL files on this machine and does
-not upload to an external service.
+Goldband telemetry writes JSONL files on this machine and has no upload path.
+The `telemetry` setting (`goldband-config get telemetry`, default `off`) only
+controls whether the local usage log is written.
+`scripts/export-telemetry-otlp.mjs` sends traces only when you run it against an
+OTLP endpoint you choose; see [observability](docs/observability.md).
+
+Independently of telemetry, `goldband-update-check` reads the latest version
+from GitHub unless `update_check` is `false`.
 
 ### Work Map tracker configuration and sync
 

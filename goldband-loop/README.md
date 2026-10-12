@@ -195,7 +195,7 @@ Local analytics are available without remote telemetry:
 goldband-analytics
 ```
 
-Disable remote telemetry:
+Disable the local usage log:
 
 ```bash
 goldband-config set telemetry off

@@ -425,7 +425,7 @@ export const QUESTIONS = {
     category: 'approval',
     door_type: 'two-way',
     options: ['community', 'anonymous', 'off'],
-    description: "Share usage data with goldband? community (recommended) / anonymous / off",
+    description: "Keep a local usage log? community / anonymous / off (nothing is uploaded)",
   },
   'preamble-proactive-behavior': {
     id: 'preamble-proactive-behavior',

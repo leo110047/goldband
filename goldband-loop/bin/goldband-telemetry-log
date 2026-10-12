@@ -4,7 +4,8 @@
 # Data flow:
 #   preamble (start) ──▶ .pending marker
 #   preamble (epilogue) ──▶ goldband-telemetry-log ──▶ skill-usage.jsonl
-#                                                 └──▶ goldband-telemetry-sync (bg)
+#
+# Events stay on this machine; there is no upload path.
 #
 # Usage:
 #   goldband-telemetry-log --skill qa --duration 142 --outcome success \
@@ -231,11 +232,5 @@ printf '{"v":1,"ts":"%s","event_type":"%s","skill":"%s","session_id":"%s","goldb
   "$INSTALL_FIELD" "$SOURCE" \
   "$SEC_DOMAIN_FIELD" "$SEC_HASH_FIELD" "$SEC_CONF_FIELD" "$SEC_LAYER_FIELD" "$SEC_VERDICT_FIELD" \
   "$REPO_SLUG" "$BRANCH" >> "$JSONL_FILE" 2>/dev/null || true
-
-# ─── Trigger sync if tier is not off ─────────────────────────
-SYNC_CMD="$GOLDBAND_DIR/bin/goldband-telemetry-sync"
-if [ -x "$SYNC_CMD" ]; then
-  "$SYNC_CMD" 2>/dev/null &
-fi
 
 exit 0

@@ -611,22 +611,6 @@
         17
       ]
     },
-    "supabase/functions/community-pulse/index.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        39
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        141
-      ]
-    },
-    "supabase/functions/telemetry-ingest/index.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        35
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        65
-      ]
-    },
     "workflows/host-adapter.ts": {
       "lint/complexity/noExcessiveLinesPerFunction": [
         51

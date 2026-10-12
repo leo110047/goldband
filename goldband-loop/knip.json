@@ -9,7 +9,6 @@
     "ios-qa/daemon/src/{cli-mint,index}.ts",
     "ios-qa/scripts/*.ts",
     "scripts/*.{ts,mjs}",
-    "supabase/functions/*/index.ts",
     "workflows/{run,work-map-cli}.ts",
     "**/*.test.ts"
   ],
@@ -23,7 +22,6 @@
     "lib/**/*.ts",
     "make-pdf/{src,test}/**/*.ts",
     "scripts/**/*.{ts,mts,mjs}",
-    "supabase/functions/**/*.ts",
     "test/**/*.ts",
     "workflows/**/*.ts",
     "!generated/**"

@@ -14,5 +14,6 @@
   "Bash(xargs *)",
   "Bash(python3 *)",
   "Bash(python *)",
-  "Bash(node *)"
+  "Bash(node *)",
+  "Bash(npx *)"
 ]

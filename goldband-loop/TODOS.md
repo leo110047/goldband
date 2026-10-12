@@ -313,13 +313,10 @@ Smoke-200 is a sample; full coverage catches the long tail. Run time ~5min herme
 **Priority:** P2
 **Depends on:** v1 shipped + ~2 weeks real data
 
-#### ~~Cross-user aggregate attack dashboard (P2)~~ — CLI SHIPPED, web UI remains
+#### ~~Cross-user aggregate attack dashboard (P2)~~ — CLI retired, web UI remains
 
-CLI dashboard shipped in commits a5588ec0 (schema migration) + 2d107978
-(community-pulse edge function security aggregation) + 756875a7 (bin/goldband-
-security-dashboard). Users can now run `goldband-security-dashboard` to see
-attacks last 7 days, top attacked domains, detection-layer distribution,
-and verdict counts — all aggregated from the Supabase community-pulse pipe.
+The `goldband-security-dashboard` CLI (commit 756875a7) was retired together
+with `goldband-community-dashboard` and the Supabase telemetry backend.
 
 Web UI at goldband.gg/dashboard/security is still open — that's a separate
 webapp project outside this repo's scope.
@@ -743,18 +740,6 @@ Linux cookie import shipped in v0.11.11.0 (Wave 3). Supports Chrome, Chromium, B
 **Depends on:** Ref staleness Parts 1+2 (shipped)
 
 ## Office Hours / Design
-
-### Design docs → Supabase team store sync
-
-**What:** Add design docs (`*-design-*.md`) to the Supabase sync pipeline alongside test plans, retro snapshots, and QA reports.
-
-**Why:** Cross-team design discovery at scale. Local `~/.goldband/projects/$SLUG/` keyword-grep discovery works for same-machine users now, but Supabase sync makes it work across the whole team. Duplicate ideas surface, everyone sees what's been explored.
-
-**Context:** /office-hours writes design docs to `~/.goldband/projects/$SLUG/`. The team store already syncs test plans, retro snapshots, QA reports. Design docs follow the same pattern — just add a sync adapter.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** `project-owner/team-supabase-store` branch landing on main
 
 ### /yc-prep skill
 

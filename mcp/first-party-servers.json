@@ -9,7 +9,8 @@
       "tools": [
         "goldband_policy_check",
         "goldband_telemetry_query",
-        "goldband_health_check"
+        "goldband_health_check",
+        "knowledge-query"
       ]
     }
   ]

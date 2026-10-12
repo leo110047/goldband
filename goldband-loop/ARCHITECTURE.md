@@ -243,7 +243,7 @@ The Chrome sidebar agent has tools (Bash, Read, Glob, Grep, WebFetch) and reads 
 
 **Env knobs:** `GOLDBAND_SECURITY_OFF=1` is a real kill switch (skips ML scan, canary still injects). Model cache at `~/.goldband/models/testsavant-small/` (112MB, first run) and `~/.goldband/models/deberta-v3-injection/` (721MB, opt-in only). Attack log at `~/.goldband/security/attempts.jsonl` (salted sha256 + domain, rotates at 10MB, 5 generations). Per-device salt at `~/.goldband/security/device-salt` (0600), cached in-process to survive FS-unwritable environments.
 
-**Visibility.** The sidebar header shows a shield icon (green/amber/red) polled via `/sidebar-chat`. A centered banner appears on canary leak or BLOCK verdict with the exact layer scores. `bin/goldband-security-dashboard` aggregates local attempts; `supabase/functions/community-pulse` aggregates opt-in community telemetry across users.
+**Visibility.** The sidebar header shows a shield icon (green/amber/red) polled via `/sidebar-chat`. A centered banner appears on canary leak or BLOCK verdict with the exact layer scores. Attempts are logged locally only; there is no cross-user aggregation.
 
 ## The ref system
 

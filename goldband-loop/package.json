@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "bash scripts/build.sh",
-    "lint:source": "biome lint --config-path biome.json bin browse/src browser-skills cross-review design hosts ios-qa/daemon/src ios-qa/scripts/gen-accessors.ts lib make-pdf/src scripts supabase/functions workflows extension/background.js extension/content.js extension/inspector.js extension/popup.js extension/sidepanel-terminal.js extension/sidepanel.js",
+    "lint:source": "biome lint --config-path biome.json bin browse/src browser-skills cross-review design hosts ios-qa/daemon/src ios-qa/scripts/gen-accessors.ts lib make-pdf/src scripts workflows extension/background.js extension/content.js extension/inspector.js extension/popup.js extension/sidepanel-terminal.js extension/sidepanel.js",
     "lint:complexity": "bun run scripts/check-source-complexity.ts",
     "lint:complexity:update": "bun run scripts/check-source-complexity.ts --update",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -46,7 +46,6 @@
     "diff": "^7.0.0",
     "marked": "^18.0.2",
     "playwright": "^1.60.0",
-    "puppeteer-core": "^24.40.0",
     "socks": "^2.8.8"
   },
   "engines": {
