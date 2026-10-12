@@ -90,6 +90,7 @@ show_help_claude_options() {
     echo "  commands    只安裝 commands"
     echo "  rules       只安裝 rules"
     echo "  hooks       只安裝 hooks"
+    echo "  claude-statusline 選配 Goldband Claude 狀態列（取代目前樣式）"
     echo "  style-gate  安裝全域 git style gate（pre-commit + commit-msg）"
     echo "  launchers   安裝 shell 啟動整合（claude/codex 啟動前自動檢查更新）"
 }
@@ -100,6 +101,7 @@ show_help_codex_options() {
     echo "  codex-full  安裝 Codex 完整設定（global AGENTS/config/rules + portable skills）"
     echo "  codex       相容別名，等同 codex-full"
     echo "  codex-config 只安裝 ~/.codex/config.toml + profile config files"
+    echo "  codex-statusline 選配 Goldband Codex 狀態列（取代目前樣式）"
     echo "  codex-requirements 安裝 Codex managed requirements（需要 /etc 寫入權限）"
     echo "  codex-agents 安裝 ~/.codex/AGENTS.md + ~/.codex/agents"
     echo "  codex-prompts 安裝 legacy ~/.codex/prompts/goldband.md fallback"
@@ -271,6 +273,9 @@ for arg in "$@"; do
         hooks)
             install_hooks
             ;;
+        claude-statusline)
+            install_claude_statusline
+            ;;
         style-gate)
             install_style_gate
             ;;
@@ -289,6 +294,9 @@ for arg in "$@"; do
             ;;
         codex-config)
             install_codex_config
+            ;;
+        codex-statusline)
+            install_codex_statusline
             ;;
         codex-requirements)
             install_codex_requirements

@@ -1,5 +1,33 @@
 # This file must be sourced by bash, not executed directly.
 
+backup_host_config() {
+    local dest="$1"
+    [ -e "$dest" ] || [ -L "$dest" ] || return 0
+    if [ -d "${dest}.bak" ] || [ -d "${dest}.bak.previous" ]; then
+        echo "[錯誤] Config backup path is a directory: $dest" >&2
+        return 1
+    fi
+    local tmp
+    tmp="$(mktemp "${dest}.bak.tmp.XXXXXX")" || return 1
+    if ! cp -p "$dest" "$tmp"; then rm -f "$tmp"; return 1; fi
+    if [ -e "${dest}.bak" ] || [ -L "${dest}.bak" ]; then
+        mv -f "${dest}.bak" "${dest}.bak.previous" || { rm -f "$tmp"; return 1; }
+    fi
+    mv -f "$tmp" "${dest}.bak" || { rm -f "$tmp"; return 1; }
+    echo "  [備份] $dest -> ${dest}.bak (previous backup: .bak.previous)"
+}
+
+replace_host_config() {
+    local dest="$1"
+    local tmp="$2"
+    if [ ! -L "$dest" ] && cmp -s "$dest" "$tmp"; then
+        rm -f "$tmp"
+        return 0
+    fi
+    backup_host_config "$dest" || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$dest" || { rm -f "$tmp"; return 1; }
+}
+
 link_component() {
     local src="$1"
     local dest="$2"
@@ -23,10 +51,10 @@ link_component() {
         rm "$dest"
     elif [ -e "$dest" ]; then
         echo -e "  ${YELLOW}[備份] $name — 備份現有到 ${dest}.bak${NC}"
-        mv "$dest" "${dest}.bak"
+        mv "$dest" "${dest}.bak" || return 1
     fi
 
-    mkdir -p "$(dirname "$dest")"
+    mkdir -p "$(dirname "$dest")" || return 1
     create_repo_link "$src" "$dest" || return 1
     if [ "$CREATE_REPO_LINK_MODE" = "copy" ]; then
         echo -e "  ${YELLOW}[安裝 (copy fallback)] $name — 此環境無法建立檔案 symlink${NC}"
@@ -76,9 +104,9 @@ materialize_file_copy() {
     local tmp="${dest}.tmp.$$"
 
     [ -f "$src" ] || return 1
-    mkdir -p "$(dirname "$dest")"
-    rm -f "$tmp"
-    cp "$src" "$tmp"
+    mkdir -p "$(dirname "$dest")" || return 1
+    rm -f "$tmp" || return 1
+    cp "$src" "$tmp" || return 1
     mv -f "$tmp" "$dest"
 }
 

@@ -1,5 +1,7 @@
-# Example machine-local Codex config overlay.
+# Example machine-local Codex defaults; used only when the main config is absent.
 # Copy to codex/local/config.toml and keep the copy untracked.
+
+# model = "your-preferred-model"
 
 # notify = ["/path/to/local/notifier", "turn-ended"]
 

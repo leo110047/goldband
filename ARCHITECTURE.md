@@ -274,6 +274,16 @@ The Codex plugin must not be described as a replacement for
 `codex/profiles/`, `codex/permission-profiles/`, `codex/agents/`, and the
 Goldband Loop runtime assets installed under the Codex skill root.
 
+`codex/config.toml` supplies defaults for the user's shared config, not enforced
+values. Installation merges portable and local defaults only when the main file
+is absent; existing files and omitted preferences remain unchanged. Config errors
+do not prevent independent bundle components from updating, but the bundle returns
+nonzero. `shell_environment_policy` remains a recommendation with status advice,
+not a managed requirement. Explicitly installed requirements enforce only their
+declared keys. Rules, hooks, and Goldband profile files have separate ownership. Host status lines are
+explicit installer options (`claude-statusline`, `codex-statusline`), and refresh
+does not reapply their presets over later user choices.
+
 Until that contract is redesigned and verified, `install.sh` is the canonical
 Codex full-setup path. Do not claim Claude/Codex plugin symmetry in README,
 installer status output, or verification reports.

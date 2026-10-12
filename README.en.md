@@ -19,7 +19,7 @@ On review failure, Claude/Codex hooks point to the installed launch contract; in
 ## Before Installing
 
 - Have Git, Node.js, and the Claude Code or Codex CLI you intend to use available.
-- Installer-based Claude configuration also needs `jq`; Codex configuration checks require **Python 3.11 or later**.
+- Installer-based Claude configuration also needs `jq`; Codex configuration installation and checks require **Python 3.11 or later**.
 - Use a complete Git checkout; do not download only `install.sh`.
 - Goldband Loop also requires **Bun 1.3.11 or later**. Browser workflows require Playwright Chromium, which the installer installs and verifies.
 - Use Bash on macOS/Linux and Git Bash or WSL on Windows. There is no native PowerShell installer. Individual workflow limits are described below.
@@ -91,7 +91,20 @@ Then update using your original installation method:
 
 Run `./install.sh status` afterward and restart your tool.
 
-To uninstall, choose the command matching your installation method:
+Codex initializes defaults only when `~/.codex/config.toml` is absent. Reinstallation and updates preserve existing values, omitted keys, comments, and line endings; later template changes are not applied automatically. Claude preserves the model, permission mode, custom hooks, and status line. If config is invalid or Python 3.11+ is unavailable, `codex-core`/`codex-full` still process other components, then return nonzero and record a partial background refresh.
+
+`shell_environment_policy` is a recommendation, not enforced policy. `status` advises manual review when it differs from the template without overwriting it. `codex-requirements` is installed separately and constrains only its declared fields, excluding environment-variable filters. Goldband hooks, the reserved `goldband.rules` baseline, and named profiles update independently; personal rules belong in `default.rules`.
+
+Goldband status lines are optional for both hosts. These commands explicitly replace the current layout; ordinary installation and background updates preserve it:
+
+```bash
+./install.sh claude-statusline
+./install.sh codex-statusline
+```
+
+Explicitly applying the Codex status line changes only the value of `tui.status_line`, without adding other defaults, but can reformat TOML and remove comments. Before changing personal settings, both hosts retain two originals: `.bak` and `.bak.previous`. No-op operations do not rotate them; older backups are not automatically deleted.
+
+Uninstall preserves the main Codex config, personal rules, custom Claude hooks, and non-Goldband status lines. It removes identifiable Goldband links/copies and retains modified or unknown files. If Claude settings cannot be parsed or `jq` is unavailable, it retains those settings and referenced Claude assets, continues independent Codex removal, and returns nonzero. Choose the command matching your installation method:
 
 ```bash
 ./install.sh uninstall                       # Remove installer-managed components

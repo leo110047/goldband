@@ -40,8 +40,8 @@ Excluded from the plugin:
 
 Codex full setup remains installer-managed and currently includes:
 
-- `codex/config.toml`
-- `codex/requirements.toml`
+- `codex/config.toml` (initial defaults only; existing user files preserved)
+- `codex/requirements.toml` (separate explicit install; not part of core/full)
 - `codex/rules/`
 - `codex/hooks.json`
 - `codex/hooks/`
@@ -49,6 +49,17 @@ Codex full setup remains installer-managed and currently includes:
 - `codex/permission-profiles/`
 - `codex/agents/`
 - Goldband Loop runtime assets installed for Codex
+
+Optional installer targets are `claude-statusline` (the script in
+`hooks/statusline-command.sh`) and `codex-statusline` (the preset in
+`codex/statusline.toml`). Neither is enabled by core/full installation, hooks
+installation, or background refresh. Explicitly applying a preset replaces the
+current layout only; Codex adds no unrelated defaults. Its explicit TOML rewrite
+can remove comments, so both hosts retain two personal-config backups (`.bak`,
+`.bak.previous`). Refresh preserves user customization. These are
+installer components, not plugin settings. `npm run test:config-preservation`
+covers both hosts, the actual local Git self-update path, component failure
+isolation, security-default advice, bounded backups, and ownership-aware uninstall.
 
 Those assets are intentionally outside this Claude plugin package. The Codex
 plugin owns only the portable subset documented in

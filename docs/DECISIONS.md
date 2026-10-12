@@ -2672,3 +2672,44 @@ transformation is unsupported. This affects Codex's default-on high-risk policy
 and Claude's opt-in careful mode. We accept that cost without adding more output
 formats or shell syntax. Parser capabilities are frozen at the documented scope;
 the hook is a bounded heuristic, not an authorization boundary.
+
+## 2026-10-12: Preserve Shared Host Settings and Make Status Lines Optional
+
+The main Codex config and Claude settings belong to the user. This supersedes
+value ownership in the 2026-07-21 Codex config freshness decision.
+
+- Codex merges portable and local defaults only when the main config is absent.
+  Existing files are validated but kept byte-for-byte, including omitted keys,
+  comments, and runtime state. A deleted preference stays omitted. Later defaults
+  do not propagate automatically; no per-machine ownership registry is introduced.
+- Status validates TOML rather than equality with a template. It separately advises
+  manual review of `shell_environment_policy` differences. This table (including
+  `exclude`) is a recommendation, not enforced policy. Our optional requirements
+  install constrains only approval policies/reviewers, sandbox modes, and web search
+  modes; it does not enforce environment-variable exclusions. Native rules and hooks
+  remain separately installed controls, not a substitute for that missing boundary.
+- Config operations require Python 3.11+ tomllib. Invalid input or unavailable
+  parsing preserves the file. Core/full installs still process independent agents,
+  hooks, rules, profiles, skills, and launchers, then report a nonzero partial result.
+- The reserved `goldband.rules` portable baseline updates after backing up an old
+  copy, including installations without symlink support. Personal approvals in
+  `default.rules` remain untouched.
+- Claude retains the user's model, permission mode, custom hooks, and status line.
+  Optional status-line targets replace only their own setting, never unrelated
+  defaults. Explicit Codex status-line edits can normalize TOML and remove comments;
+  ordinary installation and background refresh never do so.
+- Both hosts back up changed personal settings before atomic replacement, retaining
+  `.bak` and `.bak.previous`. No-op operations do not rotate backups. Historical
+  backups from earlier installers are not deleted automatically.
+- Uninstall preserves the shared Codex config, personal rules, custom Claude hooks,
+  and non-Goldband status lines. It removes recognized Goldband hooks, exact known
+  status-line commands, source links, and matching copies; modified/unknown files
+  remain. Named profiles reuse the existing ownership comparison, ignoring host
+  runtime state while preserving changed preferences. Unreadable Claude settings or
+  missing jq retain those settings and referenced assets, but do not block independent
+  Codex removal; uninstall returns a nonzero partial result.
+
+`npm run test:config-preservation` covers both hosts, local Git updates, omitted
+preferences, invalid input, parser failure, independent component refresh, status
+advice, status-line scope, backup retention, and uninstall ownership. Config
+validation, real execpolicy checks, and independent review remain separate evidence.

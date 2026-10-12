@@ -58,8 +58,10 @@ install_codex_skills_core() {
 }
 
 install_codex_config() {
-    install_generated_codex_config
-    install_codex_profile_configs
+    local result=0
+    install_generated_codex_config || result=1
+    install_codex_profile_configs || result=1
+    return "$result"
 }
 
 install_codex_requirements() {
@@ -67,8 +69,8 @@ install_codex_requirements() {
 }
 
 install_codex_agents() {
-    link_component "$REPO_DIR/codex/AGENTS.md" "$CODEX_AGENTS_FILE" "Codex AGENTS.md"
-    link_component "$REPO_DIR/codex/agents" "$CODEX_CUSTOM_AGENTS_DIR" "Codex custom agents"
+    link_component "$REPO_DIR/codex/AGENTS.md" "$CODEX_AGENTS_FILE" "Codex AGENTS.md" || return 1
+    link_component "$REPO_DIR/codex/agents" "$CODEX_CUSTOM_AGENTS_DIR" "Codex custom agents" || return 1
     link_component "$REPO_DIR/rules" "$CODEX_DIR/goldband-rules" "Codex on-demand policies"
 }
 
@@ -76,7 +78,7 @@ install_codex_prompts() {
     if repo_link_points_to "$CODEX_PROMPTS_DIR" "$REPO_DIR/codex/prompts"; then
         rm "$CODEX_PROMPTS_DIR"
     fi
-    mkdir -p "$CODEX_PROMPTS_DIR"
+    mkdir -p "$CODEX_PROMPTS_DIR" || return 1
 
     # Codex no longer exposes custom prompts in the slash menu, but keep the
     # legacy prompt as a materialized fallback for debug/readback compatibility.
@@ -94,16 +96,16 @@ install_codex_prompts() {
     elif [ -e "$CODEX_GOLDBAND_PROMPT_FILE" ]; then
         backup_existing_path "$CODEX_GOLDBAND_PROMPT_FILE"
     fi
-    materialize_file_copy "$src" "$CODEX_GOLDBAND_PROMPT_FILE"
+    materialize_file_copy "$src" "$CODEX_GOLDBAND_PROMPT_FILE" || return 1
     echo -e "  ${GREEN}[安裝] Codex prompt goldband.md${NC}"
     echo -e "  ${YELLOW}note:${NC} Codex prompt fallback is a file copy; rerun ./install.sh after git pull to refresh it."
 }
 
 install_codex_hooks() {
-    link_component "$REPO_DIR/codex/hooks.json" "$CODEX_HOOKS_FILE" "Codex hooks.json"
-    link_component "$REPO_DIR/codex/hooks" "$CODEX_HOOKS_DIR" "Codex hook scripts"
-    mkdir -p "$(dirname "$CODEX_REVIEW_RUNTIME_FILE")"
-    materialize_file_copy "$REPO_DIR/hooks/scripts/lib/rules-resolver.js" "$CODEX_REVIEW_RUNTIME_FILE"
+    link_component "$REPO_DIR/codex/hooks.json" "$CODEX_HOOKS_FILE" "Codex hooks.json" || return 1
+    link_component "$REPO_DIR/codex/hooks" "$CODEX_HOOKS_DIR" "Codex hook scripts" || return 1
+    mkdir -p "$(dirname "$CODEX_REVIEW_RUNTIME_FILE")" || return 1
+    materialize_file_copy "$REPO_DIR/hooks/scripts/lib/rules-resolver.js" "$CODEX_REVIEW_RUNTIME_FILE" || return 1
     echo -e "  ${GREEN}[同步] Codex review Rules resolver${NC}"
 }
 
@@ -117,23 +119,27 @@ install_claude_guidance() {
 }
 
 install_codex_core() {
-    install_codex_config
-    install_codex_agents
-    install_codex_prompts
-    install_codex_hooks
-    install_codex_rules
-    install_codex_skills_core
-    install_shell_launchers
+    local result=0
+    install_codex_config || result=1
+    install_codex_agents || result=1
+    install_codex_prompts || result=1
+    install_codex_hooks || result=1
+    install_codex_rules || result=1
+    install_codex_skills_core || result=1
+    install_shell_launchers || result=1
+    return "$result"
 }
 
 install_codex_full() {
-    install_codex_config
-    install_codex_agents
-    install_codex_prompts
-    install_codex_hooks
-    install_codex_rules
-    install_codex_skills
-    install_shell_launchers
+    local result=0
+    install_codex_config || result=1
+    install_codex_agents || result=1
+    install_codex_prompts || result=1
+    install_codex_hooks || result=1
+    install_codex_rules || result=1
+    install_codex_skills || result=1
+    install_shell_launchers || result=1
+    return "$result"
 }
 
 install_all_tools() {
@@ -214,33 +220,33 @@ merge_hooks_config() {
         return
     fi
 
-    if [ ! -f "$settings_json" ]; then
-        echo '{}' > "$settings_json"
-    fi
-
-    cp "$settings_json" "${settings_json}.bak"
-    echo -e "  ${CYAN}[備份] settings.json -> settings.json.bak${NC}"
-
+    local source="$settings_json"
+    [ -e "$source" ] || source="/dev/null"
     local existing_hooks
-    existing_hooks=$(jq '.hooks // {}' "$settings_json")
-
+    existing_hooks=$(jq -s '
+        (if length == 0 then {} elif length == 1 and (.[0] | type) == "object"
+         then .[0] else error("settings must be a JSON object") end) | .hooks // {}
+    ' "$source") || return 1
     local merged_hooks
-    merged_hooks="$(merge_claude_hooks_json "$existing_hooks" "$hooks_content")"
-
-    jq --argjson hooks "$merged_hooks" '.hooks = $hooks' "$settings_json" > "${settings_json}.tmp" \
-        && mv "${settings_json}.tmp" "$settings_json"
-
+    merged_hooks="$(merge_claude_hooks_json "$existing_hooks" "$hooks_content")" || return 1
+    local tmp
+    tmp="$(mktemp "${settings_json}.tmp.XXXXXX")" || return 1
+    if ! jq -s --argjson hooks "$merged_hooks" '(.[0] // {}) | .hooks = $hooks' "$source" > "$tmp" \
+        || ! merge_permissions_config "$hooks_json" "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    replace_claude_settings "$settings_json" "$tmp" || return 1
     echo -e "  ${GREEN}[合併] Hooks 設定已自動合併到 settings.json${NC}"
-    merge_statusline_config "$hooks_json" "$settings_json"
-    merge_permissions_config "$hooks_json" "$settings_json"
 }
 
 merge_claude_hooks_json() {
     local existing_hooks="$1"
     local hooks_content="$2"
+    local mode="${3:-install}"
     local managed_command="node \"$CLAUDE_DIR/hooks/scripts/hooks/hook-router.js\""
     jq -n --argjson existing "$existing_hooks" --argjson new_hooks "$hooks_content" \
-        --arg router "$managed_command" \
+        --arg router "$managed_command" --arg mode "$mode" \
         --slurpfile retired "$REPO_DIR/hooks/claude-retired-hook-prompts.json" '
         ($new_hooks | [ .[][] | .hooks[] | .command? // empty ] + [$router]) as $commands
         | ($new_hooks | [ .[][] | .hooks[] | .prompt? // empty ] + $retired[0]) as $prompts
@@ -251,10 +257,21 @@ merge_claude_hooks_json() {
             .hooks |= map(select(owned | not))
             | select(.hooks | length > 0)
         ))) as $preserved
-        | reduce (($preserved + $new_hooks) | keys[]) as $phase ({};
-            .[$phase] = (($preserved[$phase] // []) + ($new_hooks[$phase] // [])))
+        | if $mode == "remove" then $preserved | with_entries(select(.value | length > 0))
+          else reduce (($preserved + $new_hooks) | keys[]) as $phase ({};
+            .[$phase] = (($preserved[$phase] // []) + ($new_hooks[$phase] // []))) end
         '
 
+}
+
+replace_claude_settings() {
+    local dest="$1"
+    local tmp="$2"
+    if [ -f "$dest" ] && cmp -s <(jq -S . "$dest") <(jq -S . "$tmp"); then
+        rm -f "$tmp"
+        return 0
+    fi
+    replace_host_config "$dest" "$tmp"
 }
 
 print_missing_jq_hooks_help() {
@@ -277,20 +294,35 @@ read_expanded_hooks_content() {
     ' "$hooks_json"
 }
 
-merge_statusline_config() {
-    local hooks_json="$1"
-    local settings_json="$2"
-    local statusline_content
-    statusline_content=$(jq '.statusLine // null' "$hooks_json")
-    if [ "$statusline_content" != "null" ] && [ -n "$statusline_content" ]; then
-        local expanded_statusline
-        expanded_statusline=$(jq -n --argjson statusline "$statusline_content" --arg dir "$CLAUDE_DIR" '
-            $statusline | walk(if type == "string" then gsub("\\$\\{CLAUDE_DIR\\}"; $dir) else . end)
-        ')
-        jq --argjson sl "$expanded_statusline" '.statusLine = $sl' "$settings_json" > "${settings_json}.tmp" \
-            && mv "${settings_json}.tmp" "$settings_json"
-        echo -e "  ${GREEN}[合併] statusLine 設定已自動合併到 settings.json${NC}"
+claude_statusline_command() {
+    jq -nr --arg script "$CLAUDE_DIR/statusline-command.sh" '"bash " + ($script | @sh)'
+}
+
+install_claude_statusline() {
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "[錯誤] Claude status line installation requires jq." >&2
+        return 1
     fi
+    link_component "$REPO_DIR/hooks/statusline-command.sh" "$CLAUDE_DIR/statusline-command.sh" "Status Line Script" || return 1
+    if [ "${1:-explicit}" = "refresh" ]; then
+        echo "  [保留] Claude status line — rerun claude-statusline to apply the Goldband preset"
+        return 0
+    fi
+    local settings_json="$CLAUDE_DIR/settings.json"
+    local source="$settings_json"
+    [ -e "$source" ] || source="/dev/null"
+    local tmp
+    tmp="$(mktemp "${settings_json}.tmp.XXXXXX")" || return 1
+    if ! jq -s --arg command "$(claude_statusline_command)" '
+        (if length == 0 then {} elif length == 1 and (.[0] | type) == "object"
+         then .[0] else error("settings must be a JSON object") end)
+        | .statusLine = {type: "command", command: $command}
+    ' "$source" > "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    replace_claude_settings "$settings_json" "$tmp" || return 1
+    echo "  [設定] Claude Goldband status line enabled"
 }
 
 merge_permissions_config() {
@@ -306,19 +338,21 @@ merge_permissions_config() {
         else
             retired_permissions_allow='[]'
         fi
-        jq --argjson new_perms "$permissions_content" --argjson retired_allow "$retired_permissions_allow" '
-            .permissions.defaultMode = ($new_perms.defaultMode // .permissions.defaultMode // "default") |
+        if ! jq --argjson new_perms "$permissions_content" --argjson retired_allow "$retired_permissions_allow" '
+            .permissions.defaultMode = (.permissions.defaultMode // $new_perms.defaultMode // "default") |
             .permissions.allow = (((.permissions.allow // []) - $retired_allow) + ($new_perms.allow // []) | unique) |
             .permissions.deny = ((.permissions.deny // []) + ($new_perms.deny // []) | unique)
-        ' "$settings_json" > "${settings_json}.tmp" \
-            && mv "${settings_json}.tmp" "$settings_json"
+        ' "$settings_json" > "${settings_json}.permissions.tmp"; then
+            rm -f "${settings_json}.permissions.tmp"
+            return 1
+        fi
+        mv "${settings_json}.permissions.tmp" "$settings_json" || return 1
         echo -e "  ${GREEN}[合併] Permissions 設定已自動合併到 settings.json${NC}"
     fi
 }
 
 install_hooks() {
     link_component "$REPO_DIR/hooks/scripts" "$CLAUDE_DIR/hooks/scripts" "Hook Scripts"
-    link_component "$REPO_DIR/hooks/statusline-command.sh" "$CLAUDE_DIR/statusline-command.sh" "Status Line Script"
     echo ""
     merge_hooks_config
 }

@@ -126,6 +126,13 @@ export const TEST_SUITES = [
     args: ['run', 'test:auto-update'],
   }),
   suite({
+    id: 'root:config-preservation',
+    label: 'Root personal settings and optional status line preservation',
+    cwd: ROOT,
+    command: npmCmd,
+    args: ['run', 'test:config-preservation'],
+  }),
+  suite({
     id: 'root:launchers',
     label: 'Root shell launcher tests',
     cwd: ROOT,

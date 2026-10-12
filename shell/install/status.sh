@@ -42,7 +42,11 @@ show_claude_install_status() {
         GOLDBAND_STATUS_EXIT_CODE=2
     fi
     show_repo_path_status "hooks" "$CLAUDE_DIR/hooks/scripts" "$REPO_DIR/hooks/scripts" "hooks"
-    show_repo_path_status "statusline" "$CLAUDE_DIR/statusline-command.sh" "$REPO_DIR/hooks/statusline-command.sh" "hooks"
+    if [ -e "$CLAUDE_DIR/statusline-command.sh" ] || [ -L "$CLAUDE_DIR/statusline-command.sh" ]; then
+        show_repo_path_status "optional statusline" "$CLAUDE_DIR/statusline-command.sh" "$REPO_DIR/hooks/statusline-command.sh" "claude-statusline"
+    else
+        echo "  [選配] Claude statusline — ./install.sh claude-statusline"
+    fi
     show_shell_launcher_status
 }
 
@@ -336,43 +340,6 @@ process.stdout.write([config.bunExecutable, config.codexExecutable, config.brows
         return 0
     fi
     echo -e "  ${GREEN}[OK]${NC} trusted Codex workflow launcher (pinned Codex + exact review/browser rules)"
-}
-
-show_codex_config_status() {
-    if is_generated_codex_config "$CODEX_CONFIG_FILE"; then
-        if ! is_current_generated_codex_config "$CODEX_CONFIG_FILE"; then
-            case "$CODEX_CONFIG_FRESHNESS_REASON" in
-                invalid-toml)
-                    echo -e "  ${RED}[invalid]${NC} codex-config — installed config.toml is not valid TOML"
-                    echo "    修正 TOML syntax 後再重跑 ./install.sh status。"
-                    ;;
-                syntax-unverifiable)
-                    echo -e "  ${RED}[unverifiable]${NC} codex-config — TOML parser unavailable"
-                    echo "    需要 Python 3.11+ tomllib（python3、python 或 py -3）。"
-                    ;;
-                source-missing|source-unsupported)
-                    echo -e "  ${RED}[unverifiable]${NC} codex-config — Goldband config source cannot be projected safely"
-                    ;;
-                *)
-                    echo -e "  ${RED}[stale]${NC} codex-config — managed content differs from current sources"
-                    echo "    建議: 重跑 ./install.sh codex-config。"
-                    ;;
-            esac
-            GOLDBAND_STATUS_EXIT_CODE=2
-        elif [ -f "$REPO_DIR/codex/local/config.toml" ]; then
-            echo -e "  ${GREEN}[OK]${NC} codex-config (generated base + local overlay)"
-        else
-            echo -e "  ${GREEN}[OK]${NC} codex-config (generated base only)"
-        fi
-    elif [ -L "$CODEX_CONFIG_FILE" ]; then
-        local target
-        target=$(readlink "$CODEX_CONFIG_FILE")
-        echo -e "  ${YELLOW}[legacy symlink]${NC} codex-config -> $target — 建議重跑 ./install.sh codex-config"
-    elif [ -e "$CODEX_CONFIG_FILE" ]; then
-        echo -e "  ${YELLOW}[legacy copy]${NC} codex-config — 建議重跑 ./install.sh codex-config"
-    else
-        echo -e "  ${RED}[未安裝]${NC} codex-config"
-    fi
 }
 
 show_codex_profiles_status() {

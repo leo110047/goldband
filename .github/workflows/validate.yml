@@ -115,6 +115,8 @@ jobs:
         run: npm run test:eval-budget-cap
       - name: Test auto-update installer refresh
         run: npm run test:auto-update
+      - name: Test personal settings and optional status lines
+        run: npm run test:config-preservation
       - name: Test Bash and zsh launchers
         run: npm run test:launchers
       - name: Test goldband MCP server

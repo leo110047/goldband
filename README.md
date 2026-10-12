@@ -17,7 +17,7 @@ Review 失敗時，Claude／Codex hook 會提示讀取既有啟動契約；環�
 ## 安裝前
 
 - 準備 Git、Node.js，以及要使用的 Claude Code 或 Codex CLI。
-- 使用 installer 安裝 Claude 設定另需 `jq`；Codex 設定檢查需要 Python **3.11 以上**。
+- 使用 installer 安裝 Claude 設定另需 `jq`；Codex 設定安裝與檢查需要 Python **3.11 以上**。
 - 使用完整 Git checkout；請勿只下載 `install.sh`。
 - Goldband Loop 另需 Bun **1.3.11 以上**。瀏覽器工作流程需要 Playwright Chromium，安裝器會處理其安裝與驗證。
 - macOS／Linux 使用 Bash；Windows 請用 Git Bash 或 WSL，沒有原生 PowerShell 安裝器。各工作流程的平台限制見下方說明。
@@ -93,7 +93,20 @@ git pull --ff-only
 
 更新後執行 `./install.sh status`，再重新啟動工具。
 
-移除時也依安裝方式擇一：
+Codex 只在 `~/.codex/config.toml` 不存在時建立預設值。重裝與更新保留既有檔案的值、刪除的 key、註解與換行，不會自動套用後續範本變更。Claude 保留模型、權限模式、自訂 hooks 與狀態列。Config 無效或缺少 Python 3.11+ 時，`codex-core`／`codex-full` 仍處理其他元件，最後回傳非零並將背景更新記為 partial。
+
+`shell_environment_policy` 是建議預設，不是強制政策；與範本不同時，`status` 會提示人工檢查，不會覆寫。`codex-requirements` 必須另外安裝，只強制其列出的欄位，不涵蓋環境變數排除清單。Goldband hooks、專用 `goldband.rules` 與 named profiles 仍獨立更新；個人規則放在 `default.rules`。
+
+兩邊的 Goldband 狀態列皆為選配。以下指令會取代目前樣式；一般安裝與背景更新不會重設狀態列：
+
+```bash
+./install.sh claude-statusline
+./install.sh codex-statusline
+```
+
+顯式套用 Codex 狀態列只變更 `tui.status_line` 的值，不會加入其他預設，但可能重新排版 TOML 並移除註解。兩邊修改個人設定前保留最近兩份原檔：`.bak` 與 `.bak.previous`；無變更不輪替，舊版留下的其他備份不自動刪除。
+
+卸載會保留 Codex 主設定、個人規則、Claude 自訂 hooks 與非 Goldband 狀態列；可辨識的 Goldband 連結／副本才移除，已修改或未知檔案保留。若 Claude 設定無法解析或缺少 `jq`，保留其設定與引用的 Claude 檔案，仍卸載獨立的 Codex 元件，最後回傳非零。依安裝方式擇一：
 
 ```bash
 ./install.sh uninstall                       # 移除 installer 管理的組件
