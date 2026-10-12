@@ -204,12 +204,7 @@ describe('workflow registry', () => {
       resolve(ROOT, 'generated/host-skills/claude.SKILL.md'),
       'utf8',
     );
-    const codexHints = readFileSync(
-      resolve(ROOT, '../codex/hooks/capability-routing.generated.json'),
-      'utf8',
-    );
     expect(codexMenu).toContain('$goldband plan create');
-    expect(codexHints).toContain('$goldband plan create');
     expect(claudeMenu).toContain('$goldband plan create');
   });
 

@@ -74,8 +74,8 @@ Codex telemetry currently writes:
 - `detail.host`, `detail.hookEventName`, `detail.toolName`, and
   `detail.startSource` for hook outcomes.
 
-Prompt activation telemetry also writes `prompt-trigger` events from
-`hooks/scripts/hooks/skill-activation-suggestions.js`. Mode toggles write
+`prompt-trigger` remains a valid category so older JSONL files still validate;
+current hooks no longer emit keyword skill suggestions. Mode toggles write
 `mode` events from `hooks/scripts/lib/hook-router/mode-cli.js`.
 
 ## Run ID Rules

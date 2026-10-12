@@ -8,6 +8,6 @@
     "performance": "performance-optimization/SKILL.md",
     "planning": "planning-workflow/SKILL.md"
   },
-  "runtime_routing": "Goldband capability triggers come from goldband.manifest.json; portable skill suggestions are owned by hooks/scripts/lib/skill-activation/activation-rules.js.",
+  "runtime_routing": "Claude Code and Codex select skills from each SKILL.md description. Goldband hooks do not suggest skills by prompt keyword.",
   "compatibility": "shell/install/skill-catalog.txt owns Claude and Codex installer/plugin skill eligibility."
 }

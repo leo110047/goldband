@@ -9,7 +9,7 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hooks/skill-activation-suggestions.js\""
           }
         ],
-        "description": "Prompt-time skill suggestions + prompt-trigger telemetry"
+        "description": "Cross-review arming, knowledge advisory, and workflow telemetry"
       }
     ],
     "PreToolUse": [

@@ -337,32 +337,6 @@ function testMutatingMcpWarnsOnly() {
   assert.match(output.hookSpecificOutput.additionalContext, /mutating/);
 }
 
-function testPromptWorkflowHint() {
-  const output = runHook({
-    hook_event_name: 'UserPromptSubmit',
-    prompt: 'please review this diff and debug the failing test',
-  });
-
-  assert.equal(output.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-  assert.match(
-    output.hookSpecificOutput.additionalContext,
-    /\$goldband review/,
-  );
-  assert.match(
-    output.hookSpecificOutput.additionalContext,
-    /\$goldband investigate/,
-  );
-}
-
-function testPromptWorkflowHintRequiresTriggerBoundaries() {
-  const output = runHook({
-    hook_event_name: 'UserPromptSubmit',
-    prompt: 'Please give me an explanation of this file.',
-  });
-
-  assertNoopOutput(output);
-}
-
 function testDirectWorkflowInvocationSuppressesHints() {
   for (const prompt of [
     '$goldband plan create 重構認證邏輯',
@@ -375,33 +349,6 @@ function testDirectWorkflowInvocationSuppressesHints() {
       }),
     );
   }
-}
-
-function testWorkflowHintsLoadOnlyForPromptRouting() {
-  const routingPath = path.join(
-    repoDir,
-    'codex',
-    'hooks',
-    'capability-routing.generated.json',
-  );
-  const program = `
-    const assert = require('node:assert/strict');
-    const routerPath = ${JSON.stringify(routerPath)};
-    const routingPath = require.resolve(${JSON.stringify(routingPath)});
-    const router = require(routerPath);
-    assert.equal(require.cache[routingPath], undefined);
-    router.evaluateInput({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} });
-    assert.equal(require.cache[routingPath], undefined);
-    router.evaluateInput({ hook_event_name: 'Stop' });
-    assert.equal(require.cache[routingPath], undefined);
-    router.evaluateInput({ hook_event_name: 'UserPromptSubmit', prompt: 'please review this diff' });
-    assert.ok(require.cache[routingPath]);
-  `;
-  const result = spawnSync(process.execPath, ['-e', program], {
-    cwd: repoDir,
-    encoding: 'utf8',
-  });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
 }
 
 function testWorkflowTelemetry() {
@@ -495,10 +442,7 @@ testPostToolUseStyleGateAdvisory();
 testPostToolUseStyleGateAdvisoryUsesExplicitProjectRoot();
 testPassiveLifecycleHooksAreNotRegistered();
 testMutatingMcpWarnsOnly();
-testPromptWorkflowHint();
-testPromptWorkflowHintRequiresTriggerBoundaries();
 testDirectWorkflowInvocationSuppressesHints();
-testWorkflowHintsLoadOnlyForPromptRouting();
 testWorkflowTelemetry();
 testCompletionClaimsDoNotUseRegex();
 testStopDoesNotSuggestKnowledgeCapture();

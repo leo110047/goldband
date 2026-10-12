@@ -60,7 +60,6 @@ const MANAGED_COMMANDS = [
   'codex/hooks/telemetry-schema.cjs',
   'codex/hooks/review-launch-advisory.js',
   'hooks/scripts/lib/telemetry-schema.cjs',
-  'codex/hooks/session-state.js',
   'codex/hooks/secret-patterns.js',
   'codex/hooks/shell-commands.js',
   'codex/hooks/shell-policy.js',
@@ -147,11 +146,6 @@ function addSharedAdapterArtifacts(artifacts) {
   );
   addFileArtifact(
     artifacts,
-    'hooks/scripts/lib/skill-activation/session-state.js',
-    path.join(ROOT_DIR, 'codex', 'hooks', 'session-state.js'),
-  );
-  addFileArtifact(
-    artifacts,
     'hooks/scripts/lib/hook-router/review-launch-advisory.js',
     path.join(ROOT_DIR, 'codex', 'hooks', 'review-launch-advisory.js'),
   );
@@ -221,14 +215,12 @@ function buildExpectedCodexAssets() {
     distribution: 'installer',
     reviewRuntimeDependencies: runtimeDependencyPaths('hooks/scripts/lib'),
     hookRuntimeDependencies: [
-      'codex/hooks/capability-routing.generated.json',
       'codex/hooks/cross-review-gate.js',
       'codex/hooks/high-risk-policy.js',
       'codex/hooks/module-loader.js',
       'codex/hooks/telemetry.js',
       'codex/hooks/telemetry-schema.cjs',
       'codex/hooks/review-launch-advisory.js',
-      'codex/hooks/session-state.js',
       'codex/hooks/secret-patterns.js',
       'codex/hooks/shell-commands.js',
       'codex/hooks/shell-policy.js',

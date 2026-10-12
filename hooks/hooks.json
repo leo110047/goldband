@@ -64,7 +64,7 @@
             "command": "node \"${HOOKS_DIR}/scripts/hooks/skill-activation-suggestions.js\""
           }
         ],
-        "description": "Prompt-time skill suggestions + prompt-trigger telemetry"
+        "description": "Cross-review arming, knowledge advisory, and workflow telemetry"
       }
     ],
     "PreToolUse": [

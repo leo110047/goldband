@@ -13,7 +13,6 @@ const {
 } = require('./high-risk-policy');
 const { recordHookTelemetry } = require('./telemetry');
 const { reviewLaunchAdvisory } = require('./review-launch-advisory');
-const { shouldEmitSuggestions } = require('./session-state');
 function loadCrossReviewGate() {
   return requireFirst([
     path.resolve(
@@ -33,42 +32,6 @@ function loadCrossReviewGate() {
 const { armFromPrompt, evaluateCrossReviewGate } = loadCrossReviewGate();
 
 const CODEX_STOP_BLOCK_EXIT_CODE = 2;
-
-let workflowHints;
-
-function loadWorkflowHints() {
-  if (!workflowHints) {
-    workflowHints = require('./capability-routing.generated.json');
-  }
-  return workflowHints;
-}
-
-function workflowTriggerMatches(prompt, trigger) {
-  const normalizedPrompt = String(prompt || '').toLowerCase();
-  const normalizedTrigger = String(trigger || '')
-    .trim()
-    .toLowerCase();
-  if (!normalizedTrigger) return false;
-
-  if (!/^[a-z0-9]+(?:[\s-]+[a-z0-9]+)*$/.test(normalizedTrigger)) {
-    return normalizedPrompt.includes(normalizedTrigger);
-  }
-
-  const escaped = normalizedTrigger
-    .split(/\s+/)
-    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('\\s+');
-  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`).test(
-    normalizedPrompt,
-  );
-}
-
-function hasExplicitWorkflowInvocation(prompt) {
-  return (
-    /\$goldband\s+[a-z][a-z0-9-]*\s+[a-z][a-z0-9-]*/i.test(prompt) ||
-    /(?:^|\s)\/plan\b/i.test(prompt)
-  );
-}
 
 function readStdinRaw() {
   return new Promise((resolve) => {
@@ -277,39 +240,12 @@ function evaluateStopResult(input) {
 }
 
 function evaluateUserPromptSubmitResult(input) {
-  const prompt = input.prompt || '';
   const crossReviewContract = armCrossReviewIfRequested(input);
-  const messages = [];
-
-  if (hasExplicitWorkflowInvocation(prompt)) {
-    if (crossReviewContract) {
-      messages.push(formatCrossReviewArmMessage(crossReviewContract));
-    }
-    return messages.length > 0
-      ? resultAdditionalContext('UserPromptSubmit', messages.join('\n\n'))
-      : null;
-  }
-
-  const hints = loadWorkflowHints().filter((hint) =>
-    hint.triggers.some((trigger) => workflowTriggerMatches(prompt, trigger)),
+  if (!crossReviewContract) return null;
+  return resultAdditionalContext(
+    'UserPromptSubmit',
+    formatCrossReviewArmMessage(crossReviewContract),
   );
-  if (
-    hints.length > 0 &&
-    shouldEmitSuggestions(
-      input.session_id,
-      hints.map((hint) => hint.message),
-      { host: 'codex', cwd: input.cwd || process.cwd() },
-    )
-  ) {
-    messages.push(...hints.map((hint) => hint.message));
-  }
-
-  if (crossReviewContract) {
-    messages.unshift(formatCrossReviewArmMessage(crossReviewContract));
-  }
-
-  if (messages.length === 0) return null;
-  return resultAdditionalContext('UserPromptSubmit', messages.join('\n\n'));
 }
 
 function armCrossReviewIfRequested(input) {

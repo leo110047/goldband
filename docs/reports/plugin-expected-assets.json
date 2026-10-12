@@ -111,14 +111,12 @@
       "hooks/scripts/lib/rules-resolver.js"
     ],
     "hookRuntimeDependencies": [
-      "codex/hooks/capability-routing.generated.json",
       "codex/hooks/cross-review-gate.js",
       "codex/hooks/high-risk-policy.js",
       "codex/hooks/module-loader.js",
       "codex/hooks/telemetry.js",
       "codex/hooks/telemetry-schema.cjs",
       "codex/hooks/review-launch-advisory.js",
-      "codex/hooks/session-state.js",
       "codex/hooks/secret-patterns.js",
       "codex/hooks/shell-commands.js",
       "codex/hooks/shell-policy.js",

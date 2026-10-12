@@ -2713,3 +2713,22 @@ value ownership in the 2026-07-21 Codex config freshness decision.
 preferences, invalid input, parser failure, independent component refresh, status
 advice, status-line scope, backup retention, and uninstall ownership. Config
 validation, real execpolicy checks, and independent review remain separate evidence.
+
+## 2026-10-12: Hosts Own Skill Selection
+
+Claude Code and Codex select skills and the `goldband` capability router from
+each `SKILL.md` description. Goldband prompt hooks no longer match prompt
+keywords to suggest portable skills or `$goldband` capabilities. This removes
+`activation-rules.js`, the generated `capability-routing.generated.json` files,
+the Codex suggestion session state, and the manifest `triggers` field.
+
+Why: the keyword matcher duplicated native routing, added context, and missed
+cases it claimed to cover (for example, "debug and optimize performance" did
+not suggest `performance-optimization`). Description quality is the single
+routing input to maintain.
+
+The Claude `UserPromptSubmit` hook keeps cross-review arming, the knowledge
+advisory, and workflow-entry telemetry; the Codex prompt hook keeps
+cross-review arming. `prompt-trigger` remains a valid telemetry category so
+older JSONL still validates. `scripts/test-hook-noise-policy.mjs` asserts that
+task-shaped prompts produce no routing context on either host.

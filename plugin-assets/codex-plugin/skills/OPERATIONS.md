@@ -64,7 +64,6 @@ node skills/global/freeze-mode/scripts/freeze-mode.js disable
 
 目前會記錄的主要類型：
 
-- prompt-trigger match 與 suggestion emission
 - code-backed skill script execution
 - on-demand mode enable / disable
 - mode enforcement block 事件
@@ -77,15 +76,15 @@ node hooks/scripts/tools/report-usage-summary.js --days 30
 
 限制：
 
-- 現有資料偏向 prompt-trigger telemetry，不是完整 skill adoption truth
+- 舊資料可能含有已退役的 prompt-trigger 推薦事件，不代表 skill 實際採用
 - 純 markdown skill 是否真的被採用，無法只靠目前 hook data 完整判定
 
 ## 故障排除
 
 ### skill 沒有觸發
 
-- 先檢查 prompt 是否真的命中對應 trigger
-- 再看 `skill-rules.json` 和 hook logic 是否有 conflict resolution
+- Skill 由 host 依 `SKILL.md` 的 `description` 選擇；先檢查 description 是否清楚
+  寫出適用與不適用的情境
 - 必要時直接手動指定 skill
 
 ### mode 狀態不確定

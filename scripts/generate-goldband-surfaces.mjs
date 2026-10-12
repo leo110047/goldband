@@ -47,8 +47,6 @@ const CAPABILITY_INVOCATION_ROOTS = [
   'codex/agents',
   'codex/hooks/hook-router.js',
   'codex/prompts/goldband.md',
-  'hooks/scripts/lib/skill-activation/activation-rules.js',
-  'plugin-assets/claude-code-plugin/hooks/scripts/lib/skill-activation/activation-rules.js',
   'goldband-loop/CONTRIBUTING.md',
   'goldband-loop/SKILL.md',
   'goldband-loop/openclaw',
@@ -57,14 +55,6 @@ const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
 validateManifest(manifest);
 const discoverableCapabilities = publicCapabilities(manifest.capabilities);
-const claudeCapabilities = publicCapabilitiesForHost(
-  manifest.capabilities,
-  'claude',
-);
-const codexCapabilities = publicCapabilitiesForHost(
-  manifest.capabilities,
-  'codex',
-);
 validateCapabilityInvocations({
   root,
   invocationRoots: CAPABILITY_INVOCATION_ROOTS,
@@ -128,7 +118,6 @@ const outputs = new Map([
       internalClaudeSkills: manifest.distribution.internalClaudeSkills,
       capabilities: manifest.capabilities.map(
         ({
-          triggers: _triggers,
           promptContract: _promptContract,
           actions: capabilityActions,
           ...capability
@@ -154,18 +143,6 @@ const outputs = new Map([
   [
     'goldband-loop/lib/trusted-launcher-actions.generated.ts',
     generatedTrustedLauncherActions(capabilityActions),
-  ],
-  [
-    'hooks/scripts/lib/skill-activation/capability-routing.generated.json',
-    json(activationRules(claudeCapabilities)),
-  ],
-  [
-    'plugin-assets/claude-code-plugin/hooks/scripts/lib/skill-activation/capability-routing.generated.json',
-    json(activationRules(claudeCapabilities)),
-  ],
-  [
-    'codex/hooks/capability-routing.generated.json',
-    json(codexHints(codexCapabilities)),
   ],
   [
     'goldband-loop/generated/capability-router.md',
@@ -288,24 +265,6 @@ function generatedManualRouting(manuals) {
 function validateCapability(capability) {
   if (!/^[a-z][a-z0-9-]*$/.test(capability.id)) {
     throw new Error(`invalid capability: ${capability.id}`);
-  }
-  if (!Array.isArray(capability.triggers) || capability.triggers.length === 0) {
-    throw new Error(`${capability.id}: triggers must be a non-empty array`);
-  }
-  const normalizedTriggers = capability.triggers.map((trigger) => {
-    if (
-      typeof trigger !== 'string' ||
-      trigger.length === 0 ||
-      trigger !== trigger.trim()
-    ) {
-      throw new Error(
-        `${capability.id}: triggers must be non-empty trimmed strings`,
-      );
-    }
-    return trigger.toLowerCase();
-  });
-  if (new Set(normalizedTriggers).size !== normalizedTriggers.length) {
-    throw new Error(`${capability.id}: triggers must be unique`);
   }
   if (
     !capability.actions?.some(
@@ -467,25 +426,6 @@ function generatedTrustedLauncherActions(entries) {
     `export const TRUSTED_LAUNCHER_ACTIONS = ${JSON.stringify(trustedActions, null, 2)} as const;\n` +
     `export const PROMPT_CONTRACT_ACTIONS = ${JSON.stringify(promptContractActions, null, 2)} as const;\n`
   );
-}
-
-function activationRules(capabilities) {
-  return capabilities.map((capability) => ({
-    skill: `goldband:${capability.id}/${capability.defaultAction}`,
-    priority: ['review', 'investigate', 'qa'].includes(capability.id)
-      ? 'high'
-      : 'medium',
-    hint: `Use $goldband ${capability.id} ${capability.defaultAction} when this capability matches the task.`,
-    keywords: capability.triggers,
-  }));
-}
-
-function codexHints(capabilities) {
-  return capabilities.map((capability) => ({
-    name: capability.id,
-    triggers: capability.triggers,
-    message: `Goldband capability available: $goldband ${capability.id} ${capability.defaultAction}. Use it only when it materially matches the requested outcome.`,
-  }));
 }
 
 function generatedRouter(capabilities) {
