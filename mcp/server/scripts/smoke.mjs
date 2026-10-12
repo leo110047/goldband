@@ -38,10 +38,8 @@ async function main() {
       name: 'goldband_policy_check',
       arguments: { command: 'npm run dev' },
     });
-    assert.equal(policyResult.structuredContent?.outcome, 'block');
-    assert.deepEqual(policyResult.structuredContent?.matchedRules, [
-      'dev-server-blocker',
-    ]);
+    assert.equal(policyResult.structuredContent?.outcome, 'allow');
+    assert.deepEqual(policyResult.structuredContent?.matchedRules, []);
 
     const knowledgeResult = await client.callTool({
       name: 'knowledge-query',

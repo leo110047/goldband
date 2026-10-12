@@ -170,6 +170,82 @@ another process running as the same host user. The filesystem sandbox protects
 Git and broker inputs; Work Map and verification state remain inspectable and
 recoverable local runtime state.
 
+### Shared Hook Policy and Host Adapters
+
+`hooks/scripts/lib/hook-router/secret-patterns.js` owns secret signatures,
+severity, and safe diagnostic messages. Claude translates Write/Edit/MultiEdit
+content; Codex translates added patch lines, leaving removed/context lines out.
+High-confidence matches block writes in every path, including fixtures and
+`.env.example`; generic signatures advise. Synthetic tests assemble token-shaped
+strings at runtime or decode escaped JSON fixtures. The optional Git style gate
+retains its separate file-scope exclusions; they do not exempt tool writes.
+
+`shell-commands.js` owns lexical and explicit execution structure, including
+shell/SSH command strings, command groups, redirects, and pipeline
+input/output relationships. `shell-invocation.js` owns wrapper/shell option
+handling and static `env -S` argv splitting; env-specific escapes and variable
+expansion deny analysis. `shell-policy.js` owns safe evaluation. Beyond
+explicit child commands, it scans unknown launchers only for signatures that
+require a command name and specific arguments, such as `git reset --hard` or
+`dd of=/dev/...`; it does not need to enumerate every launcher. Name-only rules
+such as `env`, `printenv`, and `sudo` apply only at actual command positions,
+including extracted child commands. Codex recognizes `mkfs` and `mkfs.*` as one
+command family. A separate `/dev/...` argument is sufficient to block; at an
+actual command position, any argument containing `$` also blocks because its
+target is unresolved. Unknown-launcher candidates still require the literal
+device argument. This deliberately includes literal dollar signs in actual
+formatter arguments; it does not expand variables or infer their values.
+Codex also covers `mke2fs`, `newfs_apfs` (including `diskNsM` device names), and
+destructive `wipefs -a`/`-o` operations, including unambiguous long-option
+abbreviations. Known `wipefs` listing/no-act modes and `fdisk -l`/`--list` remain
+allowed. The fdisk exception accounts for both Linux and macOS option meanings;
+a list-shaped option value cannot exempt a macOS write. Literal image-file
+targets remain allowed.
+The host policy owns command names, option meanings, and required option values;
+shell parsing is unchanged. Known data consumers and script operands retain
+their argument boundaries. Ordinary quoted command-shaped data
+is not split, while explicit SSH remote commands are interpreted in both hosts.
+Ambiguous unquoted signatures in unknown programs are conservatively blocked;
+this heuristic does not prove that those arguments would execute.
+
+Extraction or evaluation errors produce a native hook denial, including stack
+overflow. Candidate scanning and command normalization each have a
+100,000-word work limit to bound repeated inspection; exhausting either also
+denies analysis. Known input flow follows descriptor copies/moves in redirect
+order and `cat`/`tee` pipelines. `shell-output.js` handles explicit literal
+`echo`/`printf` output and supported backslash escapes, preserving actual
+newlines so group output can be concatenated without changing its bytes.
+Unknown descriptors, ambiguous echo modes, and unsupported output formats deny
+analysis when a shell or SQL consumer needs that input. Arbitrary program
+bodies, dynamic values, remote configuration, and unsupported syntax are not
+interpreted. Parser capabilities are fixed at this scope; broader shell
+interpretation is not part of the hook contract. Native host permissions remain
+execution authority.
+`sync-plugin-assets.mjs` produces both the Claude plugin and Codex's local
+copies of these shared modules; the distribution check rejects stale copies.
+The installer carries the complete hook directory in both link and copy modes.
+
+| Surface | Shared policy or deliberate host difference |
+| --- | --- |
+| Documentation and dev servers | Allowed by both hooks; project conventions and accessible logs are guidance in `rules/coding-style.md`. |
+| Secrets in tool writes | Same signatures, severity and messages; adapters select newly written content. |
+| Shell high-risk guard | Codex has an always-on heuristic; Claude's broader careful mode is opt-in. Both use the same command extraction. |
+| Careful/freeze and interactive review read-only | Claude session modes; Codex has no matching mode hook. Native permissions are independently enforced. |
+| Managed worktree Git writes | Shared native isolation and broker; Claude adds an early hook diagnostic. |
+| Post-edit automation | Claude asynchronous format/typecheck; Codex style advice. Both are host-specific automation, not proof that checks passed. |
+| Subagent completion | Claude prompt hook; no corresponding Codex hook. |
+| Knowledge hints, tool-count advice, notifications | Claude convenience features; Codex uses explicit workflows. |
+| Push, tool-failure and mutating-MCP reminders | Host-specific advice; they do not authorize side effects. |
+
+`test-hook-policy-parity.mjs` replays shared secret fixtures and guidance cases
+through both native hook output contracts. `test-hook-policy-install.mjs`
+repeats that check under temporary homes for linked and copied installations.
+The existing coverage check requires positive/negative cases for each secret
+signature; neither the test matrix nor this inventory claims full host parity.
+Coverage names prefixed with `retired-` are allow regressions for removed
+policies. Historical telemetry keeps its original names; the miner labels its
+new replay candidates with the retired names and current allow expectation.
+
 ### Claude Plugin Contract
 
 The Claude plugin is a generated distribution artifact, not a second source of

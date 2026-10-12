@@ -4,6 +4,10 @@ Local engineering tools for Claude Code and Codex, with shared development rules
 
 English | [中文](README.md)
 
+Claude and Codex share secret classification. Documentation and development
+servers follow operational guidance without filename or tmux hook blockers.
+See [hook ownership and host differences](ARCHITECTURE.md#shared-hook-policy-and-host-adapters).
+
 ## What It Does
 
 - Installs shared development rules, hooks, and skills to reduce repeated project setup.

@@ -95,6 +95,7 @@ function fixtureCandidateFromEvent(event) {
   if (event.category !== 'hook-decision' || event.action !== 'deny') {
     return null;
   }
+  // Historical deny events become allow regressions for the retired policies.
   if (event.name === 'doc-file-blocker') return docFileCandidate(event);
   if (event.name === 'dev-server-blocker') return devServerCandidate(event);
   if (event.name === 'recursive-force-delete') {
@@ -134,7 +135,7 @@ function docFileCandidate(event) {
     ],
     fixture: {
       id: `telemetry-candidate-${sourceEventId}`,
-      coverage: replayCoverage('doc-file-blocker'),
+      coverage: replayCoverage('retired-doc-file-blocker'),
       input: {
         hook_event_name: 'PreToolUse',
         tool_name: 'Write',
@@ -144,9 +145,8 @@ function docFileCandidate(event) {
         },
       },
       expect: {
-        exitCode: 2,
-        decision: 'block',
-        stderrIncludes: ['Unnecessary documentation'],
+        exitCode: 0,
+        decision: 'allow',
       },
     },
     targetRouter: 'hooks/scripts/hooks/hook-router.js',
@@ -164,16 +164,15 @@ function devServerCandidate(event) {
     ],
     fixture: {
       id: `telemetry-candidate-${sourceEventId}`,
-      coverage: replayCoverage('dev-server-blocker'),
+      coverage: replayCoverage('retired-dev-server-blocker'),
       input: {
         hook_event_name: 'PreToolUse',
         tool_name: 'Bash',
         tool_input: { command: 'npm run dev' },
       },
       expect: {
-        exitCode: 2,
-        decision: 'block',
-        stderrIncludes: ['Dev server must run in tmux'],
+        exitCode: 0,
+        decision: 'allow',
       },
     },
     targetRouter: 'hooks/scripts/hooks/hook-router.js',
@@ -224,11 +223,12 @@ function baseFixtureCandidate(event, details) {
   };
 }
 
+// Historical denials produce regression cases for the current allowed policy.
 function replayCoverage(policy) {
   return {
-    category: 'pretool-policy',
+    category: 'pretool-guidance',
     policy,
-    expectedDecision: 'block',
+    expectedDecision: 'allow',
     variant: 'telemetry-candidate',
     regressionSource: 'telemetry-miner-review-candidate',
   };

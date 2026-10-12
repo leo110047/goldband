@@ -170,16 +170,16 @@ run "$RT" run --rm \
         codex --version
         npm --prefix /opt/goldband run test:hook-router
         set +e
-        printf "%s\n" "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"notes/random-notes.md\",\"content\":\"temporary\"}}" \
+        printf "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"notes/random-notes.md\",\"content\":\"ghp_%036d\"}}\n" 0 \
             | node /opt/goldband/hooks/scripts/hooks/hook-router.js \
             >/tmp/goldband-hook-demo.out 2>/tmp/goldband-hook-demo.err
         hook_demo_status=$?
         set -e
         [ "$hook_demo_status" -eq 2 ]
-        grep -q "Unnecessary documentation" /tmp/goldband-hook-demo.err
+        grep -q "Potential secrets" /tmp/goldband-hook-demo.err
         node /opt/goldband/hooks/scripts/tools/report-usage-summary.js --days 1 \
             >/tmp/goldband-usage-summary.out
-        grep -q "claude/doc-file-blocker: 1" /tmp/goldband-usage-summary.out
+        grep -q "claude/secret-detector: 1" /tmp/goldband-usage-summary.out
         echo "[OK] hook deny and container HOME telemetry verified"
         SKILL_ROOT="$HOME/.claude/skills/goldband"
         test -x "$SKILL_ROOT/bin/goldband-config"

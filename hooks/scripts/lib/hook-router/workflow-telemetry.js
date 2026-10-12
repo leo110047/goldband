@@ -1,6 +1,4 @@
-const {
-  resolveRunId,
-} = require('../../../../scripts/lib/telemetry-schema.cjs');
+const { resolveRunId } = require('../telemetry-schema.cjs');
 
 function safeString(value) {
   return typeof value === 'string' ? value.trim() : '';

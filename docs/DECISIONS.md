@@ -2626,3 +2626,49 @@ It does not inspect evidence or authorize completion. Claude installation also
 retains the minimal trusted runtime configuration (`schemaVersion`, `runtimeHost`)
 to pin runtime selection and host identity; obsolete receipt fields are removed
 on both copied and same-directory reinstalls.
+
+## 2026-10-12: Share hook policy without requiring identical host automation
+
+Secret classification and shell command extraction have one source under
+`hooks/scripts/lib/hook-router/`; the existing distribution generator emits
+Codex copies and the Claude plugin. Host adapters own input/output conversion.
+Documentation naming and dev-server process choices are guidance, not denial
+policies. Tool writes have no path-only secret exemption; removed patch lines
+are excluded so cleanup remains possible. Host-specific modes and automation
+remain explicit in `ARCHITECTURE.md` rather than being copied for symmetry.
+
+Command extraction preserves explicit code and input/output edges. Shared policy
+evaluation also scans unknown launchers for signatures requiring both a command
+name and specific arguments, without requiring an exhaustive wrapper registry.
+Name-only rules (`env`, `printenv`, `sudo`, `gparted`) apply only at
+actual command positions, including extracted child commands; arguments such
+as an `env` directory or a `sudo` query target cannot activate them. Known data
+consumers keep their argument boundaries. Codex's formatting rule treats `mkfs`
+and `mkfs.*` as one family. Actual commands block on a literal `/dev/...`
+argument or any argument containing `$`; unknown-launcher candidates require
+the literal device argument. The dollar-sign rule is conservative, including
+quoted literal dollars and non-target arguments, without variable expansion.
+A name or help query alone does not match this rule. Literal image files remain
+allowed. The policy also covers `mke2fs`, `newfs_apfs`, and destructive `wipefs`
+options; it preserves known wipefs listing/no-act and fdisk list operations.
+Wipefs long options accept their native unambiguous abbreviations.
+Fdisk's list exception checks Linux and macOS option meanings without assuming
+the local OS is the execution target. A macOS write cannot gain that exception
+from a list-shaped geometry value or MBR template filename.
+Option values are not flags: `wipefs -t -n` must not activate a no-act exemption.
+Codex also recognizes the `git push -f` alias, while a push-option value `-f`
+does not count as force. These are policy decisions; shell syntax stays frozen.
+Explicit SSH remote command strings are code for both hosts. Ambiguous unquoted
+signatures are conservatively rejected. Extraction or evaluation errors,
+including stack overflow, exceeded work limits, or unresolved descriptor and
+literal-output transformations needed by shell/SQL consumers, return native
+denials rather than an unchecked hook error. Native permissions remain
+execution authority.
+Shared regression inputs state each host's expected result separately.
+
+The false-positive cost is explicit: even harmless input such as
+`echo "a\\tb" | bash` or `printf "%d\n" 1 | bash` is denied when its output
+transformation is unsupported. This affects Codex's default-on high-risk policy
+and Claude's opt-in careful mode. We accept that cost without adding more output
+formats or shell syntax. Parser capabilities are frozen at the documented scope;
+the hook is a bounded heuristic, not an authorization boundary.

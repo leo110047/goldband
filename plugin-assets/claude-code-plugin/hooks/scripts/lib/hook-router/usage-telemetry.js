@@ -1,9 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { ensureDir, getPersistentDataPath } = require('../utils');
-const {
-  normalizeUsageEvent,
-} = require('../../../../scripts/lib/telemetry-schema.cjs');
+const { normalizeUsageEvent } = require('../telemetry-schema.cjs');
 
 const DEFAULT_MAX_BYTES = 1024 * 1024;
 const DEFAULT_RETENTION_DAYS = 30;

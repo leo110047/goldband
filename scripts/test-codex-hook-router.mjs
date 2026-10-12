@@ -122,16 +122,14 @@ function testNormalBashAllowedWithNoopJson() {
   assertNoopOutput(output);
 }
 
-function testDevServerWarnsWithoutDeny() {
-  const output = runHook({
-    hook_event_name: 'PreToolUse',
-    tool_name: 'Bash',
-    tool_input: { command: 'npm run dev' },
-  });
-
-  assert.equal(output.hookSpecificOutput.hookEventName, 'PreToolUse');
-  assert.equal(output.hookSpecificOutput.permissionDecision, undefined);
-  assert.match(output.hookSpecificOutput.additionalContext, /allowed/);
+function testDevServerAllowedWithoutInterruption() {
+  assertNoopOutput(
+    runHook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'npm run dev' },
+    }),
+  );
 }
 
 function testPermissionRequestOnlyDeniesHighRisk() {
@@ -183,7 +181,7 @@ function testPatchAdvisorySecretWarnsOnly() {
       command: [
         '*** Begin Patch',
         '*** Add File: fixtures/openai-example.txt',
-        '+sk-proj-abcdefghijklmnopqrstuvwxyz1234567890',
+        '+sk-proj-' + 'a'.repeat(32),
         '*** End Patch',
       ].join('\n'),
     },
@@ -486,7 +484,7 @@ function testStopDoesNotSuggestKnowledgeCapture() {
 testHighRiskBashDenied();
 testGitCleanDryRunAllowed();
 testNormalBashAllowedWithNoopJson();
-testDevServerWarnsWithoutDeny();
+testDevServerAllowedWithoutInterruption();
 testPermissionRequestOnlyDeniesHighRisk();
 testPatchSecretDenied();
 testPatchAdvisorySecretWarnsOnly();

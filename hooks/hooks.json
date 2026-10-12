@@ -80,7 +80,7 @@
             "command": "node \"${HOOKS_DIR}/scripts/hooks/hook-router.js\""
           }
         ],
-        "description": "Unified router (blocking policies: careful-mode/freeze-mode/secrets/dev-server/doc-file)"
+        "description": "Unified router (blocking policies: careful-mode/freeze-mode/secrets/managed-worktree)"
       }
     ],
     "PostToolUse": [

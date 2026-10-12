@@ -1,19 +1,10 @@
-const { detectSecrets, isSecretScanExcluded } = require('./secret-patterns');
+const { classifySecretContent } = require('./secret-patterns');
 const { isModeActive, setModeActive } = require('./mode-state');
 const { matchCarefulModeRisk } = require('./careful-mode-rules');
 const { matchFreezeModeBashViolation } = require('./freeze-mode-rules');
 const { managedWorktreeBashViolation } = require('./managed-worktree-policy');
 
 const PRETOOL_DENY_POLICIES = [
-  {
-    name: 'dev-server-blocker',
-    description: 'blocks foreground development servers outside tmux',
-  },
-  {
-    name: 'doc-file-blocker',
-    description:
-      'blocks ad hoc documentation file creation outside approved paths',
-  },
   {
     name: 'managed-worktree-commit-guard',
     description:
@@ -59,16 +50,6 @@ function isReadOnlyWorkflowSkillInvocation(toolName, toolInput) {
   );
 }
 
-function shouldBlockDevServer(command) {
-  if (!command || process.platform === 'win32') {
-    return false;
-  }
-
-  return /(npm run dev\b|pnpm( run)? dev\b|yarn dev\b|bun run dev\b)/.test(
-    command,
-  );
-}
-
 function resolveSessionId(input) {
   return input.session_id || process.env.CLAUDE_SESSION_ID || 'default';
 }
@@ -88,25 +69,6 @@ function buildModeUsageEvent(options) {
         typeof command === 'string' ? command.slice(0, 160) : null,
     },
   };
-}
-
-function shouldBlockDocFile(filePath) {
-  if (!/\.(md|txt)$/.test(filePath)) return false;
-  if (
-    /(README|CLAUDE|AGENTS|CONTRIBUTING|SKILL|ARCHITECTURE|DESIGN|CHANGELOG|LEARNING_PATH|OPERATIONS|VALIDATION|SECURITY|TODOS)\.md$/.test(
-      filePath,
-    )
-  )
-    return false;
-  if (/\.claude\//.test(filePath)) return false;
-  if (/\.planning\//.test(filePath)) return false;
-  if (/(^|\/)rules\//.test(filePath)) return false;
-  if (/\/scratchpad\//.test(filePath)) return false;
-  if (/\/scratchpads\//.test(filePath)) return false;
-  if (/\/reference\//.test(filePath)) return false;
-  if (/\/commands\//.test(filePath)) return false;
-  if (/\/docs\//.test(filePath)) return false;
-  return true;
 }
 
 function buildModeBlock(options) {
@@ -317,18 +279,6 @@ function evaluateBashPolicy(context) {
     evaluateCarefulBashPolicy(context);
   if (modeDecision) return modeDecision;
 
-  if (shouldBlockDevServer(command)) {
-    return {
-      decision: 'block',
-      blockedBy: 'dev-server-blocker',
-      logs: [
-        '[Hook] BLOCKED: Dev server must run in tmux for log access',
-        '[Hook] Use: tmux new-session -d -s dev "npm run dev"',
-        '[Hook] Then: tmux attach -t dev',
-      ],
-    };
-  }
-
   if (/\bgit\s+push\b/.test(command)) {
     return {
       decision: 'allow',
@@ -383,65 +333,22 @@ function evaluateFreezeFilePolicy(context) {
   });
 }
 
-function evaluateWritePolicy(context) {
-  const { filePath, toolName } = context;
-  if (toolName !== 'Write' || !shouldBlockDocFile(filePath)) {
-    return null;
-  }
-
-  return {
-    decision: 'block',
-    blockedBy: 'doc-file-blocker',
-    logs: [
-      '[Hook] BLOCKED: Unnecessary documentation file creation',
-      `[Hook] File: ${filePath}`,
-    ],
-  };
-}
-
-function buildSecretDecision(filePath, detected) {
-  const highConfidence = detected.filter((item) => item.severity === 'high');
-  const advisoryOnly = detected.filter((item) => item.severity !== 'high');
-
-  if (highConfidence.length > 0) {
-    const detailLines = highConfidence.map((item) => `  - ${item.name}`);
-    return {
-      decision: 'block',
-      blockedBy: 'secret-detector',
-      logs: [
-        '[Hook] BLOCKED: Potential secrets detected in file content',
-        `[Hook] File: ${filePath}`,
-        '[Hook] Detected:',
-        ...detailLines,
-        '[Hook] Use environment variables or a secrets manager instead.',
-      ],
-    };
-  }
-
-  if (advisoryOnly.length > 0) {
-    const detailLines = advisoryOnly.map((item) => `  - ${item.name}`);
-    return {
-      decision: 'allow',
-      blockedBy: null,
-      logs: [
-        '[Hook] WARNING: Potential generic secret patterns detected (advisory)',
-        `[Hook] File: ${filePath}`,
-        '[Hook] Review before commit:',
-        ...detailLines,
-      ],
-    };
-  }
-
-  return null;
-}
-
 function evaluateSecretPolicy(context) {
-  const { filePath, toolInput, toolName } = context;
-  if (toolName !== 'Edit' && toolName !== 'Write') return null;
-  if (isSecretScanExcluded(filePath)) return null;
+  const { toolInput, toolName } = context;
+  let contents;
+  if (toolName === 'Write') contents = [toolInput.content];
+  else if (toolName === 'Edit') contents = [toolInput.new_string];
+  else if (toolName === 'MultiEdit') {
+    contents = (toolInput.edits || []).map((edit) => edit.new_string);
+  } else return null;
 
-  const content = toolInput.new_string || toolInput.content || '';
-  return buildSecretDecision(filePath, detectSecrets(content));
+  const decision = classifySecretContent(contents.filter(Boolean).join('\n'));
+  if (!decision) return null;
+  return {
+    decision: decision.severity === 'high' ? 'block' : 'allow',
+    blockedBy: decision.severity === 'high' ? 'secret-detector' : null,
+    logs: [`[Hook] ${decision.message}`],
+  };
 }
 
 function evaluatePreToolUse(input) {
@@ -463,7 +370,6 @@ function evaluatePreToolUse(input) {
     (toolName === 'Bash' ? evaluateBashPolicy(context) : null) ||
     evaluateReviewReadOnlyFilePolicy(context) ||
     evaluateFreezeFilePolicy(context) ||
-    evaluateWritePolicy(context) ||
     evaluateSecretPolicy(context);
 
   if (decision) return decision;

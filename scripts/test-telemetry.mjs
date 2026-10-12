@@ -416,9 +416,9 @@ function runTelemetryFixtures() {
     claudeRouter,
     {
       hook_event_name: 'PreToolUse',
-      session_id: 'claude-doc-file-blocker-session',
+      session_id: 'claude-secret-detector-session',
       tool_name: 'Write',
-      tool_input: { file_path: 'scratch.md', content: 'temporary notes' },
+      tool_input: { file_path: 'scratch.md', content: 'ghp_' + 'a'.repeat(36) },
     },
     {},
     2,
@@ -490,7 +490,7 @@ function assertHookTelemetryEvents(events) {
   });
   assertHasEvent(events, {
     category: 'hook-decision',
-    name: 'doc-file-blocker',
+    name: 'secret-detector',
     action: 'deny',
   });
 }
@@ -514,9 +514,7 @@ function testReportSummary() {
       (row) => row.host === 'codex' && row.name === 'goldband-investigate',
     ),
   );
-  assert.ok(
-    summary.hooks.denies.some((row) => row.name === 'doc-file-blocker'),
-  );
+  assert.ok(summary.hooks.denies.some((row) => row.name === 'secret-detector'));
 }
 
 withEnv(
