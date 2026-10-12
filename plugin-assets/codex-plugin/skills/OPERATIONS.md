@@ -12,7 +12,7 @@
 
 ### 架構 / 方向 / 設計決策
 
-- 用 `planning-workflow`，需要完整規劃時走 `/plan`
+- 用 `planning-workflow`，需要完整規劃時走 `/goldband-plan`
 - recommendation 應附：assumptions、failure modes、warning signals、best alternative、unknowns
 
 ### 安全 / 效能 / 測試策略

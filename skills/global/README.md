@@ -35,7 +35,7 @@ goldband 的 `skills/global/` 是可攜式 skill 集合，提供 Claude Code 與
 | `implementation-contracts` | 實作 contract 變更時明確失敗、不猜資料、不做未授權副作用或假泛化 |
 | `systematic-debugging` | bug / test failure 的 shared policy；完整調查 defer Goldband investigate workflow |
 | `file-search` | 用 `rg` 建圖與查定位 |
-| `planning-workflow` | 多步實作前的 shared planning policy；完整規劃 defer `/plan` |
+| `planning-workflow` | 多步實作前的 shared planning policy；完整規劃 defer `/goldband-plan` |
 
 ### 常用工程決策
 

@@ -97,7 +97,7 @@ do not route a draft through a second public action.
 
 ## CRITICAL Rules
 
-- Within this `/plan` command flow, do not write code until the user explicitly
+- Within this `/goldband-plan` command flow, do not write code until the user explicitly
   confirms with "yes" or "proceed"
 - Always verify assumptions with actual code (Read, Grep, Glob) before planning
 - For architecture or direction-setting work, choose the smallest sufficient solution that fully covers the current requirement, root-cause class, ownership, and required safety boundaries; this is not permission for a symptom patch, fallback, special case, or duplicated authority

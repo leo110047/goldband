@@ -2747,3 +2747,12 @@ repository, so enabling a non-`off` tier could send usage data to a third
 party. Keeping an unowned upload path is riskier than removing it. Manual OTLP
 export to a user-chosen endpoint is unchanged. GitHub version checks in
 `goldband-update-check` remain governed by `update_check`.
+
+## 2026-10-12: Goldband Commands Do Not Shadow Host Commands
+
+Claude Code resolves a user command over a built-in or bundled command with the
+same name. `commands/plan.md` is renamed to `commands/goldband-plan.md`, and
+`commands/verify.md` is removed in favor of the host's `/verify`; its guidance
+already lives in `rules/claim-verification.md` and the global instructions.
+New Goldband commands use the `goldband-` prefix unless no host command can
+share the name.

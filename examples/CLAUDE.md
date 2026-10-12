@@ -42,12 +42,12 @@ src/
 
 ## Available Commands
 
-- `/plan` - 開始新功能前的規劃
-- `/verify` - 提交前的完整檢查
+- `/goldband-plan` - 開始新功能前的規劃
+- `/verify` - Claude Code 內建的變更驗證，提交前執行
 - `/goldband` - 列出並執行 Goldband workflows，例如 `/goldband review code`
 
 ## Git Workflow
 
 - Commit 格式：`feat|fix|refactor|docs|test|chore: 描述`
 - 不要直接 push 到 main
-- PR 前必須跑 `/verify pre-pr`
+- PR 前必須跑 `/verify`

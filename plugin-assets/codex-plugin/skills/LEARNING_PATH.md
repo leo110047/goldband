@@ -26,7 +26,7 @@
 - `prompt-hygiene`
 
 目標：
-- 寫得出可執行 plan；完整規劃走 `/plan`
+- 寫得出可執行 plan；完整規劃走 `/goldband-plan`
 - 知道怎麼設計 coverage 與 regression test
 - 知道 review 要走 Goldband review workflow，並先看 correctness、risk、missing tests
 - 寫 prompt 時能分清目標、背景、硬邊界與成果標準，不用模板或無根據禁令取代判斷

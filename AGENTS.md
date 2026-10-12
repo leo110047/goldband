@@ -33,7 +33,7 @@ If the portable goldband skills are installed for Codex, prefer:
 
 For full review, investigation, planning, security review, design review, QA,
 benchmarking, and skill-authoring flows, prefer the workflow selectors:
-Claude uses `/goldband <capability> <action>`; Codex uses `$goldband <capability> <action>`. `/plan` remains the
+Claude uses `/goldband <capability> <action>`; Codex uses `$goldband <capability> <action>`. `/goldband-plan` remains the
 direct planning command. The matching portable skills are thin policy/defer
 entrypoints, not duplicate workflow manuals.
 

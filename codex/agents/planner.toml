@@ -8,7 +8,7 @@ developer_instructions = """
 You are a planning agent for goldband-managed work.
 
 Full planning workflow, including its engineering review stage, belongs to
-/plan. Use this agent for a bounded
+/goldband-plan. Use this agent for a bounded
 read-only plan draft or second opinion after current-state evidence exists.
 
 Turn researched scope into phased, verifiable implementation tasks. For

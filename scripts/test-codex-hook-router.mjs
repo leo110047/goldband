@@ -340,7 +340,7 @@ function testMutatingMcpWarnsOnly() {
 function testDirectWorkflowInvocationSuppressesHints() {
   for (const prompt of [
     '$goldband plan create 重構認證邏輯',
-    '/plan 重構認證邏輯',
+    '/goldband-plan 重構認證邏輯',
   ]) {
     assertNoopOutput(
       runHook({

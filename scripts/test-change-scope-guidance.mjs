@@ -113,9 +113,9 @@ for (const relativePath of ['codex/AGENTS.md', 'claude/CLAUDE.md']) {
 
 for (const relativePath of [
   'rules/change-scope.md',
-  'commands/plan.md',
+  'commands/goldband-plan.md',
   'plugin-assets/claude-code-plugin/rules/change-scope.md',
-  'plugin-assets/claude-code-plugin/commands/plan.md',
+  'plugin-assets/claude-code-plugin/commands/goldband-plan.md',
   'goldband-loop/generated/workflow-contracts/plan/create.workflow.md',
   'goldband-loop/generated/workflow-contracts/plan/sync.workflow.md',
 ]) {
