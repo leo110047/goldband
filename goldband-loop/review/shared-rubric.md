@@ -73,7 +73,7 @@ Set `kind`. `defect` meets the standard above. `improvement` is an adoptable
 design change with no reachable failure: split ownership, leaked complexity,
 wrong layer, needless abstraction, or coupling blocking behavior tests. Cite
 code in `evidence`; give the smallest change and benefit in `recommendation`;
-use `medium`, `low`, or `info`; never blocking. Without session evidence, do not blame the author's process.
+use `medium`, `low`, or `info`; must be fixed. Without session evidence, do not blame the author's process.
 
 In `/review`, `blocking` means "must fix before landing", not session signing or
 blocking. `cross-review` applies its own verdict rules.

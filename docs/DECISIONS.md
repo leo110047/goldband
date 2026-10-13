@@ -2843,7 +2843,10 @@ evidence, failure-scenario, and verification requirements and remain the only
 input to the review signal. Improvements record adoptable design changes
 without a reachable failure; they need evidence and a recommendation, cannot be
 `high` or `critical`, are never blocking, and are capped at three after
-deduplication with the omitted count reported. An invalid improvement is
+deduplication with the omitted count reported. _Superseded 2026-10-13: valid
+improvements now block and are never truncated; see
+[2026-10-13: Review Improvements Block Like Defects](#2026-10-13-review-improvements-block-like-defects)._
+An invalid improvement is
 discarded with a reported reason instead of failing the review or being
 reclassified. One `review-engine.ts` operation owns validity, deduplication,
 ordering, and truncation.
@@ -2878,3 +2881,22 @@ are neither checked nor counted, and `hooks/fixtures/` is excluded.
 The check is deliberately lenient: a common name mentioned elsewhere counts as
 used, and an export that tests import without exercising still passes. It
 guards against orphaned exports, not against dead code that review must judge.
+
+## 2026-10-13: Review Improvements Block Like Defects
+
+Decision: a valid `improvement` finding is design debt and blocks like a
+defect. The runtime forces its `blocking` to `true`, reports every valid
+improvement after deduplication instead of capping the report at three, and
+counts it in the review signal (`findingCount`, `severityCounts`,
+`blockerKey`), so a review is clean only when neither defects nor improvements
+remain. `omittedImprovementCount` is removed from the finding set.
+
+Unchanged: improvements still need evidence and a recommendation, stay
+`medium`, `low`, or `info`, and an invalid one is discarded with its reason
+rather than reclassified. The rubric Suppressions still exclude pure style,
+consistency-only changes, and unsupported advice, which keeps the blocking set
+to changes worth making now.
+
+Rejected: keeping improvements advisory with a three-item cap. A non-blocking
+improvement is easy to leave behind, and truncated ones were not recorded
+anywhere, so the cap silently dropped debt the reviewer had already found.

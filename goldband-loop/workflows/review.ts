@@ -8,7 +8,7 @@ import { materializeReviewUntrackedFile } from '../lib/verification-receipt';
 import { stateRoot } from './evidence';
 import { adapterFor, HostRunError, type HostExecutionPolicy, type HostUsage } from './host-adapter';
 import { workflowAssetPath } from './paths';
-import { MAX_REVIEW_IMPROVEMENTS, organizeReviewFindings, unwrapFindings } from './review-engine';
+import { organizeReviewFindings, unwrapFindings } from './review-engine';
 import { collectReviewImpactContext, formatReviewImpactContext, impactTelemetry,
   type ReviewDiffInput, type ReviewImpactContext, reviewDiffSchema, reviewInputSchema } from './review-impact';
 import { buildReviewPromptTelemetry, coreReviewRules, type RulesBundle } from './review-rules';
@@ -32,7 +32,6 @@ type ReviewResult = {
   diffDigest: string;
   findings: ReviewFinding[];
   diagnostics: ReviewFindingSet['diagnostics'];
-  omittedImprovementCount: number;
   checksExecuted: string[];
   createdAt: string;
 };
@@ -136,7 +135,7 @@ async function runReview(ctx: WorkflowContext): Promise<ReviewFinding[]> {
   results.set(ctx.runId, {
     schemaVersion: 1, runId: ctx.runId, mode: 'semantic', repository,
     source: input.source, changedFiles: input.changedFiles, diffDigest,
-    findings, diagnostics: [], omittedImprovementCount: 0, checksExecuted: [], createdAt: new Date().toISOString(),
+    findings, diagnostics: [], checksExecuted: [], createdAt: new Date().toISOString(),
   });
   return findings;
 }
@@ -172,11 +171,11 @@ function renderReport(ctx: WorkflowContext): string {
 function renderFindingSections(result: ReviewResult): string[] {
   const defects = result.findings.filter((finding) => finding.kind === 'defect');
   const improvements = result.findings.filter((finding) => finding.kind === 'improvement');
-  const empty = !defects.length && !improvements.length && !result.omittedImprovementCount;
+  const empty = !defects.length && !improvements.length;
   return [
     ...(empty ? [result.changedFiles.length ? 'No findings.' : 'No changes to review.'] : []),
     ...defects.flatMap(renderDefect),
-    ...renderImprovements(improvements, result.omittedImprovementCount),
+    ...renderImprovements(improvements),
     ...renderDiagnostics(result.diagnostics),
   ];
 }
@@ -196,17 +195,16 @@ function renderVerification(finding: ReviewFinding): string[] {
   return verification ? [`  Suggested verification (not executed): ${verification}`] : [];
 }
 
-function renderImprovements(improvements: ReviewFinding[], omitted: number): string[] {
-  if (!improvements.length && !omitted) return [];
+function renderImprovements(improvements: ReviewFinding[]): string[] {
+  if (!improvements.length) return [];
   return [
-    '', '## Design improvements (non-blocking)', '',
+    '', '## Design improvements (blocking until fixed)', '',
     ...improvements.flatMap((finding) => [
       `- [${finding.severity}] ${finding.summary} — ${findingLocation(finding)}`,
       `  Code observation: ${finding.evidence}`,
       `  Recommendation: ${finding.recommendation}`,
       ...renderVerification(finding),
     ]),
-    ...(omitted ? [`${omitted} more valid improvement(s) not shown (limit ${MAX_REVIEW_IMPROVEMENTS}).`] : []),
   ];
 }
 
@@ -568,14 +566,14 @@ function normalizedChangedFiles(files: string[]): string[] {
 }
 
 function reviewFindingsSignal(findings: ReviewFinding[]): EvaluationSignalSnapshot {
-  const blockingFindings = findings.filter((finding) => finding.kind === 'defect');
+  // Defects and validated improvements both block; neither is optional debt.
   const severityCounts = emptySeverityCounts();
-  for (const finding of blockingFindings) severityCounts[finding.severity] += 1;
+  for (const finding of findings) severityCounts[finding.severity] += 1;
   return {
     kind: 'review-findings',
-    findingCount: blockingFindings.length,
+    findingCount: findings.length,
     severityCounts,
-    blockerKey: blockingFindings.length > 0 ? blockingFindings.map(findingKey).sort().join('|') : undefined,
+    blockerKey: findings.length > 0 ? findings.map(findingKey).sort().join('|') : undefined,
   };
 }
 

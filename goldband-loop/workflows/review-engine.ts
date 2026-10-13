@@ -12,7 +12,6 @@ const REVIEW_SEVERITIES: ReviewFinding["severity"][] = [
   "info",
 ];
 const FINDING_KINDS: ReviewFinding["kind"][] = ["defect", "improvement"];
-export const MAX_REVIEW_IMPROVEMENTS = 3;
 
 export function organizeReviewFindings(
   findings: ReviewFinding[],
@@ -30,17 +29,12 @@ export function organizeReviewFindings(
     byKey.set(key, existing ? mergeFindings(existing, valid) : valid);
   }
   const sorted = [...byKey.values()].sort(compareFindings);
-  const defects = sorted.filter((finding) => finding.kind === "defect");
-  const improvements = sorted.filter(
-    (finding) => finding.kind === "improvement",
-  );
   return {
-    findings: [...defects, ...improvements.slice(0, MAX_REVIEW_IMPROVEMENTS)],
+    findings: [
+      ...sorted.filter((finding) => finding.kind === "defect"),
+      ...sorted.filter((finding) => finding.kind === "improvement"),
+    ],
     diagnostics,
-    omittedImprovementCount: Math.max(
-      0,
-      improvements.length - MAX_REVIEW_IMPROVEMENTS,
-    ),
   };
 }
 
@@ -80,7 +74,8 @@ function validImprovement(
       ? []
       : ["improvement recommendation is missing"]),
   ];
-  if (reasons.length === 0) return { ...finding, blocking: false };
+  // A valid improvement is unpaid design debt: it blocks until fixed.
+  if (reasons.length === 0) return { ...finding, blocking: true };
   diagnostics.push({
     file: finding.file,
     ...(finding.line ? { line: finding.line } : {}),

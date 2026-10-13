@@ -30,10 +30,9 @@ Validity rules:
   an undetected contract violation is not an observed product failure.
 - An `improvement` requires non-empty `evidence` and `recommendation` (no
   `failureScenario` needed) and severity `medium`, `low`, or `info`. The runtime forces
-  `blocking` to `false`, keeps at most three after deduplication, reports how
-  many valid improvements were omitted, and lists invalid improvements with the
-  reason they were discarded. It never reclassifies kind or severity.
-- Only defects count toward the review signal.
+  `blocking` to `true`, keeps every valid one after deduplication, and lists
+  invalid improvements with the discard reason. It never reclassifies kind or severity.
+- Defects and valid improvements both count toward the review signal.
 - `recommendation`, `suggestedVerification`, and policy fields are metadata for
   defects. They cannot substitute for the validity requirements above.
 - Human-readable reports must preserve `evidence` and

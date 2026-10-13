@@ -193,10 +193,10 @@ Untracked diff materialization is a trust boundary. The runtime skips binary,
 oversized, non-UTF-8, or secret-like content and records a no-content marker.
 Findings carry `kind: "defect" | "improvement"`. Defects without a line,
 evidence, failure scenario, and verification are dropped. Improvements need
-evidence and a recommendation, cannot be `high` or `critical`, are never
-blocking, and are capped at three after deduplication; the report states how
-many valid improvements were not shown and lists discarded improvements with
-their reason. Only defects feed the review signal.
+evidence and a recommendation, cannot be `high` or `critical`, and are always
+blocking; every valid improvement is reported after deduplication, and
+discarded improvements are listed with their reason. Defects and improvements
+both feed the review signal.
 
 Review prompts keep the complete scoped diff, capped at 256 KiB so oversized
 changes fail explicitly instead of consuming unbounded quota. Runtime-selected

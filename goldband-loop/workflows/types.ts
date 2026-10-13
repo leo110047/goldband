@@ -157,7 +157,6 @@ export type ReviewFindingDiagnostic = {
 export type ReviewFindingSet = {
   findings: ReviewFinding[];
   diagnostics: ReviewFindingDiagnostic[];
-  omittedImprovementCount: number;
 };
 
 export type QaCheck = {

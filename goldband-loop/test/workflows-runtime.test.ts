@@ -1096,7 +1096,7 @@ describe('workflow runtime', () => {
       severity: 'high',
       summary: 'First wording for the defect.',
       evidence: '`+ riskyChange();` is still present.',
-    }], diagnostics: [], omittedImprovementCount: 0 }, workflowContext(workflow), 'verify-findings');
+    }], diagnostics: [] }, workflowContext(workflow), 'verify-findings');
     const currentSignal = reviewSignalFromOutput({ findings: [{
       kind: 'defect',
       file: 'src/example.ts',
@@ -1104,7 +1104,7 @@ describe('workflow runtime', () => {
       severity: 'high',
       summary: 'Different wording for the same defect.',
       evidence: '  `+ riskyChange();`   is still present. ',
-    }], diagnostics: [], omittedImprovementCount: 0 }, workflowContext(workflow), 'verify-findings');
+    }], diagnostics: [] }, workflowContext(workflow), 'verify-findings');
 
     expect(previousSignal?.blockerKey).not.toContain('First wording');
     expect(previousSignal?.blockerKey).toBe(currentSignal?.blockerKey);
@@ -1938,7 +1938,7 @@ describe('workflow runtime', () => {
   test('review drops unsupported speculation without depending on execution evidence', () => {
     const verify = reviewSteps.find(step => step.name === 'verify-findings')!;
     expect(verify.run({ ...workflowContext(), input: [{ kind: 'defect', file: 'src/example.ts', severity: 'high', summary: 'Possibly serious issue.' }] }))
-      .toEqual({ findings: [], diagnostics: [], omittedImprovementCount: 0 });
+      .toEqual({ findings: [], diagnostics: [] });
   });
 
   test('core review prompt contains judgment inputs without runtime-owned control prose', () => {
@@ -2117,14 +2117,13 @@ describe('workflow runtime', () => {
     expect(result.findings[0].policySource).toBe('rules/claim-verification.md');
     expect(result.findings[0].blocking).toBe(true);
     expect(result.diagnostics).toEqual([]);
-    expect(result.omittedImprovementCount).toBe(0);
   });
 
   test('finding operation returns an empty set for no findings', () => {
-    expect(organizeReviewFindings([])).toEqual({ findings: [], diagnostics: [], omittedImprovementCount: 0 });
+    expect(organizeReviewFindings([])).toEqual({ findings: [], diagnostics: [] });
   });
 
-  test('finding operation keeps improvements non-blocking, separate from defects, and capped at three', () => {
+  test('finding operation reports every improvement after defects and makes it blocking', () => {
     const defect = {
       kind: 'defect' as const, file: 'a.ts', line: 1, severity: 'low' as const, summary: 'Shared summary.',
       evidence: 'a.ts reads stale state', failureScenario: 'A stale read returns old data.',
@@ -2149,10 +2148,11 @@ describe('workflow runtime', () => {
       'improvement:medium:b.ts',
       'improvement:medium:d.ts',
       'improvement:low:a.ts',
+      'improvement:low:c.ts',
+      'improvement:info:e.ts',
     ]);
     expect(result.findings.filter((finding) => finding.kind === 'improvement')
-      .every((finding) => finding.blocking === false)).toBe(true);
-    expect(result.omittedImprovementCount).toBe(2);
+      .every((finding) => finding.blocking === true)).toBe(true);
     expect(result.diagnostics).toEqual([]);
   });
 
@@ -2172,7 +2172,6 @@ describe('workflow runtime', () => {
       { file: 'b.ts', severity: 'low', summary: 'Unsupported improvement.',
         reason: 'improvement evidence is missing; improvement recommendation is missing' },
     ]);
-    expect(result.omittedImprovementCount).toBe(0);
   });
 
   test('Codex JSON adapter args enforce read-only sandbox and output schema', () => {

@@ -44,14 +44,9 @@ export const reviewFindingSetSchema: SchemaValidator<ReviewFindingSet> = {
     }
     const item = value as Record<string, unknown>;
     if (!Array.isArray(item.diagnostics)) throw new Error('expected finding diagnostics array');
-    const omitted = item.omittedImprovementCount;
-    if (typeof omitted !== 'number' || !Number.isInteger(omitted) || omitted < 0) {
-      throw new Error('omittedImprovementCount must be a non-negative integer');
-    }
     return {
       findings: findingsSchema.validate(item.findings),
       diagnostics: item.diagnostics.map(validateFindingDiagnostic),
-      omittedImprovementCount: omitted,
     };
   },
 };

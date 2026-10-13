@@ -114,7 +114,7 @@ const improvement = { kind: 'improvement', file: 'subject.ts', line: 1, severity
   recommendation: 'pass the collected paths to the consumer',
   suggestedVerification: 'route a Git-quoted path through review' };
 
-test('mixed findings keep valid defects and improvements, report discarded improvements, and keep the defect signal', async () => {
+test('mixed findings keep valid defects and blocking improvements and report discarded improvements', async () => {
   const options = fixture();
   host([finding, improvement,
     { ...improvement, summary: 'missing support', evidence: null, recommendation: null },
@@ -123,12 +123,12 @@ test('mixed findings keep valid defects and improvements, report discarded impro
   const result = await runWorkflow(workflow(), options);
   const value = artifact(result);
   expect(value.findings.map((x: any) => `${x.kind}:${x.summary}:${x.blocking}`))
-    .toEqual(['defect:unsafe path:false', 'improvement:scope parsing is duplicated:false']);
+    .toEqual(['defect:unsafe path:false', 'improvement:scope parsing is duplicated:true']);
   expect(value.diagnostics.map((x: any) => x.summary)).toEqual(['missing support', 'inflated high', 'inflated critical']);
-  expect(result.signalSnapshot).toMatchObject({ kind: 'review-findings', findingCount: 1,
-    severityCounts: { critical: 0, high: 1, medium: 0, low: 0, info: 0 } });
+  expect(result.signalSnapshot).toMatchObject({ kind: 'review-findings', findingCount: 2,
+    severityCounts: { critical: 0, high: 1, medium: 0, low: 1, info: 0 } });
   const report = String(result.output);
-  expect(report.indexOf('unsafe path')).toBeLessThan(report.indexOf('## Design improvements'));
+  expect(report.indexOf('unsafe path')).toBeLessThan(report.indexOf('## Design improvements (blocking until fixed)'));
   expect(report).toContain([
     '  Recommendation: pass the collected paths to the consumer',
     '  Suggested verification (not executed): route a Git-quoted path through review',
@@ -138,7 +138,7 @@ test('mixed findings keep valid defects and improvements, report discarded impro
   expect(report).toContain('[critical] inflated critical — subject.ts:1: improvement severity cannot be critical');
 });
 
-test('improvements beyond the limit are counted once and never truncate defects', async () => {
+test('every valid improvement is reported once and blocks alongside defects', async () => {
   const options = fixture();
   const defects = [1, 2, 3, 4].map(line => ({ ...finding, line, summary: `defect ${line}` }));
   const improvements = [1, 2, 3, 4, 5].map(line => ({ ...improvement, line, summary: `improvement ${line}` }));
@@ -146,10 +146,11 @@ test('improvements beyond the limit are counted once and never truncate defects'
   const result = await runWorkflow(workflow(), options);
   const value = artifact(result);
   expect(value.findings.filter((x: any) => x.kind === 'defect')).toHaveLength(4);
-  expect(value.findings.filter((x: any) => x.kind === 'improvement').map((x: any) => x.line)).toEqual([1, 2, 3]);
-  expect(value.omittedImprovementCount).toBe(2);
-  expect(result.signalSnapshot).toMatchObject({ findingCount: 4 });
-  expect(String(result.output)).toContain('2 more valid improvement(s) not shown (limit 3).');
+  expect(value.findings.filter((x: any) => x.kind === 'improvement').map((x: any) => x.line)).toEqual([1, 2, 3, 4, 5]);
+  expect(value).not.toHaveProperty('omittedImprovementCount');
+  expect(result.signalSnapshot).toMatchObject({ findingCount: 9 });
+  expect(String(result.output)).toContain('improvement 5');
+  expect(String(result.output)).not.toContain('not shown');
 });
 
 test.each([
