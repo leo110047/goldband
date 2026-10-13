@@ -162,11 +162,10 @@
         "escalation"
       ],
       "reviewCriteria": [
-        "Proceed on reversible, in-scope, verifiable work; ask before outward-facing actions, scope expansion, or when two plausible interpretations would change the target, behavior, or external effect and current evidence cannot resolve intent.",
-        "Count only a completed corrective action based on a stated root-cause hypothesis and followed by relevant verification as a fix attempt; inspection and reruns without a corrective action do not count, nor do tool, sandbox, or permission failures that prevent the action from completing or verification from running.",
-        "After two attempts under one hypothesis leave the same verification blocked by the same failure class, return to diagnosis; cosmetic output changes do not reset the count, but a different failure class or new evidence-backed hypothesis does.",
-        "Ask only when continuing requires user authority, a scope decision, or external state change; never weaken a test, assertion, type, or lint rule to pass.",
-        "A successful-looking fix without a causal explanation is not verified."
+        "Proceed on reversible, in-scope, verifiable work; ask before irreversible or outward-facing actions, scope expansion, or two plausible interpretations that change the target, behavior, or external effect and evidence cannot resolve.",
+        "A fix attempt is a completed corrective action under a stated root-cause hypothesis, then relevant verification; inspection, reruns, and tool, sandbox, or permission failures that stop the action or its verification from running do not count.",
+        "After two attempts under one hypothesis leave verification blocked by the same failure class, return to diagnosis; only a different failure class or new evidence-backed hypothesis resets the count.",
+        "Never weaken a test, assertion, type, or lint rule to pass; a fix without a causal explanation is not verified."
       ]
     },
     {

@@ -13,6 +13,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { defineWorkflow } from '../workflows/definition';
@@ -1973,6 +1974,48 @@ describe('workflow runtime', () => {
     expect(Buffer.byteLength(judgmentOnly)).toBeLessThanOrEqual(8 * 1024);
     expect(Buffer.byteLength(core) - Buffer.byteLength(diff))
       .toBeLessThanOrEqual(MAX_REVIEW_PROMPT_OVERHEAD_BYTES);
+  });
+
+  // Every review-phase Rule is resolved explicitly, so an oversized Rule fails
+  // here even when no test diff would select it at runtime.
+  test('every review rule fits its criteria budget, independent of install path', () => {
+    const resolver = createRequire(import.meta.url)('../../hooks/scripts/lib/rules-resolver.js');
+    const snapshot = resolver.createRulesSnapshot({ repoRoot: PROJECT_ROOT });
+    const reviewRuleIds = snapshot.manifest.rules
+      .filter((rule: { phases: string[] }) => rule.phases.includes('review'))
+      .map((rule: { id: string }) => rule.id);
+    const allRules = (target: typeof snapshot) =>
+      assertRulesPayloadBudget(
+        resolver.resolveRules({ repoRoot: PROJECT_ROOT, snapshot: target, ruleIds: reviewRuleIds }),
+        'all-review-rules',
+        target,
+      );
+    expect(() => allRules(snapshot)).not.toThrow();
+
+    const longPath = `/${'deep/'.repeat(200)}escalation.md`;
+    const relocated = {
+      ...snapshot,
+      rulesById: {
+        ...snapshot.rulesById,
+        escalation: { ...snapshot.rulesById.escalation, sourceFile: longPath },
+      },
+    };
+    const relocatedText = allRules(relocated);
+    expect(relocatedText).toContain(`Read the full policy at ${longPath} only when`);
+    expect(relocatedText).not.toContain('Read the full policy at rules/escalation.md');
+
+    const oversized = {
+      ...snapshot,
+      manifest: {
+        ...snapshot.manifest,
+        rules: snapshot.manifest.rules.map((rule: { id: string }) =>
+          rule.id === 'session-handoff'
+            ? { ...rule, reviewCriteria: ['x'.repeat(2048)] }
+            : rule),
+      },
+    };
+    expect(() => allRules(oversized))
+      .toThrow('review Criteria exceeds budget for Rule session-handoff');
   });
 
   test('real review child prompt does not carry launcher or router instructions', () => {
