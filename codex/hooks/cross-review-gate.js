@@ -1,18 +1,32 @@
 const os = require('os');
 const path = require('path');
+const { promptRequestsCrossReview } = require('./cross-review-request.cjs');
 const { requireFirst } = require('./module-loader');
 
 let core = null;
 let coreLoadAttempted = false;
 
+// Shared by Claude and Codex hooks (generated into codex/hooks). Arming a
+// requested cross-review fails explicitly when no runtime core is installed.
 function coreCandidates() {
   const home = os.homedir();
   return [
     process.env.GOLDBAND_ROOT
       ? path.join(process.env.GOLDBAND_ROOT, 'cross-review', 'core.cjs')
       : null,
+    // Repository checkouts: codex/hooks and hooks/scripts/lib/hook-router.
     path.resolve(
       __dirname,
+      '..',
+      '..',
+      'goldband-loop',
+      'cross-review',
+      'core.cjs',
+    ),
+    path.resolve(
+      __dirname,
+      '..',
+      '..',
       '..',
       '..',
       'goldband-loop',
@@ -44,12 +58,6 @@ function loadCore() {
   return core;
 }
 
-function isCrossReviewRequest(input) {
-  return /^\/(?:goldband-)?cross-review(?:\s|$)/i.test(
-    String(input?.prompt || '').trim(),
-  );
-}
-
 function evaluateCrossReviewGate(input, options) {
   const loadedCore = loadCore();
   if (!loadedCore) {
@@ -65,7 +73,7 @@ function evaluateCrossReviewGate(input, options) {
 function armFromPrompt(input, options) {
   const loadedCore = loadCore();
   if (loadedCore) return loadedCore.armFromPrompt(input, options);
-  if (isCrossReviewRequest(input)) {
+  if (promptRequestsCrossReview(input?.prompt)) {
     throw new Error(
       'Goldband cross-review runtime is not installed; rerun the Goldband workflow installer.',
     );

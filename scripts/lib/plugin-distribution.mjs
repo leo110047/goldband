@@ -56,6 +56,8 @@ const MANAGED_COMMANDS = [
   'docs/reports/plugin-expected-assets.json',
   'plugin-assets/claude-code-plugin/**',
   'codex/hooks/cross-review-gate.js',
+  'codex/hooks/cross-review-request.cjs',
+  'hooks/scripts/lib/hook-router/cross-review-request.cjs',
   'codex/hooks/module-loader.js',
   'codex/hooks/telemetry-schema.cjs',
   'codex/hooks/review-launch-advisory.js',
@@ -65,6 +67,10 @@ const MANAGED_COMMANDS = [
   'codex/hooks/shell-policy.js',
   'codex/hooks/shell-output.js',
   'codex/hooks/shell-invocation.js',
+  'codex/hooks/retained-jsonl.js',
+  'codex/hooks/utils.js',
+  'codex/hooks/workflow-telemetry.js',
+  'goldband-loop/lib/secret-patterns.cjs',
 ];
 
 export function buildPluginArtifacts() {
@@ -114,46 +120,53 @@ export function buildPluginArtifacts() {
   return artifacts;
 }
 
-function addSharedAdapterArtifacts(artifacts) {
-  for (const file of [
+const HOOK_ROUTER_DIR = 'hooks/scripts/lib/hook-router';
+const HOOK_LIB_DIR = 'hooks/scripts/lib';
+
+// Single-source files copied verbatim into other runtime layouts:
+// [source, destination relative to ROOT_DIR or the Claude plugin root].
+const SHARED_ADAPTER_COPIES = [
+  ...[
     'shell-commands.js',
     'shell-output.js',
     'shell-invocation.js',
     'shell-policy.js',
     'secret-patterns.js',
-  ]) {
-    addFileArtifact(
-      artifacts,
-      `hooks/scripts/lib/hook-router/${file}`,
-      path.join(ROOT_DIR, 'codex', 'hooks', file),
-    );
+    'retained-jsonl.js',
+    'workflow-telemetry.js',
+    'cross-review-gate.js',
+    'module-loader.js',
+    'review-launch-advisory.js',
+  ].map((file) => [`${HOOK_ROUTER_DIR}/${file}`, `codex/hooks/${file}`]),
+  ['hooks/scripts/lib/utils.js', 'codex/hooks/utils.js'],
+  ['scripts/lib/telemetry-schema.cjs', 'codex/hooks/telemetry-schema.cjs'],
+  ['scripts/lib/telemetry-schema.cjs', `${HOOK_LIB_DIR}/telemetry-schema.cjs`],
+  [
+    'scripts/lib/telemetry-schema.cjs',
+    { plugin: `${HOOK_LIB_DIR}/telemetry-schema.cjs` },
+  ],
+  [
+    `${HOOK_ROUTER_DIR}/secret-patterns.js`,
+    'goldband-loop/lib/secret-patterns.cjs',
+  ],
+  ...[
+    `${HOOK_ROUTER_DIR}/cross-review-request.cjs`,
+    'codex/hooks/cross-review-request.cjs',
+    { plugin: `${HOOK_ROUTER_DIR}/cross-review-request.cjs` },
+  ].map((destination) => [
+    'goldband-loop/cross-review/cross-review-request.cjs',
+    destination,
+  ]),
+];
+
+function addSharedAdapterArtifacts(artifacts) {
+  for (const [source, destination] of SHARED_ADAPTER_COPIES) {
+    const target =
+      typeof destination === 'string'
+        ? path.join(ROOT_DIR, destination)
+        : path.join(PLUGIN_ROOT_PATH, destination.plugin);
+    addFileArtifact(artifacts, source, target);
   }
-  addFileArtifact(
-    artifacts,
-    'scripts/lib/telemetry-schema.cjs',
-    path.join(
-      PLUGIN_ROOT_PATH,
-      'hooks',
-      'scripts',
-      'lib',
-      'telemetry-schema.cjs',
-    ),
-  );
-  addFileArtifact(
-    artifacts,
-    'scripts/lib/telemetry-schema.cjs',
-    path.join(ROOT_DIR, 'hooks', 'scripts', 'lib', 'telemetry-schema.cjs'),
-  );
-  addFileArtifact(
-    artifacts,
-    'hooks/scripts/lib/hook-router/review-launch-advisory.js',
-    path.join(ROOT_DIR, 'codex', 'hooks', 'review-launch-advisory.js'),
-  );
-  addFileArtifact(
-    artifacts,
-    'scripts/lib/telemetry-schema.cjs',
-    path.join(ROOT_DIR, 'codex', 'hooks', 'telemetry-schema.cjs'),
-  );
 }
 
 function buildManifest() {
@@ -226,6 +239,9 @@ function buildExpectedCodexAssets() {
       'codex/hooks/shell-policy.js',
       'codex/hooks/shell-output.js',
       'codex/hooks/shell-invocation.js',
+      'codex/hooks/retained-jsonl.js',
+      'codex/hooks/utils.js',
+      'codex/hooks/workflow-telemetry.js',
     ],
     reason:
       'Codex plugins exist but package Codex skills/apps/MCP, not Claude Code settings. Root Codex install remains install.sh.',

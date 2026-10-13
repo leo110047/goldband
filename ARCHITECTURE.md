@@ -527,7 +527,11 @@ Claude/Codex hooks -> JSONL usage events -> optional OTLP exporter -> collector/
 ```
 
 `hooks/scripts/lib/hook-router/usage-telemetry.js` and
-`codex/hooks/telemetry.js` append JSONL events without network I/O. The shared
+`codex/hooks/telemetry.js` append JSONL events without network I/O. Both use
+the workflow-entry builder, JSONL retention, and data-root resolver from
+`hooks/scripts/lib/`, which `scripts/sync-plugin-assets.mjs` generates into
+`codex/hooks/`; each host keeps only its session identity and hook outcome
+mapping. The shared
 normalizer in `scripts/lib/telemetry-schema.cjs` adds `schema_version`,
 `run_id`, and `event_id` while preserving legacy `sessionId` for existing
 reports. `schemas/telemetry.v1.schema.json` documents the v1 JSON shape.

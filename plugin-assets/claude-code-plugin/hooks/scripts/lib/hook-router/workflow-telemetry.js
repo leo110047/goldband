@@ -1,4 +1,6 @@
-const { resolveRunId } = require('../telemetry-schema.cjs');
+// Workflow-entry telemetry shared by Claude and Codex hooks. Callers supply
+// the host identity (host, source, runId, sessionId); this module only reads
+// the hook input.
 
 function safeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -10,22 +12,6 @@ function normalizeEntryName(value) {
     return null;
   }
   return raw.toLowerCase();
-}
-
-function resolveSessionId(input) {
-  return (
-    input.session_id ||
-    input.sessionId ||
-    process.env.CLAUDE_SESSION_ID ||
-    process.env.CODEX_SESSION_ID ||
-    null
-  );
-}
-
-function baseTelemetryFields(input) {
-  return {
-    run_id: resolveRunId(input),
-  };
 }
 
 function firstWorkflowCommand(text) {
@@ -101,16 +87,16 @@ function candidateSkillNames(toolInput) {
   return candidates.map(normalizeEntryName).filter(Boolean);
 }
 
-function buildWorkflowEntryEvent(input, options) {
+function buildWorkflowEntryEvent(input, context, options) {
   return {
-    ...baseTelemetryFields(input),
+    run_id: context.runId,
     category: 'workflow-entry',
     name: options.name,
     action: options.action,
-    source: options.source,
-    sessionId: resolveSessionId(input),
+    source: context.source,
+    sessionId: context.sessionId,
     confidence: options.confidence,
-    host: options.host,
+    host: context.host,
     detail: {
       trigger: options.trigger,
       hookEventName: input.hook_event_name || null,
@@ -119,7 +105,7 @@ function buildWorkflowEntryEvent(input, options) {
   };
 }
 
-function skillToolWorkflowEvents(input, host, source) {
+function skillToolWorkflowEvents(input, context) {
   if (
     input.hook_event_name !== 'PreToolUse' ||
     !/^Skill$/i.test(input.tool_name || '')
@@ -128,18 +114,16 @@ function skillToolWorkflowEvents(input, host, source) {
   }
 
   return [...new Set(candidateSkillNames(input.tool_input || {}))].map((name) =>
-    buildWorkflowEntryEvent(input, {
+    buildWorkflowEntryEvent(input, context, {
       name,
       action: 'invoked',
-      source,
       confidence: 'confirmed',
-      host,
       trigger: 'skill-tool',
     }),
   );
 }
 
-function bashWorkflowEvents(input, host, source) {
+function bashWorkflowEvents(input, context) {
   if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') {
     return [];
   }
@@ -147,88 +131,37 @@ function bashWorkflowEvents(input, host, source) {
   const name = firstWorkflowCommand(input.tool_input?.command || '');
   return name
     ? [
-        buildWorkflowEntryEvent(input, {
+        buildWorkflowEntryEvent(input, context, {
           name,
           action: 'invoked',
-          source,
           confidence: 'inferred',
-          host,
           trigger: 'bash-command',
         }),
       ]
     : [];
 }
 
-function promptWorkflowEvents(input, host, source) {
+function promptWorkflowEvents(input, context) {
   if (input.hook_event_name !== 'UserPromptSubmit') return [];
   return workflowSlashCommands(input.prompt || '').map((name) =>
-    buildWorkflowEntryEvent(input, {
+    buildWorkflowEntryEvent(input, context, {
       name,
       action: 'requested',
-      source,
       confidence: 'inferred',
-      host,
       trigger: 'slash-command-prompt',
     }),
   );
 }
 
-function buildWorkflowUsageEvents(input, host, source) {
+function buildWorkflowUsageEvents(input, context) {
   return [
-    ...skillToolWorkflowEvents(input, host, source),
-    ...bashWorkflowEvents(input, host, source),
-    ...promptWorkflowEvents(input, host, source),
+    ...skillToolWorkflowEvents(input, context),
+    ...bashWorkflowEvents(input, context),
+    ...promptWorkflowEvents(input, context),
   ];
 }
 
-function hasAdditionalContext(outputJson) {
-  return Boolean(
-    outputJson?.systemMessage ||
-      outputJson?.hookSpecificOutput?.additionalContext,
-  );
-}
-
-function buildHookOutcomeUsageEvents(input, outcome, host, source) {
-  const events = [];
-  const sessionId = resolveSessionId(input);
-  const hookEventName = input.hook_event_name || 'unknown';
-  const toolName = input.tool_name || null;
-
-  if (outcome?.decision === 'block') {
-    events.push({
-      ...baseTelemetryFields(input),
-      category: 'hook-decision',
-      name: outcome.blockedBy || hookEventName,
-      action: 'deny',
-      source,
-      sessionId,
-      detail: { host, hookEventName, toolName },
-    });
-  }
-
-  const logCount = Array.isArray(outcome?.logs)
-    ? outcome.logs.filter(Boolean).length
-    : 0;
-  if (
-    outcome?.decision !== 'block' &&
-    (logCount > 0 || hasAdditionalContext(outcome?.outputJson))
-  ) {
-    events.push({
-      ...baseTelemetryFields(input),
-      category: 'hook-advisory',
-      name: hookEventName,
-      action: 'emit',
-      source,
-      sessionId,
-      detail: { host, hookEventName, toolName, logCount },
-    });
-  }
-
-  return events;
-}
-
 module.exports = {
-  buildHookOutcomeUsageEvents,
   buildWorkflowUsageEvents,
   firstWorkflowCommand,
   normalizeEntryName,

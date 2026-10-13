@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
 const { readStdinJson } = require('../lib/utils');
-const { appendUsageEvent } = require('../lib/hook-router/usage-telemetry');
+const {
+  appendUsageEvent,
+  claudeUsageContext,
+} = require('../lib/hook-router/usage-telemetry');
 const { armFromPrompt } = require('../lib/hook-router/cross-review-gate');
 const {
   buildWorkflowUsageEvents,
@@ -22,8 +25,10 @@ async function main() {
 
   for (const event of buildWorkflowUsageEvents(
     input,
-    'claude',
-    'hooks/scripts/hooks/skill-activation-suggestions.js',
+    claudeUsageContext(
+      input,
+      'hooks/scripts/hooks/skill-activation-suggestions.js',
+    ),
   )) {
     appendUsageEvent(event);
   }

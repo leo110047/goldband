@@ -316,7 +316,12 @@ Path resolution order:
 2. `GOLDBAND_DATA_DIR/<namespace>` when explicitly configured.
 3. `${XDG_DATA_HOME}/goldband/<namespace>` when `XDG_DATA_HOME` is set.
 4. `~/.local/share/goldband/<namespace>`.
-5. System temp only if the durable paths cannot be created.
+5. `<system temp>/goldband/<namespace>` only if the durable paths cannot be
+   created.
+
+Each candidate is tried in order; one that cannot be created falls through to
+the next. Claude and Codex hooks share this resolver
+(`hooks/scripts/lib/utils.js`, generated into `codex/hooks/utils.js`).
 
 Default files are `hook-router/usage-events.jsonl` and
 `hook-router/metrics.jsonl` under that resolved data root. Usage telemetry is
