@@ -7,7 +7,7 @@
  * serve.ts as the default for `$D compare --serve`; serve.ts is kept as
  * the --no-daemon legacy/test path.
  *
- * Endpoints (see plan docs/designs path for full table):
+ * Endpoints:
  *   GET  /                              index of boards
  *   GET  /health                        liveness + version (unauth)
  *   POST /api/boards                    publish a new board
@@ -206,7 +206,7 @@ async function gracefulShutdown(exitCode = 0): Promise<void> {
   setTimeout(() => process.exit(exitCode), 50);
 }
 
-export function idleCheckTick(): void {
+function idleCheckTick(): void {
   if (shuttingDown) return;
   const idle = Date.now() - lastMeaningfulActivity;
   if (idle < IDLE_MS) return;
@@ -573,9 +573,6 @@ if (import.meta.main) {
 // Exported for tests. Keep this small and stable.
 export const __testInternals__ = {
   boards,
-  fetchHandler,
-  idleCheckTick,
-  markMeaningfulActivity,
   resetForTest: (): void => {
     boards.clear();
     boardMutex.clear();

@@ -43,9 +43,15 @@ or the registry iteration cap is reached. A CLI cap may lower but never raise
 the registry cap.
 
 `review/code` supports one typed diff-collection and model-review pass with
-validated findings. It rejects `--loop`; `qa/app` currently provides a typed mock adapter;
-real browser QA remains unsupported until its checks consume the typed
-`browser/session` evidence contract.
+validated findings. It collects a bounded diff and related code context, loads
+the shared review rules, and calls one independent reviewer with the host's
+native read-only permissions. A defect names an exact location, a concrete code
+observation, the trigger and impact, and a suggested verification. The runtime
+writes a JSON result and a Markdown report; it does not execute project checks
+or mutate Work Map state, and no findings means only that this pass reported no
+concrete concerns. It rejects `--loop`; `qa/app` currently provides a typed mock adapter.
+Real browser QA runs through the active host's browser tool under the `qa/app`
+prompt contract and `manuals/browser.md`; the typed adapter does not claim it.
 
 Interactive Codex and Claude `$goldband review code` invocations must enter this
 runtime. Claude uses `<installed-skill-root>/bin/goldband review code`. Codex uses
@@ -64,26 +70,14 @@ reviewed repository cannot replace the nested reviewer through `PATH`.
 The launcher forces real mode and defaults to the current worktree. The installed
 configuration supplies the host. The Codex executable pins its host and rejects
 an additional caller-supplied host. Each invocation is an independent semantic
-pass: it never resolves a review contract, resumes a lineage, authorizes closure,
-or advances a Work Map ticket. Repeat the same command after repairs.
+pass and never advances a Work Map ticket. Repeat the same command after
+repairs.
 
-The launcher rejects specialist fan-out and `--loop`, and marks the child as an
+The launcher rejects the removed `--specialists` flag and `--loop`, and marks the child as an
 active review to prevent recursion. Read-only tools, approval policy, output
 schema, and timeout remain adapter-owned. Launcher or runtime failures are
 reported explicitly and do not prevent a later retry. Project verification is
 separate from the semantic report.
-
-Codex CLI browser work uses the same trusted launcher followed by
-`browser session --host codex <command> [args...]`. It does not depend on the
-Codex App's Browser or Chrome plugin bindings. The installed snapshot carries a
-materialized browser client and bundled server, so neither the launcher nor the
-daemon is resolved from the writable workspace. Exact rules auto-admit only
-inspection commands. Navigation (`goto`, `back`, `forward`, `reload`) and
-`wait` remain on Codex's native approval path so repository instructions cannot
-silently use the trusted launcher to reach localhost or private-network
-services. The runtime still rejects commands with outward effects.
-Claude uses `bin/goldband browser session --host claude` and the source-owned
-browser runtime.
 
 Review input has a 2 MiB limit. Larger Git diffs fail with an explicit request
 to narrow scope instead of a host-specific buffer error. `--diff-file` accepts
@@ -107,14 +101,14 @@ outside the parent command sandbox without a prompt, so nested `codex exec` can
 initialize Codex state and app-server resources. The non-interactive child
 reviewer remains `read-only` with approval set to `never`.
 Every `review/code` run launches exactly one core reviewer. The public launcher
-does not expose specialist fan-out, the shared runtime contract rejects
-`--specialists auto|all` before host launch, and the production review owner has
-no parallel specialist dispatch path. `--specialists off` is accepted only as a
-backwards-compatible no-op by the internal CLI.
+rejects `--specialists` (including the former `off` no-op) before starting a
+child process, the internal CLI treats it as an unknown argument, and the
+production review owner has no parallel dispatch path.
 
 Before host dispatch, `review/code` collects changed paths with the diff; Git
 scopes use NUL-delimited path output, while a supplied patch derives paths from
-its file headers.
+its file headers. Rule selection, prompt assembly, and the post-review freshness
+check consume these collected paths; no consumer re-parses the diff for paths.
 When two or more paths changed, the runtime builds a bounded repository-local
 dependency view from Git-tracked source files and the reviewed untracked paths.
 It follows common static import/source forms, walks reverse dependencies to
@@ -167,8 +161,8 @@ operating system's `ARG_MAX` limit.
 The single real host call and complete `run-review` pass each have a
 twelve-minute default timeout. The timeout flags override one pass, must remain
 between 60 and 1800 seconds, and the host timeout cannot exceed the pass
-timeout. Evidence telemetry records the fixed `off` compatibility mode and both
-timeout budgets so latency can be tuned from real runs.
+timeout. Evidence telemetry records both timeout budgets so latency can be tuned
+from real runs.
 Pass elapsed time uses a monotonic clock; wall-clock changes affect evidence
 timestamps but cannot extend the configured deadline.
 
@@ -180,13 +174,13 @@ produced by the model; runtime owners validate, gate, persist, and read it back.
 | Action | Runtime owner | Real-mode input |
 | --- | --- | --- |
 | `plan/create` | `work-map-store` | `mode`, concrete `destination`, included/excluded `scope`, decision references, fog, and dependency-ordered tickets. Runtime derives Git identity, revision, frontier, blockers, and state paths. Use only for cross-session, dependency-linked, parallel, unknown-bearing, or explicitly tracked work; small ordinary tasks bypass Work Maps. |
-| `browser/session` | `browse` | Optional `command` and `args`; only non-outward-effect navigation and inspection commands are delegated. Mutations use the browser tool's native approval path. |
 | `design/consult` | `design-decision-store` | `brief` and `decisions` with typography, color, spacing, layout, and motion. |
 | `safety/guard` | `workflow-safety-state` | Optional `scope`. |
 | `safety/freeze` / `safety/unfreeze` | `freeze-hook-state` | Optional freeze `scope`; unfreeze reads the same state owner. |
 | `context/save` / `context/restore` | `context-checkpoint-store` | Save requires `summary` and stores only the active Work Map ID/revision/digest reference when present. Restore compares Git and Work Map freshness and returns the complete calculated frontier plus one next action. |
 | `knowledge/recall` | `goldband-knowledge` | Optional `query`, `domain`, and `limit`. |
 | `benchmark/workflow` | `benchmark-evidence-aggregator` | `label`, `metric`, `conditions`, `sourceEvidence`, and at least two numeric `samples`. |
+| `document/generate` | `documentation-audit` | `mode=audit`, a unified `diffFile` inside the working directory, and optional `updatePrBody`. Runtime classifies changed source and Markdown files, inventories active documents by Diataxis filename intent, and writes `documentation-coverage.json` plus `documentation-pr-section.md`. `coverageStatus` is `documentation-review-required` when source changed without documentation, a review signal rather than proof. `updatePrBody=true` returns `blocked` with `authorization=native-host-required`; the runtime never edits a PR. |
 | `system/health` | `goldband-installation` | None; inspection is read-only. |
 | `system/upgrade` | `goldband-setup-gate` | Preflight persists an ID and emits command arrays for native host approval. Readback requires the preflight ID, old/new versions, and `setupVerified=true`; runtime never hides `git pull` inside a child process. |
 | `ios/qa` | `ios-qa-evidence` | User-visible `checks`; macOS real mode also verifies available simulator inventory. |
@@ -204,8 +198,12 @@ ${GOLDBAND_HOME:-$HOME/.goldband}/workflow-runs/artifacts/
 
 Untracked diff materialization is a trust boundary. The runtime skips binary,
 oversized, non-UTF-8, or secret-like content and records a no-content marker.
-Unsupported high-severity findings are downgraded instead of presented as
-verified blockers.
+Findings carry `kind: "defect" | "improvement"`. Defects without a line,
+evidence, failure scenario, and verification are dropped. Improvements need
+evidence and a recommendation, cannot be `high` or `critical`, and are always
+blocking; every valid improvement is reported after deduplication, and
+discarded improvements are listed with their reason. Defects and improvements
+both feed the review signal.
 
 Review prompts keep the complete scoped diff, capped at 256 KiB so oversized
 changes fail explicitly instead of consuming unbounded quota. Runtime-selected
@@ -223,4 +221,4 @@ bun run typecheck
 bun run test:workflows
 ```
 
-See `COVERAGE.md` for typed, compatibility, experimental, and owner status.
+See `../../docs/generated/capabilities.md` for typed, compatibility, experimental, and owner status.

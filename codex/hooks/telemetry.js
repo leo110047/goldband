@@ -1,7 +1,12 @@
-const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { requireFirst } = require('./module-loader');
+const {
+  appendRetainedJsonl,
+  envFlagEnabled,
+  parsePositiveInt,
+} = require('./retained-jsonl');
+const { getPersistentDataPath } = require('./utils');
+const { buildWorkflowUsageEvents } = require('./workflow-telemetry');
 function loadTelemetrySchema() {
   return requireFirst([
     path.resolve(
@@ -20,114 +25,17 @@ const { normalizeUsageEvent, resolveRunId } = loadTelemetrySchema();
 
 const DEFAULT_MAX_BYTES = 1024 * 1024;
 const DEFAULT_RETENTION_DAYS = 30;
-
-function ensureDir(dirPath) {
-  fs.mkdirSync(dirPath, { recursive: true });
-  return dirPath;
-}
-
-function parsePositiveInt(value, fallback) {
-  const parsed = parseInt(String(value ?? ''), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function envPath(name) {
-  const value = process.env[name];
-  if (typeof value !== 'string') return null;
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function dataRootCandidates() {
-  const candidates = [];
-  const pluginData = envPath('CLAUDE_PLUGIN_DATA');
-  const explicit = envPath('GOLDBAND_DATA_DIR');
-  const xdgDataHome = envPath('XDG_DATA_HOME');
-  const homeDir = os.homedir();
-
-  if (pluginData) candidates.push(pluginData);
-  if (explicit) candidates.push(explicit);
-  if (xdgDataHome) candidates.push(path.join(xdgDataHome, 'goldband'));
-  if (homeDir) {
-    candidates.push(path.join(homeDir, '.local', 'share', 'goldband'));
-  }
-  candidates.push(path.join(os.tmpdir(), 'goldband'));
-
-  return [...new Set(candidates)];
-}
-
-function dataRoot() {
-  for (const candidate of dataRootCandidates()) {
-    try {
-      return ensureDir(candidate);
-    } catch {
-      // Try the next telemetry data root candidate.
-    }
-  }
-
-  return path.join(os.tmpdir(), 'goldband');
-}
+const TELEMETRY_SOURCE = 'codex/hooks/hook-router.js';
 
 function usageTelemetryEnabled() {
-  const flag = String(
-    process.env.GOLDBAND_USAGE_TELEMETRY_ENABLED ?? '1',
-  ).toLowerCase();
-  return flag === '1' || flag === 'true' || flag === 'yes';
+  return envFlagEnabled(process.env.GOLDBAND_USAGE_TELEMETRY_ENABLED);
 }
 
 function usageFile() {
   return (
     process.env.GOLDBAND_USAGE_FILE ||
-    path.join(dataRoot(), 'hook-router', 'usage-events.jsonl')
+    getPersistentDataPath('hook-router', 'usage-events.jsonl')
   );
-}
-
-function rotateIfOversized(filePath) {
-  try {
-    if (!fs.existsSync(filePath)) return;
-
-    const maxBytes = parsePositiveInt(
-      process.env.GOLDBAND_USAGE_MAX_BYTES,
-      DEFAULT_MAX_BYTES,
-    );
-    const stats = fs.statSync(filePath);
-    if (stats.size < maxBytes) return;
-
-    fs.renameSync(filePath, `${filePath}.${Date.now()}`);
-  } catch {
-    // Telemetry retention must never block hook execution.
-  }
-}
-
-function cleanupExpiredUsageFiles(filePath) {
-  try {
-    const retentionDays = parsePositiveInt(
-      process.env.GOLDBAND_USAGE_RETENTION_DAYS,
-      DEFAULT_RETENTION_DAYS,
-    );
-    const retentionMs = retentionDays * 24 * 60 * 60 * 1000;
-    const nowMs = Date.now();
-    const directory = path.dirname(filePath);
-    const baseName = path.basename(filePath);
-    const prefix = `${baseName}.`;
-
-    for (const entry of fs.readdirSync(directory)) {
-      if (!entry.startsWith(prefix)) continue;
-
-      const rotatedPath = path.join(directory, entry);
-      try {
-        const stats = fs.statSync(rotatedPath);
-        if (nowMs - stats.mtimeMs > retentionMs) {
-          fs.unlinkSync(rotatedPath);
-        }
-      } catch {
-        // Ignore one-file cleanup failures.
-      }
-    }
-  } catch {
-    // Telemetry retention must never block hook execution.
-  }
 }
 
 function appendUsageEvent(entry) {
@@ -135,189 +43,43 @@ function appendUsageEvent(entry) {
     return;
   }
 
-  const filePath = usageFile();
   const payload = normalizeUsageEvent({
     ...entry,
     recordedAt: new Date().toISOString(),
   });
-
-  try {
-    ensureDir(path.dirname(filePath));
-    rotateIfOversized(filePath);
-    cleanupExpiredUsageFiles(filePath);
-    fs.appendFileSync(filePath, `${JSON.stringify(payload)}\n`, 'utf8');
-  } catch {
-    // Telemetry must never block hook execution.
-  }
+  appendRetainedJsonl(usageFile(), payload, {
+    maxBytes: parsePositiveInt(
+      process.env.GOLDBAND_USAGE_MAX_BYTES,
+      DEFAULT_MAX_BYTES,
+    ),
+    retentionDays: parsePositiveInt(
+      process.env.GOLDBAND_USAGE_RETENTION_DAYS,
+      DEFAULT_RETENTION_DAYS,
+    ),
+  });
 }
 
-function normalizeEntryName(value) {
-  const raw = typeof value === 'string' ? value.trim().replace(/^\/+/, '') : '';
-  if (!/^goldband-[a-z0-9][a-z0-9-]*$/i.test(raw)) return null;
-  return raw.toLowerCase();
-}
-
-function sessionId(input) {
-  return (
-    input.session_id || input.sessionId || process.env.CODEX_SESSION_ID || null
-  );
-}
-
-function baseTelemetryFields(input) {
+// Codex hooks ignore CLAUDE_SESSION_ID so a Codex run launched from a Claude
+// session is attributed to its own Codex session.
+function codexUsageContext(input) {
   return {
-    run_id: resolveRunId(input, {
+    host: 'codex',
+    source: TELEMETRY_SOURCE,
+    runId: resolveRunId(input, {
       GOLDBAND_RUN_ID: process.env.GOLDBAND_RUN_ID,
       GOLDBAND_RUN_ID_FILE: process.env.GOLDBAND_RUN_ID_FILE,
       CODEX_SESSION_ID: process.env.CODEX_SESSION_ID,
     }),
+    sessionId:
+      input.session_id ||
+      input.sessionId ||
+      process.env.CODEX_SESSION_ID ||
+      null,
   };
-}
-
-function workflowSlashCommands(prompt) {
-  const names = new Set();
-  const text = String(prompt || '');
-  const pattern = /(?:^|[\s([{])\/(goldband-[a-z0-9][a-z0-9-]*)\b/gi;
-  let match = pattern.exec(text);
-  while (match) {
-    const name = normalizeEntryName(match[1]);
-    if (name) names.add(name);
-    match = pattern.exec(text);
-  }
-  return [...names];
-}
-
-function firstWorkflowCommand(command) {
-  for (const segment of shellCommandSegments(command)) {
-    const executable = firstExecutableToken(segment);
-    const name = normalizeEntryName(executable);
-    if (name) return name;
-  }
-  return null;
-}
-
-function shellCommandSegments(command) {
-  return String(command || '')
-    .trim()
-    .split(/(?:&&|\|\||[;|\n])/)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-}
-
-function shellTokens(segment) {
-  return String(segment || '').match(/"[^"]*"|'[^']*'|[^\s]+/g) || [];
-}
-
-function stripTokenQuotes(value) {
-  return String(value || '').replace(/^["']|["']$/g, '');
-}
-
-function isAssignmentToken(token) {
-  return /^[A-Za-z_][A-Za-z0-9_]*=/.test(token);
-}
-
-function firstExecutableToken(segment) {
-  const tokens = shellTokens(segment).map(stripTokenQuotes);
-  let index = 0;
-  while (index < tokens.length && isAssignmentToken(tokens[index])) index += 1;
-
-  const prefix = tokens[index];
-  if (prefix === 'command' || prefix === 'exec' || prefix === 'time') {
-    index += 1;
-  } else if (prefix === 'env') {
-    index += 1;
-    while (index < tokens.length && isAssignmentToken(tokens[index])) {
-      index += 1;
-    }
-  }
-
-  return tokens[index] || '';
-}
-
-function candidateSkillNames(toolInput) {
-  if (!toolInput || typeof toolInput !== 'object') return [];
-  return [
-    toolInput.name,
-    toolInput.skill,
-    toolInput.skill_name,
-    toolInput.skillName,
-    toolInput.command,
-  ]
-    .map(normalizeEntryName)
-    .filter(Boolean);
-}
-
-function workflowEntryEvent(input, options) {
-  return {
-    ...baseTelemetryFields(input),
-    category: 'workflow-entry',
-    name: options.name,
-    action: options.action,
-    source: 'codex/hooks/hook-router.js',
-    sessionId: sessionId(input),
-    confidence: options.confidence,
-    host: 'codex',
-    detail: {
-      trigger: options.trigger,
-      hookEventName: input.hook_event_name || null,
-      toolName: input.tool_name || null,
-    },
-  };
-}
-
-function skillToolWorkflowEvents(input) {
-  if (
-    input.hook_event_name !== 'PreToolUse' ||
-    !/^Skill$/i.test(input.tool_name || '')
-  ) {
-    return [];
-  }
-
-  return [...new Set(candidateSkillNames(input.tool_input || {}))].map((name) =>
-    workflowEntryEvent(input, {
-      name,
-      action: 'invoked',
-      confidence: 'confirmed',
-      trigger: 'skill-tool',
-    }),
-  );
-}
-
-function bashWorkflowEvents(input) {
-  if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== 'Bash') {
-    return [];
-  }
-
-  const name = firstWorkflowCommand(input.tool_input?.command || '');
-  return name
-    ? [
-        workflowEntryEvent(input, {
-          name,
-          action: 'invoked',
-          confidence: 'inferred',
-          trigger: 'bash-command',
-        }),
-      ]
-    : [];
-}
-
-function promptWorkflowEvents(input) {
-  if (input.hook_event_name !== 'UserPromptSubmit') return [];
-  return workflowSlashCommands(input.prompt || '').map((name) =>
-    workflowEntryEvent(input, {
-      name,
-      action: 'requested',
-      confidence: 'inferred',
-      trigger: 'slash-command-prompt',
-    }),
-  );
 }
 
 function workflowUsageEvents(input) {
-  return [
-    ...skillToolWorkflowEvents(input),
-    ...bashWorkflowEvents(input),
-    ...promptWorkflowEvents(input),
-  ];
+  return buildWorkflowUsageEvents(input, codexUsageContext(input));
 }
 
 function isDenyResult(result) {
@@ -383,10 +145,11 @@ function startSource(input) {
 function hookOutcomeUsageEvents(input, result) {
   if (!result) return [];
 
+  const context = codexUsageContext(input);
   const base = {
-    ...baseTelemetryFields(input),
-    source: 'codex/hooks/hook-router.js',
-    sessionId: sessionId(input),
+    run_id: context.runId,
+    source: context.source,
+    sessionId: context.sessionId,
     detail: {
       host: 'codex',
       hookEventName: input.hook_event_name || 'unknown',
@@ -432,7 +195,6 @@ function recordHookTelemetry(input, result) {
 
 module.exports = {
   appendUsageEvent,
-  dataRoot,
   hookOutcomeUsageEvents,
   recordHookTelemetry,
   usageFile,

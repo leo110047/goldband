@@ -2,13 +2,13 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const LEGACY_HOST_SKILL_ROOTS = [
+const LEGACY_HOST_SKILL_ROOTS = [
   'goldband-loop/.agents/skills',
   'goldband-loop/.factory/skills',
   'goldband-loop/.opencode/skills',
 ];
 
-export const RETIRED_WORKFLOW_ENTRY_INVENTORY =
+const RETIRED_WORKFLOW_ENTRY_INVENTORY =
   'goldband-loop/lib/retired-workflow-entry-names.txt';
 
 const DEPENDENCY_MARKERS = [
@@ -29,7 +29,7 @@ const DEPENDENCY_MARKERS = [
   },
 ];
 
-export function parseNumericVersion(value) {
+function parseNumericVersion(value) {
   const match = String(value)
     .trim()
     .match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -78,7 +78,7 @@ export function listLegacyHostSkillArtifacts(root) {
   return artifacts.sort();
 }
 
-export function retiredHostSkillBasenames(root) {
+function retiredHostSkillBasenames(root) {
   const inventoryPath = path.join(root, RETIRED_WORKFLOW_ENTRY_INVENTORY);
   const names = parseRetiredWorkflowEntryInventory(
     fs.readFileSync(inventoryPath, 'utf8'),

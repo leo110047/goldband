@@ -1,19 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import type { Stats } from 'node:fs';
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  lstatSync,
-  mkdirSync,
-  openSync,
-  readSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { lstatSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
+import { readStableRegularFile } from '../lib/stable-file-read';
 import { stateRoot } from './evidence';
 import type { ReviewTimeBudget } from './review-timeouts';
 import type { SchemaValidator, WorkflowContext } from './types';
@@ -437,7 +427,7 @@ function buildFileIndex(
       continue;
     }
     try {
-      const content = readStableSourceFile(absolutePath, stat, timeBudget);
+      const content = readSourceFile(absolutePath, stat, timeBudget);
       totalBytes += content.length;
       const extracted = extractSpecifiers(relativePath, content.toString('utf8'));
       nextFiles.set(relativePath, {
@@ -613,7 +603,9 @@ function cachePath(ctx: WorkflowContext, realRoot: string): string {
 
 function loadCache(file: string, realRoot: string): CacheLoadResult {
   try {
-    const value = JSON.parse(readBoundedRegularFile(file, MAX_CACHE_FILE_BYTES).toString('utf8')) as unknown;
+    const value = JSON.parse(
+      readStableRegularFile(file, { label: 'impact cache', maxBytes: MAX_CACHE_FILE_BYTES }).toString('utf8'),
+    ) as unknown;
     const item = requiredRecord(value, 'invalid impact cache');
     if (item.schemaVersion !== IMPACT_CACHE_SCHEMA_VERSION) return {};
     if (item.repoRoot !== realRoot) throw new Error('impact cache repository mismatch');
@@ -673,66 +665,13 @@ function writeCache(file: string, cache: ImpactCache): void {
   }
 }
 
-function readBoundedRegularFile(file: string, maxBytes: number): Buffer {
-  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
-  let descriptor: number | undefined;
-  try {
-    descriptor = openSync(file, flags);
-    const opened = fstatSync(descriptor);
-    if (!opened.isFile() || opened.size > maxBytes) throw new Error('cache is not a bounded regular file');
-    const chunks: Buffer[] = [];
-    let total = 0;
-    while (true) {
-      const remaining = maxBytes + 1 - total;
-      const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, remaining));
-      const bytesRead = readSync(descriptor, buffer, 0, buffer.length, null);
-      if (bytesRead === 0) break;
-      total += bytesRead;
-      if (total > maxBytes) throw new Error('cache exceeds size limit');
-      chunks.push(buffer.subarray(0, bytesRead));
-    }
-    if (!sameFile(fstatSync(descriptor), opened)) throw new Error('cache changed while reading');
-    return Buffer.concat(chunks, total);
-  } finally {
-    if (descriptor !== undefined) closeSync(descriptor);
-  }
-}
-
-function readStableSourceFile(
-  file: string,
-  expected: Stats,
-  timeBudget: ReviewTimeBudget,
-): Buffer {
-  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
-  let descriptor: number | undefined;
-  try {
-    descriptor = openSync(file, flags);
-    const opened = fstatSync(descriptor);
-    if (!sameFile(opened, expected)) throw new Error('file changed while opening');
-    const chunks: Buffer[] = [];
-    let total = 0;
-    while (true) {
-      timeBudget.assertWithinDeadline();
-      const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, MAX_SOURCE_FILE_BYTES + 1 - total));
-      const bytesRead = readSync(descriptor, buffer, 0, buffer.length, null);
-      if (bytesRead === 0) break;
-      total += bytesRead;
-      if (total > MAX_SOURCE_FILE_BYTES) throw new Error('file exceeds source limit');
-      chunks.push(buffer.subarray(0, bytesRead));
-    }
-    if (!sameFile(fstatSync(descriptor), opened)) throw new Error('file changed while reading');
-    return Buffer.concat(chunks, total);
-  } finally {
-    if (descriptor !== undefined) closeSync(descriptor);
-  }
-}
-
-function sameFile(
-  left: Stats,
-  right: Stats,
-): boolean {
-  return left.isFile() && right.isFile() && left.dev === right.dev && left.ino === right.ino &&
-    left.size === right.size && left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs;
+function readSourceFile(file: string, expected: Stats, timeBudget: ReviewTimeBudget): Buffer {
+  return readStableRegularFile(file, {
+    label: 'source file',
+    maxBytes: MAX_SOURCE_FILE_BYTES,
+    expected,
+    checkpoint: () => timeBudget.assertWithinDeadline(),
+  });
 }
 
 function fileSignature(stat: Stats): string {

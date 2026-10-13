@@ -1,5 +1,5 @@
 /**
- * Orchestrator — ties render, browseClient, and filesystem together.
+ * Orchestrator — ties render, the PDF renderer, and filesystem together.
  *
  *   generate(opts): markdown → PDF on disk. Returns output path.
  *   preview(opts):  markdown → HTML, opens it in a browser.
@@ -9,9 +9,9 @@
  *   - stderr: spinner + per-stage status lines, unless opts.quiet.
  *   - --verbose: stage timings.
  *
- * Tab lifecycle: every generate opens a dedicated tab via $B newtab --json,
- * runs load-html/js/pdf against --tab-id <N>, and closes the tab in a
- * try/finally. Parallel $P generate calls never race on the active tab.
+ * Browser lifecycle: every generate launches its own headless Chromium through
+ * pdfRenderer.ts and closes it in a try/finally, so parallel make-pdf generate calls
+ * never share browser state.
  */
 
 import * as fs from "node:fs";
@@ -22,7 +22,7 @@ import { spawn } from "node:child_process";
 
 import { render } from "./render";
 import type { GenerateOptions, PreviewOptions } from "./types";
-import * as browseClient from "./browseClient";
+import { type PdfRenderOptions, renderPdf } from "./pdfRenderer";
 
 class ProgressReporter {
   private readonly quiet: boolean;
@@ -52,10 +52,9 @@ class ProgressReporter {
     const total = ((Date.now() - this.totalStart) / 1000).toFixed(1);
     process.stderr.write(`\r\x1b[KDone in ${total}s. ${extra}\n`);
   }
-  fail(stage: string, err: Error): void {
-    if (!this.quiet) process.stderr.write("\r\x1b[K");
-    // Always emit failure info, even in quiet mode — this is an error path.
-    process.stderr.write(`${stage} failed: ${err.message}\n`);
+  /** End the pending stage line so the caller's error starts on its own line. */
+  interrupt(): void {
+    if (!this.quiet) process.stderr.write("\n");
   }
 }
 
@@ -98,71 +97,56 @@ export async function generate(opts: GenerateOptions): Promise<string> {
   });
   progress.end("Rendering HTML", `${rendered.meta.wordCount} words`);
 
-  // Stage 3: write HTML to a tmp file browse can read
-  // (We don't actually write it; we pass inline via --from-file JSON.)
-  // But for preview mode and debugging, we still write to tmp.
+  // Stage 3: keep the rendered HTML on disk while Chromium runs, which helps
+  // when debugging a failed render.
   const htmlTmp = tmpFile("html");
   fs.writeFileSync(htmlTmp, rendered.html, "utf8");
 
-  // Stage 4: spin up a dedicated tab, load HTML, (wait for Paged.js if TOC),
-  // then emit PDF. Always close the tab.
-  progress.begin("Opening tab");
-  const tabId = browseClient.newtab();
-  progress.end("Opening tab", `tabId=${tabId}`);
-
+  // Stage 4: load the HTML into a dedicated Chromium, wait for Paged.js when a
+  // TOC was requested, then emit the PDF. The renderer always closes Chromium.
   try {
-    progress.begin("Loading HTML into Chromium");
-    browseClient.loadHtml({
-      html: rendered.html,
-      waitUntil: "domcontentloaded",
-      tabId,
-    });
-    progress.end("Loading HTML into Chromium");
-
-    if (opts.toc) {
-      progress.begin("Paginating with Paged.js");
-      // Browse's $B pdf already waits internally when --toc is passed.
-      // We pass toc=true to browseClient.pdf() below.
-      progress.end("Paginating with Paged.js", "Paged.js after");
-    }
-
     progress.begin("Generating PDF");
-    browseClient.pdf({
-      output: outputPath,
-      tabId,
-      format: opts.pageSize ?? "letter",
-      marginTop: opts.marginTop ?? opts.margins ?? "1in",
-      marginRight: opts.marginRight ?? opts.margins ?? "1in",
-      marginBottom: opts.marginBottom ?? opts.margins ?? "1in",
-      marginLeft: opts.marginLeft ?? opts.margins ?? "1in",
-      headerTemplate: opts.headerTemplate,
-      footerTemplate: opts.footerTemplate,
-      // CSS is the single source of truth for page numbers (see print-css.ts
-      // @bottom-center). Chromium's native numbering always off to avoid double
-      // footers. The CSS layer honors pageNumbers + footerTemplate via render().
-      pageNumbers: false,
-      tagged: opts.tagged !== false,
-      outline: opts.outline !== false,
-      printBackground: !!opts.watermark,
-      toc: opts.toc,
-    });
+    await renderPdf(pdfRenderOptions(opts, rendered.html, outputPath));
     progress.end("Generating PDF");
 
     const stat = fs.statSync(outputPath);
     const kb = Math.round(stat.size / 1024);
     progress.done(`${rendered.meta.wordCount} words · ${kb}KB · ${outputPath}`);
+  } catch (err) {
+    progress.interrupt();
+    throw err;
   } finally {
-    // Always clean up the tab — even on crash, timeout, or Chromium hang.
-    try {
-      browseClient.closetab(tabId);
-    } catch {
-      // best-effort; we already exited the main path
-    }
-    // Cleanup tmp HTML
     try { fs.unlinkSync(htmlTmp); } catch { /* best-effort */ }
   }
 
   return outputPath;
+}
+
+function pdfRenderOptions(
+  opts: GenerateOptions,
+  html: string,
+  outputPath: string,
+): PdfRenderOptions {
+  return {
+    html,
+    output: outputPath,
+    waitUntil: "domcontentloaded",
+    format: opts.pageSize ?? "letter",
+    marginTop: opts.marginTop ?? opts.margins ?? "1in",
+    marginRight: opts.marginRight ?? opts.margins ?? "1in",
+    marginBottom: opts.marginBottom ?? opts.margins ?? "1in",
+    marginLeft: opts.marginLeft ?? opts.margins ?? "1in",
+    headerTemplate: opts.headerTemplate,
+    footerTemplate: opts.footerTemplate,
+    // CSS is the single source of truth for page numbers (see print-css.ts
+    // @bottom-center). Chromium's native numbering always off to avoid double
+    // footers. The CSS layer honors pageNumbers + footerTemplate via render().
+    pageNumbers: false,
+    tagged: opts.tagged !== false,
+    outline: opts.outline !== false,
+    printBackground: !!opts.watermark,
+    toc: opts.toc,
+  };
 }
 
 /**

@@ -21,7 +21,7 @@ On review failure, Claude/Codex hooks point to the installed launch contract; in
 - Have Git, Node.js, and the Claude Code or Codex CLI you intend to use available.
 - Installer-based Claude configuration also needs `jq`; Codex configuration installation and checks require **Python 3.11 or later**.
 - Use a complete Git checkout; do not download only `install.sh`.
-- Goldband Loop also requires **Bun 1.3.11 or later**. Browser workflows require Playwright Chromium, which the installer installs and verifies.
+- Goldband Loop also requires **Bun 1.3.11 or later**. `make-pdf` requires Playwright Chromium, which the installer installs and verifies. Browser QA uses the host's own browser tool; `all-with-workflow` configures Playwright MCP for both hosts, keeps any existing entry, and can be skipped with `GOLDBAND_SKIP_PLAYWRIGHT_MCP=1` (see [mcp/README.md](mcp/README.md)).
 - Use Bash on macOS/Linux and Git Bash or WSL on Windows. There is no native PowerShell installer. Individual workflow limits are described below.
 
 The installer changes tool configuration, hooks, and skills in your home directory. Choose either the Claude plugin or the installer's Claude core setup to avoid loading duplicate assets.
@@ -74,7 +74,7 @@ See the [workflow catalog](docs/generated/capabilities.md) for other actions.
 
 `review/code` runs one independent, read-only semantic review of the current worktree. Use `--base <ref>`, `--staged`, or `--diff-file <file>` to narrow scope. Findings identify the code path, trigger, impact, and suggested verification. Repeat the same entrypoint after repairs; each run reviews the current scope.
 
-No review manifest, contract registry, signed receipt, lineage, or closure authorization is required. Retired governance flags are rejected. The reviewer does not execute project tests or change ticket status. Continue running project tests, lint, type checks, CI, and relevant live checks separately; no findings does not establish runtime correctness.
+The reviewer does not execute project tests or change ticket status. Continue running project tests, lint, type checks, CI, and relevant live checks separately; no findings does not establish runtime correctness.
 
 ## Update and Uninstall
 

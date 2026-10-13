@@ -650,8 +650,8 @@ Implementation contract:
   an unrelated session does not imply that restoration is needed.
 - Prompt routing requires a capability-specific trigger. Generic words such as
   `檢查` do not activate review guidance by themselves.
-- Context saturation guidance is emitted once when entering warning severity
-  and once when entering critical severity, not every fixed number of calls.
+- Hooks do not estimate context saturation; tool-call counts do not measure
+  actual context usage.
 - Ordinary `Stop` events do not produce desktop notifications or repeat style
   scans. Permission and elicitation notifications, immediate edit advisories,
   and deterministic stop blockers remain active.
@@ -924,14 +924,9 @@ Implementation contract:
 - An automatic launcher or runtime failure is terminal. The parent agent must
   not silently fall back to an untyped manual review or claim complete
   coverage.
-- Ordinary review keeps automatic specialist selection. A strict or exhaustive
-  request explicitly adds `--specialists all`, whose incomplete coverage fails
-  closed.
-- A real host call defaults to twelve minutes. A complete review pass is bounded
-  to twelve minutes with specialists off, twenty minutes in auto mode, and
-  thirty minutes only for explicit `--specialists all` coverage. Validated CLI
-  overrides may narrow or extend those budgets within 60 to 1800 seconds; the
-  host-call timeout cannot exceed the pass timeout.
+- A real host call and a complete review pass each default to twelve minutes.
+  Validated CLI overrides may narrow or extend them within 60 to 1800 seconds;
+  the host-call timeout cannot exceed the pass timeout.
 
 Assumptions:
 
@@ -944,16 +939,10 @@ Assumptions:
 
 Consequences:
 
-- Interactive review now uses deterministic diff collection, typed finding
-  validation, runtime evidence, and the selected specialist policy.
-- A normal review invocation may take longer and consume additional host model
-  calls; exhaustive specialist review costs more and remains explicit.
-- Normal auto reviews fail within a bounded twenty-minute pass instead of silently
-  inheriting the exhaustive thirty-minute ceiling. Timeout telemetry makes
-  later tuning evidence-driven rather than another hard-coded guess.
-- An optional auto specialist reaching the pass deadline degrades to a recorded
-  coverage diagnostic while preserving completed core findings. Explicit
-  exhaustive coverage still fails closed when any specialist is incomplete.
+- Interactive review uses deterministic diff collection, typed finding
+  validation, and runtime evidence.
+- A review pass fails at its deadline instead of running unbounded; timeout
+  telemetry makes later tuning evidence-driven.
 - Hosts outside Codex and Claude continue to use their supported prompt path
   until they gain a real typed adapter.
 
@@ -961,11 +950,11 @@ Alternatives considered:
 
 | Alternative | Why rejected |
 |-------------|--------------|
-| Keep the thin skill as a manual checklist | Leaves runtime entry, scope, evidence, and specialist dispatch dependent on model discretion. |
+| Keep the thin skill as a manual checklist | Leaves runtime entry, scope, and evidence dependent on model discretion. |
 | Launch the runtime from a prompt-routing hook | Generic review hints can fire for explanatory questions and are not the owner of long-running model subprocesses. |
 | Put a raw `bun workflows/run.ts` command in every installed contract | Couples prompt surfaces to source layout and breaks copied minimal runtimes. |
 | Silently fall back when the launcher fails | Produces a review that looks complete without typed runtime evidence. |
-| Keep one two-minute timeout for every mode | The measured real Codex pass exhausted it before producing findings, while it provided no whole-pass budget for specialist fan-out. |
+| Keep a two-minute timeout | The measured real Codex pass exhausted it before producing findings. |
 | Give every review a thirty-minute timeout | Makes ordinary review stalls too slow to diagnose and hides prompt or dispatch regressions. |
 
 Failure signals:
@@ -975,15 +964,13 @@ Failure signals:
 - A runtime-owned reviewer starts another `goldband review code` process.
 - A copied installation cannot resolve the executable workflow source.
 - Launcher failure is followed by an untyped manual approval.
-- Auto review approaches its twenty-minute deadline or repeatedly exhausts the
-  twelve-minute host-call budget.
+- Review repeatedly exhausts the twelve-minute host-call or pass budget.
 
 Revisit triggers:
 
 - Codex or Claude provides a native skill-to-executable binding that removes
   the need for a prompt-directed launcher.
 - A host supports typed review directly without spawning its CLI adapter.
-- Measured cost or latency justifies a different default specialist policy.
 - At least twenty comparable real-host runs provide a stable latency
   distribution that justifies replacing the initial timeout budgets.
 
@@ -1207,13 +1194,13 @@ Consequences:
 - `$goldband review code` no longer enters a contradictory flow where the user
   approves escalation but the session’s `approval_policy=never` rejects the
   same request.
-- `$goldband browser session` works in Codex CLI without an app-hosted browser
-  provider. Inspection commands can run without prompting; navigation requires
-  Codex's normal approval because the Chromium daemon can reach local services.
+- The browser session action (retired 2026-10-13 with `browse`) worked in Codex
+  CLI without an app-hosted browser provider. Inspection commands ran without
+  prompting; navigation required Codex's normal approval.
 - Updating Goldband must rebuild the trusted snapshot; source edits alone do
   not change the admitted executable until reinstall.
-- The install adds the bundled workflow entrypoints, browser client/server, and
-  review assets under `~/.codex/goldband`.
+- The install adds the bundled workflow entrypoints and review assets under
+  `~/.codex/goldband` (the browser client/server was removed on 2026-10-13).
 
 Alternatives considered:
 
@@ -1242,81 +1229,25 @@ Revisit triggers:
 - Codex changes rule precedence, matching, or sandbox behavior.
 - The typed runtime no longer needs host state outside the parent sandbox.
 
-## 2026-07-22: Review Runtime Forbids Independent Specialist Agents
+## 2026-07-22: Review Runs Exactly One Core Reviewer
 
-Decision: supersede the automatic-specialist default in the earlier interactive
-review decision. Every `review/code` run launches exactly one core reviewer.
-Independent specialist dispatch is removed from the production owner, and both
-the public launcher and shared runtime contract reject `--specialists auto|all`
-before any review host starts.
+Decision: every `review/code` run launches exactly one core reviewer, and the
+review owner has no specialist dispatch path. The public launcher rejects
+`--specialists` with every value before it leases scope or starts a child; the
+internal `workflows/run.ts` treats it as an unknown argument.
 
-Context:
+Why: a specialist is another full host-model call with its own copy of the
+complete diff, and automatic routing cannot authorize that cost. The core
+reviewer already receives the complete shared rubric in one repository context.
 
-- A specialist is another full host-model call with its own prompt and a copy of
-  the complete review diff, not a zero-cost checklist inside the core reviewer.
-- Machine-local evidence on 2026-07-22 recorded 26 review passes selecting 129
-  specialists. The core prompts alone contained more than 43 MB before counting
-  the duplicated specialist prompts.
-- The core reviewer already receives the shared rubric and can evaluate the full
-  finding taxonomy in one reusable repository context.
-- Automatic keyword and impact-graph routing can identify possible review lenses,
-  but it cannot authorize another full model call or prove user consent to the
-  quota cost.
-
-Implementation contract:
-
-- `review.ts` contains one host call and no specialist prompt preparation,
-  selection, concurrency, or dispatch path.
-- `review-runtime-contract.ts` is the shared execution gate. Omitted mode and
-  the legacy `off` no-op are valid; `auto` and `all` fail before diff collection
-  or host dispatch.
-- The public `bin/goldband` launcher does not advertise the option and applies
-  the same rejection before it starts the workflow runtime.
-- The manifest and checklist assign every review category to the one core
-  reviewer in the same repository-reading context.
-- Real-host regression coverage counts exactly one host invocation; bypass tests
-  prove rejected modes produce zero host invocations.
-
-Assumptions:
-
-- One core reviewer with the complete shared rubric is the correct default for
-  ordinary code review.
-- Independent second opinions need a separate, explicit capability with its own
-  visible cost contract; they are not a hidden mode of ordinary code review.
-
-Consequences:
-
-- Ordinary review no longer hides parallel model fan-out or repeatedly sends the
-  same diff to multiple child reviewers.
-- Specialist names remain only as optional finding metadata for compatibility;
-  they no longer correspond to child processes in this workflow.
-- A single reviewer may miss an issue that an independent second opinion would
-  find. That tradeoff is explicit rather than paid silently on every review.
-
-Alternatives considered:
-
-| Alternative | Why rejected |
-|-------------|--------------|
-| Keep `auto` as the default and add a warning | A warning does not prevent hidden quota use or prove informed consent. |
-| Keep automatic fan-out but cap it at one specialist | Still turns a normal review into multiple host calls and leaves an agent-opened bypass. |
-| Keep `auto` or `all` as opt-in flags | The runtime cannot prove the parent agent did not add the flag itself; prompt-level consent is not enforcement. |
-| Keep dormant dispatch code behind a guard | A future caller or refactor can bypass the guard; deleting the production path gives one authoritative owner. |
-| Let the parent agent decide whether to append `auto` | Makes quota behavior prompt-dependent instead of runtime-enforced. |
+Consequences: one reviewer may miss an issue an independent second opinion
+would find. Independent second opinions need a separate, explicit capability
+with its own cost contract; they are not a hidden mode of ordinary review.
 
 Failure signals:
 
-- Any `review/code` path contains more than one host invocation.
-- `--specialists auto|all` reaches diff collection or host dispatch instead of
-  failing at the boundary.
-- Default telemetry reports a selected specialist.
-- Generated contracts or CLI help advertise independent specialist dispatch.
-
-Revisit triggers:
-
-- The runtime can reuse one model context across lenses without starting another
-  host call or resending the full diff.
-- A separate user-visible cross-review capability gains an enforceable quota
-  authorization contract and bounded inputs.
+- A `review/code` path makes more than one host invocation.
+- `--specialists` reaches diff collection or host dispatch.
 
 ## 2026-07-22: Review Launches Are Single-Owner and Non-Recursive
 
@@ -1608,9 +1539,10 @@ Revisit triggers:
 
 ## 2026-07-31: Work Map Evidence Is Bound Through Runtime Readback
 
-Decision: bind a Work Map ticket, managed worktree lease, verification receipt,
-review artifact, and integrated commit through stable IDs and SHA-256 digests.
-The Work Map store is the only ticket-transition owner.
+Decision: a Work Map ticket, managed worktree lease, verification receipt, and
+integrated commit are bound through stable IDs and SHA-256 digests. The Work Map
+store is the only ticket-transition owner. Semantic review reports are
+independent of this chain and never advance a ticket.
 
 Implementation contract:
 
@@ -1622,27 +1554,18 @@ Implementation contract:
   `implemented`.
 - TDD evidence requires a failing RED with an expected signal followed by a
   successful GREEN on the same declared seam. A changed candidate invalidates
-  the current receipt. Requested changes increment a claim attempt, and records
-  from an earlier attempt cannot satisfy the new receipt.
+  the current receipt, and records from an earlier claim attempt cannot satisfy
+  a new receipt.
 - Existing-test tickets persist the exact planning command argument array and
   reject substitute commands, even when the substitute exits successfully.
-- Analysis-only tickets use a normalized named artifact copied into broker-owned
-  state, with an analysis claim and review lifecycle but no code worktree.
-- Work Map-scoped `review/code` treats ticket text as untrusted project data.
-  Its scope is runtime-owned: code review uses the canonical candidate diff and
-  analysis review uses the recorded artifact. The review artifact binds the map
-  revision, ticket and subject digests, reviewed diff digest, and candidate or
-  artifact digest. Runtime readback, not reviewer prose, advances the ticket to
-  `verified` or requested changes.
-- Canonical candidate diffs use the same bounded untracked-file materializer as
-  ordinary review, including secret-like-content skips and stable descriptor reads.
-- Bound `worktree finish` reads the lease, map, ticket, receipt, review
-  artifact, and current candidate. It integrates only a matching verified
-  chain, then records the integrated commit through the Work Map store.
-- Integrated-commit readback retries revision CAS conflicts caused by unrelated
-  map updates and refuses to overwrite a different recorded commit.
-- Standalone managed worktrees remain supported but cannot emit Work Map
-  evidence.
+- Analysis-only tickets complete by recording a normalized named artifact in
+  broker-owned state; they have no code worktree.
+- Bound `worktree finish` reads the lease, map, ticket, receipt, and current
+  candidate, integrates only a matching chain, and records the integrated commit
+  and final status through the Work Map store. Readback retries revision CAS
+  conflicts caused by unrelated map updates and refuses to overwrite a different
+  recorded commit.
+- Standalone managed worktrees remain supported but emit no Work Map evidence.
 
 This is an evidence-integrity and workflow gate, not a security boundary
 against a user or process with the same host account and filesystem access.
@@ -1652,10 +1575,9 @@ Failure signals:
 - Evidence from another map, ticket, lease, base commit, or candidate is reused.
 - RED proves an unrelated failure or GREEN has no earlier matching RED.
 - A successful command different from the planning command is accepted.
-- Caller-selected review scope differs from the candidate that finish integrates.
 - An analysis-only ticket has no named-artifact completion path.
-- Reviewer output directly edits Work Map state.
-- Finish checks only ticket status and ignores artifact provenance.
+- A review report changes Work Map state.
+- Finish checks only ticket status and ignores receipt provenance.
 - Full command output or secret-like values are persisted as summaries.
 - Claude and Codex installed runtimes expose different evidence contracts.
 
@@ -1703,502 +1625,6 @@ Failure signals:
 - Auth status cannot be classified but model dispatch continues.
 - Account email, organization, token, or raw auth JSON appears in telemetry.
 - Budget exhaustion is reported as a completed review or `No findings`.
-
-## 2026-08-25: Review Is Evidence-First With Conditional Scoped Closure
-
-Decision: make typed runtime evidence the authority for reproducible behavior
-claims, keep one semantic host for omission discovery, and allow one separate
-closure host only after findings cause a candidate change.
-
-Implementation contract:
-
-- A project-owned `goldband.review-evidence.json` declares stable behavior cell
-  IDs, expected behavior, risk, disposition, provider owner, applicability,
-  sandbox, network, timeout, output, replay, and evidence-level contracts.
-- The runtime validates schemas and reciprocal provider/cell relationships
-  before model dispatch. Every operation receives a newly materialized read-only
-  snapshot; the runtime uses a default-deny read/write/network Seatbelt profile
-  with Apple's common system process baseline plus explicit candidate, runner-state,
-  sealed runtime-projection, and projected dependency roots. A Mach-O runtime with
-  non-system links is copied into a private projection; Goldband rewrites only its
-  attested non-system install names, ad-hoc signs the copies, sanitizes OpenSSL config
-  loading to `/dev/null`, and attests the final executable bytes. The sandbox cannot
-  read the original package tree or write the projection. Goldband explicitly
-  re-denies the baseline's exact syslog, Mach service, and shared-memory channels in
-  addition to broad network, system-socket, and Mach lookup denial,
-  so commands cannot use the local system log as an output side channel. The baseline
-  common Mach allow-clause set is parsed from the current `system.sb` and must
-  exactly match the reviewed contract. Global/local names, registration prefix,
-  XPC lookup prefix, and bootstrap operations receive matching explicit denies;
-  an added or removed Apple clause fails before execution. Live macOS probes prove
-  the syslog socket and one global-name Mach lookup remain blocked; prefix and
-  registration clauses currently have deterministic profile assertions, not live probes.
-  Executable sealed evidence has one supported adapter: macOS Seatbelt. Linux and
-  Windows stop before operation materialization with typed `runtime-incomplete`
-  evidence, no semantic conclusion, and no completion authority. Linux Bubblewrap
-  continues to isolate managed worktrees and is not treated as review-evidence parity.
-  The baseline does not grant arbitrary HOME, workspace, or temporary-directory
-  reads. The runtime
-  compares pre/post snapshot digests, gives it
-  unique HOME/TMP state that is removed after execution,
-  bounds time and output, and persists fresh
-  records bound to repository, base, candidate, scope, behavior, command,
-  owner, environment, timing, exit status, and output digest.
-- Regression providers require base/exact-nonzero RED and candidate/zero GREEN;
-  an unspecified non-zero exit is invalid and sandbox denial is runtime-incomplete.
-  Property/fuzz providers require a seed, iteration budget, and replay command.
-  High-risk unsupported cells and incomplete runtime evidence fail closed.
-- The initial semantic host receives the complete candidate diff exactly once,
-  plus bounded behavior and evidence projections and applicable review Rules.
-  Raw logs, runner policy, leases, timeout mechanics, and artifact management
-  stay in code.
-- Runtime normalization owns finding IDs, deduplication, evidence binding,
-  classification, and blocking eligibility. Only deterministic runtime findings
-  can produce a `verified-failure`; the semantic host cannot promote a concern
-  by citing a failed record, and unrelated record IDs are removed. Unbound risks are
-  `semantic-concern`, and gaps or unavailable runtime stay distinct.
-- Initial artifacts retain the diff for deterministic local delta derivation,
-  but host telemetry never stores prompt text. Reports and Work Map artifacts
-  bind evidence completeness, record digests, phase, and host-call count.
-- Every initial artifact is issued with a separate canonical installed-runtime
-  receipt binding its complete serialized payload, findings, evidence,
-  timestamps, candidate, behavior contract, and standalone or Work Map scope.
-  Work Map scope also binds map revision, reviewed subject, and claim attempt;
-  closure requires authoritative requested-changes readback from the immediately
-  following repair attempt. Caller-authored, edited, copied-across-scope,
-  prior-attempt, or receipt-less JSON has no closure authority.
-- Superseded by the 2026-09-09 single-lineage recovery decision below: receipt
-  integrity remains mandatory, but failed attempts no longer consume a separate
-  permanent claim. The signed lineage and exclusive lock own closure authority.
-- The receipt authority protects against reviewed candidate code, model output,
-  and caller-provided artifact JSON. As elsewhere in the managed-worktree threat
-  model, the same-permission host user and installed Goldband runtime are trusted;
-  resisting a malicious same-user process would require a privileged helper or
-  an OS-backed key unavailable to that process.
-- Bounded regular untracked files omitted from the semantic diff for secret or
-  binary safety remain path/content-digest-bound. Their exact bytes enter only
-  the isolated executable snapshot. Unsafe, escaping, or oversized redacted
-  files fail closed before provider execution.
-- Closure is a separate invocation using the initial artifact and repaired
-  candidate. Runtime records both behavior-contract digests, derives a compact
-  multi-hunk repair delta that omits unchanged middle regions, includes newly
-  disclosed or modified cells, reruns only affected
-  providers, rejects non-original finding IDs, and accepts only
-  `closed`, `still-open`, `direct-regression`, or `evidence-incomplete`.
-- Closure evidence must intersect the original finding's authorized behavior
-  cells. Persisted records are fully validated against provider/disposition
-  contracts, and stored completeness is recomputed rather than trusted.
-- `closed` requires fresh passing rerun evidence; an original verified failure
-  specifically requires its failed operation to rerun successfully. Work Map
-  artifacts retain bounded evidence records so finish can recompute their digest.
-- A Work Map transition exception does not by itself authorize artifact cleanup.
-  The review runtime first triggers transaction recovery and reads back the predicted
-  transition revision plus exact review reference. A committed reference is preserved
-  and treated as success; cleanup occurs only when readback proves the ticket remains
-  at the pre-transition implemented revision. Ambiguous readback fails closed while
-  preserving artifacts and receipts that a recoverable transaction may reference.
-- The unchanged-operation check binds seed/iterations, source executable content,
-  transitive non-system runtime-library alias/target/content attestation, transformed
-  projection content/mode/tool identity and sanitized runtime environment,
-  runner policy/platform, dependency locks and package metadata, and projected
-  command shims. Runtime libraries are re-attested after execution; drift makes
-  the record incomplete and not fresh. A changed execution identity requires a
-  new initial review.
-- A zero-finding initial review cannot launch closure. Each invocation has a
-  one-host-call budget; closure receives zero bytes of the unchanged full
-  original diff and cannot create a general findings inventory.
-
-Assumptions:
-
-- Projects can own a small explicit behavior/evidence manifest instead of one
-  universal command list.
-- macOS Seatbelt is the current local evidence runner boundary. Other platforms
-  must add an equivalent deny-network snapshot runner before real review can
-  claim parity.
-- External network, credential, paid, shared-environment, device, and
-  production evidence needs a separate operation-specific runner and typed
-  authorization; the local runner remains deny-only.
-
-Consequences:
-
-- Reproducible checks run before semantic token spend, and the reviewer focuses
-  on omissions rather than redoing deterministic work.
-- Existing projects must add a valid evidence manifest before real semantic
-  review; missing configuration is an explicit blocked state.
-- Initial review remains one full-diff host call. A repair may add one bounded
-  closure call without hidden specialists or full-diff resend.
-- Fixture and local results cannot be mislabeled as live, device, provider, or
-  production proof.
-
-Alternatives considered:
-
-| Alternative | Why rejected |
-|-------------|--------------|
-| Keep prose evidence fields and strengthen the prompt | A model cannot prove commands ran, replay failures, or enforce candidate freshness. |
-| Let the reviewer choose and run arbitrary commands | It weakens read-only isolation, hides side effects, and wastes semantic tokens on deterministic work. |
-| Automatically infer one universal test command | Projects own different contracts; guessed checks create false confidence and fake portability. |
-| Re-run the full review after every repair | It resends unchanged content, reopens the findings inventory, and hides a second full review cost. |
-| Treat every plausible concern as a blocker | Unreproduced risk is useful, but presenting it as verified failure corrupts the evidence model. |
-
-Failure signals:
-
-- A semantic host starts before matrix, provider, evidence, freshness, and
-  provenance validation finish.
-- Operations share a writable candidate snapshot or omit pre/post tree attestation.
-- Operations share HOME/TMP state or can read a previous operation's residue.
-- An evidence command can read content outside its candidate, runner state,
-  sealed runtime projection, or projected dependencies.
-- A dynamically linked runtime can read its original host package tree, mutate its
-  projection, or execute transformed bytes that are absent from the command identity.
-- A prompt-redacted untracked file disappears from the candidate binding or
-  executable snapshot.
-- A provider satisfies a cell without reciprocal manifest ownership.
-- A RED operation accepts an arbitrary non-zero process or sandbox failure.
-- A semantic finding is promoted to verified failure by citing a failed record.
-- A semantic finding gains deterministic authority by spoofing a runtime-owned category.
-- Closure accepts passing evidence unrelated to the original finding cells.
-- Artifact reuse trusts a forged disposition record or stored completeness.
-- Closure accepts an initial artifact without matching runtime-state readback,
-  or reuses a standalone receipt for a Work Map transition.
-- A verified blocker lacks fresh replayable candidate-bound failed evidence.
-- A fixture or local record is described as live, device, or production proof.
-- Closure runs after zero findings, accepts a new finding ID, resends the full
-  original diff, or invokes more than one host.
-- Raw logs or runtime-owned control prose re-enter the semantic prompt.
-- Work Map finish accepts a version-2 review artifact without its evidence
-  chain.
-
-Revisit triggers:
-
-- Linux or Windows gains an equivalent tested local snapshot and network
-  boundary.
-- A reusable external evidence runner can verify typed authorization and
-  concrete provider/device/production readback without widening local review.
-- Stable project behavior contracts can be generated from another authoritative
-  artifact without losing owner review or explicit dispositions.
-
-## ADR: Review contract freshness and installed distribution identity
-
-Status: Accepted
-
-Decision:
-
-- Keep one review authority. Add `check:review-contracts` to the existing root
-  test and CI graph instead of creating a parallel review, approval, receipt, or
-  release workflow.
-- Require every reusable provider to declare `persistent` lifecycle, explicit
-  path-scoped or reasoned-global applicability, and an execution context with
-  one sandbox owner. Repository manifests reject `transition` providers and
-  persistent base/nonzero RED operations.
-- Bind transition evidence to the exact repository, base, candidate, scope, and
-  normalized operation contract. Explicit transition manifests and persisted
-  initial artifacts use that validator in the production ingestion path; a
-  successor candidate cannot inherit them.
-- Use applicable providers to derive the effective behavior-cell set for
-  completeness. Cells owned only by unrelated path scopes do not become
-  coverage gaps; ownerless explicit dispositions remain global.
-- Return a typed partial record before dispatch when a provider-owned Seatbelt
-  suite cannot run inside the sealed evidence runner. Only the named macOS host
-  lane runs that boundary; partial results have no completion or closure
-  authority.
-- Derive one installer-owned source-input digest from all setup/build/config,
-  generated contracts, launcher/runtime sources, rules, skills, migrations,
-  review/QA/design assets, and browser/PDF bundles read or copied by setup. The
-  trusted install stores a separate artifact inventory and digest over runtime
-  bytes plus the launcher marker and execpolicy rule written beside it.
-- Declare dispatch per canonical action as `trusted-launcher`, `host-runtime`,
-  `prompt-contract`, or `registered-only`. Status and temp-install inventory run
-  bounded fake-handler probes through the same production router used by the
-  explicitly trusted launcher set.
-
-Why:
-
-Local gates previously proved only their own files. They could all pass while a
-one-time RED became permanent, empty applicability silently became global,
-nested Seatbelt was misclassified as a regression, or installed runtime bytes
-drifted outside a two-file fingerprint.
-
-Consequences:
-
-- Missing applicability, empty path lists, unexplained global scope, stale RED,
-  unsupported execution context, source drift, artifact corruption, and
-  dispatch mismatch now fail with the owner, actual/expected contract, scope,
-  context, and repair location.
-- A source change and an installed-byte mutation are reported separately.
-- Compatibility actions such as `investigate/code` are not promoted into the
-  fixed launcher, and registered-only actions remain blocked.
-
-## ADR: Runtime-owned review acceptance lineage
-
-Status: Accepted
-
-Decision:
-
-- Persist one HMAC-signed lineage per canonical repository/base/scope under the
-  installed review receipt authority.
-- Compare inherited behavior cells and providers before evidence execution.
-  Existing requirements are monotonic; new cells/providers may be added.
-- Preserve blocking finding IDs and behavior-cell bindings. A successor initial
-  review cannot supersede them; only the authoritative initial artifact may
-  enter scoped closure.
-- Route an authoritative `hostCallCount=0` artifact containing only deterministic
-  findings through a typed pre-semantic evidence-repair transition. Reuse the
-  existing artifact flag, receipt authority, lineage owner, monotonic contract
-  comparison, and signed lineage authority rather than adding another mode or receipt.
-  The repair reruns affected and newly strengthened cells; an eligible result may
-  make the lineage's first initial semantic call, while an ineligible result
-  persists a successor deterministic-only artifact and keeps completion false.
-- Record predecessor artifact, receipt, candidate/contract digests, finding IDs,
-  and affected cells in the successor initial artifact. Allow only gap-to-typed
-  disposition strengthening (`manual` or `unsupported` to `automated`, `static`,
-  or `runtime-readback`); reverse and lateral changes still require base-owned
-  waiver authority.
-- Bind lineage to Work Map acceptance when present, selected Rules, base,
-  candidate, scope, and manifest identities.
-- Reject an empty initial candidate before acquiring or writing authoritative
-  lineage state. For standalone reviews, bind lineage identity to normalized
-  changed paths as well as the collection scope. A repair keeps the original
-  path scope and must use its authoritative artifact for closure.
-- Preserve upgrade safety with signed legacy read-through: a broad-scope legacy
-  blocker migrates only when its artifact digest verifies the same changed-path
-  scope. An empty or unrelated legacy artifact remains stored but cannot pollute
-  a different candidate. If the artifact is unavailable, an exact signed
-  candidate-digest match still preserves the blocker; other candidates do not
-  inherit the unverifiable broad scope.
-- Treat non-empty changed-path overlap inside one standalone collection scope as
-  the same unresolved authority for admission purposes. A repair that adds or
-  removes paths cannot start a successor initial review while any original path
-  still overlaps; it must use the authoritative closure artifact.
-- Acquire deterministic sorted per-path locks before overlap discovery and hold
-  them through lineage finalization or release. Overlapping candidates therefore
-  serialize across scan and write, while disjoint candidates keep independent
-  concurrency.
-- Load minimum evidence requirements and waivers only from typed
-  `goldband.review-policy.json` in the base commit. Persist applied waiver IDs in
-  the signed lineage record.
-- Keep verdict dimensions separate. `no-new-findings` alone never grants Work
-  Map verification or completion authority.
-
-Why:
-
-Fresh candidate-bound evidence can still prove a caller-weakened contract. A
-runtime-owned predecessor is required to detect removal, semantic reversal,
-risk/disposition/evidence downgrade, provider replacement, or finding
-detachment before semantic review can wash away an earlier blocker.
-
-Consequences:
-
-- Concurrent equivalent reviews have one lock owner, dead owners are
-  recoverable, and signed records detect state tampering.
-- Legitimate weakening requires a reviewable base-committed waiver; additive
-  coverage remains valid without a waiver.
-- A failed Work Map readback keeps the signed lineage and named artifact, so a
-  later review cannot erase a blocker because a projection transition failed.
-- Block messages name the authoritative run, creation time, lineage update time,
-  changed-path scope, and unresolved finding IDs. They provide the exact
-  state-appropriate `--closure-artifact` instruction when the artifact still
-  verifies; otherwise they name the expected digest and the required
-  restore-then-repair or restore-then-close recovery.
-
-## ADR: Same-host execution for provider-owned review evidence
-
-Status: Accepted
-
-Decision:
-
-- Keep host evidence inside the existing installed review pass. A trusted
-  runtime on macOS may execute the exact manifest-declared operation through
-  the existing candidate snapshot and one provider-owned Seatbelt boundary.
-- Require the installed private runtime configuration to authorize the named
-  `macos-review-contract-host` lane. Bind the execution identity to repository,
-  base, candidate, scope, manifest, provider, operation, runner context, runtime
-  images, projected dependencies, platform, and architecture.
-- When an outer evidence sandbox is active, the host or lane is unsupported, or
-  installed authority validation fails, emit typed `runtime-incomplete` before
-  dispatch. Never retry without Seatbelt and never consume caller-supplied
-  result JSON.
-- Reuse the existing review receipt, lineage, evidence records, semantic host,
-  and completion decision. Do not create a portable CI artifact or a second
-  handoff authority for this same-host requirement.
-
-Why:
-
-The execution-context preflight correctly prevented nested Seatbelt, but it
-also made semantic review unreachable for every applicable host-bound provider.
-The installed launcher already owns the exact review, candidate materialization,
-receipt, and lineage needed for a same-machine handoff.
-
-Assumptions:
-
-- The installed private runtime configuration and receipt key remain owned by
-  the current user and are not writable by the reviewed candidate.
-- macOS Seatbelt remains the supported local boundary for this lane.
-- Manifest operations remain deny-network and run only against the runtime-owned
-  read-only candidate snapshot plus isolated HOME/TMP roots.
-
-Consequences:
-
-- Supported installed macOS reviews can obtain fresh host-bound records and
-  continue to the single semantic host call.
-- Source runtimes, Linux, unsupported lanes, and outer sealed sandboxes remain
-  incomplete with zero completion authority.
-- Cross-machine CI transport, signing, freshness, and key management remain out
-  of scope until a demonstrated use case requires them.
-
-Alternatives considered:
-
-| Alternative | Why rejected |
-|-------------|--------------|
-| Permit nested Seatbelt | The host rejects it and treating that failure as evidence would weaken the boundary. |
-| Run the candidate command unsandboxed | It would let a writable manifest expand host access beyond the review contract. |
-| Add a portable signed CI artifact now | Same-host execution closes the current requirement without transport, freshness, or cross-machine key management. |
-| Add a second handoff receipt | The installed review receipt and lineage already own authority; another receipt would create conflicting owners. |
-
-Failure signals:
-
-- A source runtime, wrong host, unsupported lane, or outer evidence sandbox
-  produces a fresh verified host record.
-- A host operation runs without Seatbelt, with network access, or against the
-  writable source worktree.
-- Changing repository, base, candidate, scope, manifest, provider, operation,
-  or runner context leaves the execution identity unchanged.
-- A host result can be edited or reused while its installed receipt still
-  validates.
-
-Revisit triggers:
-
-- A required review operation cannot execute on the same trusted macOS host.
-- Linux or Windows gains an equivalent tested provider-owned sandbox.
-- A demonstrated cross-machine review needs portable attestation, freshness,
-  transport, and key-rotation contracts.
-
-## ADR: Scope external-runner enforcement through provider applicability
-
-Status: Accepted
-
-Decision:
-
-- Model `external-authorized-runner` as an automated boundary owned by the
-  existing path-scoped `review-evidence-tests` provider.
-- Keep providerless `manual` and `unsupported` dispositions global. Do not
-  change effective-cell selection or add caller-, prompt-, environment-, or
-  prose-driven applicability.
-- Keep external runner availability separate from admission enforcement. A
-  declared network, live-provider, device-platform, or production-readback
-  operation still requires current typed authorization and an
-  operation-specific external runner; the local runner remains deny-only.
-
-Why:
-
-The previous providerless `unsupported` cell represented both an implemented
-fail-closed boundary and a future external-runner roadmap item. Because
-providerless dispositions are intentionally global, unrelated local-only
-candidates received a permanent coverage gap even when they declared no
-external operation.
-
-Assumptions:
-
-- `review-evidence-tests` remains the authoritative deterministic owner of
-  local external-operation rejection.
-- Provider applicability continues to be derived only from the typed manifest
-  and candidate paths.
-- External runner implementation remains outside the current requirement.
-
-Consequences:
-
-- Unrelated local-only candidates no longer inherit an external-runner roadmap
-  gap and can obtain completion authority when all applicable evidence passes.
-- Changes to the evidence manifest, schema, runtime, or its tests still select
-  the enforcement cell and provider.
-- Existing artifacts bind a different behavior-contract digest and must be
-  revalidated rather than reused across this evolution.
-
-Alternatives considered:
-
-| Alternative | Why rejected |
-|-------------|--------------|
-| Make every providerless disposition non-applicable | It would silently remove genuine global manual and unsupported requirements. |
-| Add operation-aware cell applicability to the schema | Existing provider applicability expresses the observed requirement without another state owner or selection mechanism. |
-| Mark the roadmap gap `not-applicable` | It would hide the boundary instead of assigning its implemented enforcement to an accountable provider. |
-| Use a prompt, environment marker, or caller declaration | Those inputs are outside the authoritative manifest/runtime contract and would create a bypass. |
-
-Failure signals:
-
-- A local-only dependency candidate emits an `external-authorized-runner`
-  record or coverage gap.
-- An authorized network or external-level operation executes in the local
-  runner, degrades to fixture/mock/local evidence, or obtains completion
-  authority without an external runner.
-- A providerless global manual or unsupported cell disappears from effective
-  completeness.
-
-Revisit triggers:
-
-- A real external runner is implemented and needs its own typed provider,
-  authorization, freshness, and readback contract.
-- Provider path applicability cannot represent an observed external-operation
-  requirement without over- or under-selecting candidates.
-
-## ADR: Monotonic review contract resolution and local repository store
-
-Status: Accepted
-
-Decision:
-
-- Resolve `authoritative baseline + optional monotonic extension = effective
-  contract` before evidence execution, lineage admission, or semantic host
-  dispatch.
-- Prefer a repository `goldband.review-evidence.json`. Only when it is absent
-  may a runtime-owned per-repository entry become the baseline. A caller-supplied
-  explicit manifest cannot shadow either baseline and must retain every required
-  cell, provider, applicability, risk, disposition, and evidence level.
-- Permit an explicit persistent manifest to be the primary contract only when no
-  repository or stored baseline exists. Mark that source in artifact provenance.
-- Bind store entries to the canonical Git common-directory path and filesystem
-  instance plus a remote-identity snapshot. Worktrees share one entry; moves,
-  path reuse, clones, remote changes, and
-  ambiguous identity require explicit re-import.
-- Expose `review contract inspect`, `import --manifest`, and `remove`. Mutations
-  use private regular files, reject symlinks, write atomically, and never alter
-  the source manifest or repository working tree.
-- Bind baseline, explicit, and effective source identities and digests plus the
-  compatibility identity into the existing review artifact, receipt digest, and
-  lineage path. Do not introduce another acceptance or completion authority.
-
-Why:
-
-The previous explicit-manifest resolver could replace a stronger repository
-contract before a predecessor lineage existed. Repositories without committed
-manifests also had no persistent evidence-backed path. One deterministic resolver
-closes both gaps without inventing generic JSON merge semantics or runtime-guessed
-providers.
-
-Consequences:
-
-- A weaker explicit contract fails before provider execution or host dispatch,
-  including a first review for a new scope.
-- Repository requirements always shadow local convenience state, while `inspect`
-  still reports the shadowed entry.
-- The store remains local-only. It does not synchronize contracts, transport CI
-  authority, infer behavior matrices, or implement semantic-only review.
-- Existing repository manifests remain valid in place and are never migrated or
-  removed automatically.
-
-Alternatives considered:
-
-| Alternative | Why rejected |
-|-------------|--------------|
-| Let explicit manifests replace the baseline | A new lineage could start with fewer required cells and appear complete. |
-| Automatically copy a missing manifest into the repository | It would mutate user worktrees and turn onboarding into hidden policy state. |
-| Merge arbitrary manifest fragments | It creates ambiguous conflict semantics and a second composition language. |
-| Key the store only by remote URL | Forks, URL reuse, and remote rename can bind the wrong repository. |
-
-Failure signals:
-
-- A weaker explicit manifest reaches an evidence operation or semantic host.
-- A central entry shadows a repository manifest or applies after identity drift.
-- Review creates, moves, edits, or deletes a repository manifest.
-- Artifacts omit any selected baseline, explicit, or effective digest.
 
 ## ADR: Retire the GBrain integration surface
 
@@ -2279,83 +1705,16 @@ Revisit triggers:
 - Provider-neutral artifact synchronization itself no longer has demonstrated
   users or cannot maintain its privacy and secret-scanning contract.
 
-## ADR: Canonical review workspace and base-owned manifest authority
+## ADR: Review scope uses canonical repository coordinates
 
-Status: Accepted
+Decision: `review/code` resolves the canonical Git repository root and the
+invocation-relative offset once. Diff paths, changed files, the scope digest,
+snapshots, and the dependency projection use repo-root coordinates, so root and
+tracked-subdirectory invocations review the same repository scope. An invocation
+directory outside the canonical repository fails.
 
-Decision:
-
-- Resolve the canonical Git repository root and invocation-relative execution
-  offset once. Diff paths, changed files, candidate binding, scope digest,
-  snapshots, dependency projection, and default manifest lookup use repo-root
-  coordinates. Provider operations execute at the validated offset inside the
-  isolated repo-root snapshot.
-- Read the authoritative repository manifest from the reviewed base at the repo
-  root. A runtime-store contract is authoritative only when that base has no
-  manifest. Working-tree, index, and explicit manifests are candidate extensions
-  and must pass the existing monotonic comparison before any evidence operation
-  or semantic host dispatch.
-- Persist workspace coordinates plus base, candidate, store, and explicit source
-  identities, digests, and candidate tracking state in the existing artifact and
-  lineage contract. Do not create a second completion authority or a nested
-  manifest hierarchy.
-- Use review evidence manifest schema v2 for the required `lifecycle`,
-  `applicability`, and `executionContext` safety fields. Permit v1 only as the
-  committed-base side of a one-version transition to a v2 candidate, and only
-  when changing the base version marker alone passes the complete v2 contract.
-  Reject every other v1 input with observed and supported versions, source
-  identity, and explicit migration guidance; never infer safety defaults.
-
-Why:
-
-Subdirectory invocation previously mixed repo-root Git patch paths with a
-stripped subdirectory snapshot, and selected default manifests from ambient
-`cwd` even though runtime-store identity used the Git common directory. A
-candidate-controlled untracked or modified manifest could therefore appear to
-be repository authority. The old schema label also concealed a breaking safety
-contract change.
-
-Assumptions:
-
-- Git repo-root paths are the stable coordinate for all default review scopes.
-- A provider that intentionally runs from the invocation subdirectory can do so
-  safely only inside the materialized canonical snapshot.
-- Nested project contracts are out of scope until they have an explicit,
-  persistent scope identity and monotonic relationship to the repo-root base.
-
-Consequences:
-
-- Root and tracked-subdirectory invocations share repository identity, baseline,
-  and digest while exposing different execution offsets.
-- Default, worktree, staged, and base diffs include one consistently materialized
-  repo-root scope, including changes outside the invocation subdirectory.
-- Untracked, staged-new, and modified manifests remain reviewable changes but
-  cannot shadow or downgrade base/store authority.
-- Repositories and imported stores must migrate manifests to schema v2 before
-  the new runtime can execute review, apart from the narrowly validated
-  committed-v1-base to v2-candidate transition.
-
-Alternatives considered:
-
-| Alternative | Why rejected |
-|-------------|--------------|
-| Strip patch paths for subdirectory snapshots | It fixes one apply failure but leaves diff scope, manifest authority, dependencies, and lineage on conflicting coordinates. |
-| Walk parent directories for the nearest manifest | Ambient directory names remain implicit authority and enable an undefined nested hierarchy. |
-| Trust any Git-indexed manifest | Staged-new and candidate-modified files are still candidate-controlled rather than reviewed-base authority. |
-| Guess defaults for legacy v1 safety fields | Global/path applicability and runner ownership are safety decisions, not compatible defaults. |
-
-Failure signals:
-
-- Root and subdirectory inspect return different baseline identities or digests.
-- A repo-root patch cannot materialize from a tracked subdirectory.
-- Candidate manifest content reaches an operation without monotonic comparison.
-- An artifact omits workspace offset or base/candidate source provenance.
-
-Revisit triggers:
-
-- A real nested-project contract requires an explicit scope identity and
-  repo-root monotonic composition rule.
-- Git is no longer the authoritative candidate/base transport for review.
+Why: mixing repo-root patch paths with subdirectory-relative snapshots produced
+inconsistent review scope.
 
 ## ADR: Goldband Loop complexity debt is monotonic
 
@@ -2399,206 +1758,17 @@ Revisit triggers:
 - A stable AST-backed function identity is available and per-function monotonicity
   is worth the additional migration and rename contract.
 
-## ADR: Review contract authoring uses one fail-closed runtime authority
+## 2026-09-15: Review input is bounded at 2 MiB
 
-Status: Accepted
+Decision: one runtime constant bounds the complete review patch at 2 MiB,
+including combined tracked and untracked input; prompt metadata overhead is
+bounded separately at 48 KiB. Oversized input fails explicitly and asks for a
+narrower scope. There is no project exception, waiver, or silent truncation.
 
-Decision:
-
-- Keep `reviewEvidenceManifestSchema.validate()` as the final manifest authority.
-  JSON Schema remains a distributed structural/editor aid and explicitly does
-  not own graph, candidate, lineage, or runner semantics.
-- Expose `review contract validate --manifest <path>` as a side-effect-free
-  authoring check. It reads through the same stable regular-file and runtime
-  validator path as import, but does not resolve or mutate the runtime store,
-  execute providers, create lineage, or invoke a semantic host.
-- Expose `review contract init [--output <path>]` as an exclusive-create,
-  repo-bounded scaffold operation. The scaffold is valid schema v2 but contains
-  one high-risk unsupported cell, so it remains ineligible for semantic review
-  until a project owner replaces it with real behavior and evidence providers.
-- Distribute the canonical guide, one public local-gate example, and both JSON
-  Schemas with Claude and Codex authoring surfaces. Installed help reports their
-  exact paths.
-- Do not infer frameworks, commands, risk, applicability, evidence level, or
-  authorization. Do not add a preset catalog or another manifest validator.
-
-Why:
-
-`review/code` correctly fails closed without a resolvable contract, but an
-installed user in another repository previously had no supported path to learn,
-create, or dry-run validate the first manifest. Internal fixtures and repository
-manifests were not public examples, and the source-only JSON Schema could accept
-some inputs that the runtime rejected. A blocking scaffold plus the production
-validator closes the onboarding gap without fabricating project knowledge or
-weakening completion authority.
-
-Consequences:
-
-- A successful authoring validation proves only contract validity. Its output
-  states that no evidence ran and no completion authority exists.
-- `init` may create one new repository file but cannot overwrite, escape the
-  canonical Git repository, import state, or start review.
-- Safety-critical local conditions shared by JSON Schema and runtime are kept in
-  a representative conformance corpus. Runtime-only graph rules remain
-  explicitly documented rather than represented by a second incomplete
-  implementation.
-- Installed-distribution drift now includes the guide, example, and Schemas.
-
-Revisit triggers:
-
-- Multiple real projects demonstrate repeated, identical provider contracts
-  that justify a curated preset with a named owner and compatibility policy.
-- The manifest model moves to a declarative source capable of generating both
-  the runtime validator and JSON Schema without losing graph semantics.
-
-
-## 2026-09-08 — CI owns Goldband's macOS sandbox self-tests
-
-Supersedes the self-test execution choice in “Same-host execution for
-provider-owned review evidence”; other local evidence boundaries remain.
-
-The named host lane still wrapped each test process in the runtime's Seatbelt
-profile. Tests creating a different inner profile failed with `sandbox_apply`,
-and installed-runtime tests lost their temporary environment inside the sealed
-runtime, failed with EPERM and timed out. Identical nested profiles can work,
-but the actual tests require different profiles; broadening individual allowed
-operations did not provide a valid boundary for these tests.
-
-Use the existing public `push dev` macOS CI job for the three existing provider
-operations. Add explicit steps before candidate build scripts, keep the full
-workflow suite, and read only exact commit/tree/run/attempt/step metadata through
-a fixed GitHub API adapter. The trusted runtime pins the entire workflow recipe.
-GitHub's native commit tree is checked as well as local Git to reject replacement
-objects or a misleading local HEAD. No new runner service, token handling,
-evidence upload, caller-supplied JSON, or unsandboxed local fallback is added.
-
-This explicitly accepts trusted writable CI execution for these self-tests;
-it does not attest an immutable checkout, exit code, network denial, or overall
-pipeline success. Non-success or unavailable metadata stays runtime-incomplete.
-The operation network field does not grant the consumer candidate-controlled
-network actions; the CI workflow owns its network environment. Only the three
-unchanged operations have a one-way transport migration. Existing signed
-receipts, finding IDs and closure obligations remain authoritative.
-
-Consequences: uncommitted candidates cannot obtain CI evidence, and a changed
-workflow requires a reviewed runtime recipe update. Local unit and installed
-fixture tests validate the adapter but cannot substitute for a live candidate
-CI run. Both existing installers bundle the shared consumer and guide.
-
-## 2026-09-09: Preserve project registry discovery across sandbox fallback
-
-Project review contracts are managed in the durable Goldband registry and selected
-by Git identity, without an Agent-supplied path on ordinary review runs. Temporary
-evidence output must not redirect contract lookup. `inspect` is read-only and
-reports the expected entry path even when no registration exists.
-
-Legacy repository-baseline enforcement remains intact. Removal during migration
-requires an identical registered digest; a missing or changed registration cannot
-authorize removal. Goldband's old manifests are retained as regression fixtures
-for portable CI, while active local configuration lives under `~/.goldband`.
-
-## 2026-09-09: Local self-test evidence before push
-
-Required order: local candidate, independent review, then push and CI. The three
-Goldband macOS self-test recipes cannot require an already-pushed CI candidate.
-Use a fixed installed local-host lane on exact candidate copies, with temporary
-HOME/state, no credential forwarding, bounded execution, and existing signed
-candidate-bound evidence. The self-tests start their own Seatbelt processes;
-the parent therefore uses native host permissions and explicitly declares host
-networking, rather than claiming another enclosing sandbox.
-
-Only the three existing full recipes can migrate from CI, preserving behavior
-cells and operation contracts except runner/network context and longer timeouts.
-General project evidence remains sealed. The historical CI adapter is retained
-for post-push evidence; no push or test omission is needed to start local review.
-
-## 2026-09-09: Separate review safety boundaries from check semantics
-
-Initial and closure review share the existing 256 KiB patch and 48 KiB metadata
-budgets. The prior separate 64 KiB delta and 32 KiB total closure limits rejected
-this architecture repair before review despite it fitting the initial budget.
-One shared budget replaces those conflicting limits; complete deltas, oversize
-rejection, original-finding scope, and receipt authority remain required.
-
-An initial semantic finding could omit evidence bindings that closure later
-required. A legitimate Git no-index exit-code correction was also rejected by
-exact description/command equality. Keep structured coverage, risk, evidence
-levels, execution authority, fresh evidence, and unresolved finding identity
-strict; assess changed check semantics in the existing independent review.
-
-The shared runtime records before/after definitions and one explicit
-preservation assessment in its existing artifact. Passing a replacement command
-alone does not establish preservation. Unreviewed or rejected corrections retain
-the prior required semantics across initial, evidence-repair, and closure runs;
-additive coverage remains required. No new approval command, waiver file, or
-parallel contract authority is introduced. Execution coordinates and operation
-boundaries cannot change under a semantic assessment.
-
-One resolver binds semantic findings through explicit references or declared
-path applicability, including legacy records. It does not guess deterministic
-bindings or treat severity as coverage. Unknown coverage remains incomplete.
-
-The earlier permanent receipt-attempt claim duplicated the signed lineage lock
-and left host failures unrecoverable: reusing the receipt was forbidden while a
-new initial review was also forbidden. Remove that claim, retain receipt payload
-and scope validation, and use the existing signed lineage as the sole authority.
-Failed attempts preserve unresolved findings; successful closure removes the
-authoritative predecessor, so completed and concurrent replays remain rejected.
-Closure resolves one signed owner by receipt ID and artifact digest and updates
-that same file. Copying an overlapping owner produced an invalid path/ID pair
-and left the original copy replayable; the copy and receipt-only bootstrap paths
-are removed. Evidence repair also retains owner acceptance and scope coordinates.
-Missing or ambiguous owners remain explicit failures, not guessed recovery.
-The local evidence recipe adds `test/review-lineage.test.ts` after its complete
-original CI test list, so these retry and ownership regressions are included in
-candidate-bound evidence. Arbitrary extra commands remain rejected.
-Registry relocation uses the same hard-boundary comparison and explicit semantic
-assessment as other contract edits; the repository baseline remains recorded
-until reviewed. It does not silently accept changed descriptions during relocation.
-
-## 2026-09-15: Restore the shared review patch budget to 2 MiB
-
-The 256 KiB cost-control budget rejected a roughly 691 KiB complete worktree diff
-before evidence execution or semantic review. Removing generated contract files
-still left about 458 KiB, so requiring a smaller scope could not preserve the
-requested review. This supersedes the patch capacity in the July 22 and September
-9 decisions; the 48 KiB prompt metadata budget remains unchanged.
-
-Restore the original 2 MiB patch budget under one runtime constant, including
-persisted initial artifact validation and closure deltas. Keep complete input,
-one independent reviewer, signed provenance, and explicit oversize rejection.
-No project exception, scope rewrite, configurable waiver, or additional review
-coordination mechanism is needed for this failure class. Existing untracked
-redaction and safe file-reading boundaries remain separate.
-
-Boundary regressions cover UTF-8 bytes, combined tracked/untracked input, signed
-artifact readback, closure deltas, and both host adapters at the full stdin
-budget. The larger ceiling allows higher review cost and is not a token-window
-guarantee. Revisit input packaging if real host context failures or review-quality
-evidence show that complete input at this ceiling is impractical.
-
-## 2026-10-01: Review Context Belongs to the Installed Runtime
-
-Decision: agents call the installed review entrypoint with user intent and
-explicit scope. The program resolves its host, project contract, managed task
-and a unique signed unresolved review continuation. This supersedes the manual
-host and artifact assembly in the 2026-07-20 entrypoint decision.
-
-The existing launcher, lease and signed lineage remain the authorities. A new
-orchestrator or state store would duplicate those owners. Ambiguous, invalid or
-missing authority blocks; mode and domain evidence requirements are not guessed.
-Automatic retries compare the lineage's latest candidate and contract, while
-the initial artifact remains closure provenance. Explicit artifact selection
-preserves deliberate environment retries.
-Newly changed files outside the initial artifact's signed scope block automatic
-closure; the closure host is restricted to original findings, so it cannot
-provide initial semantic coverage for those additional changes.
-The scope digest owner projects managed bindings to work and ticket IDs; mutable
-receipts, revisions and claim details cannot change that stable task identity.
-
-Installed Claude/Codex probes cover entrypoints, lease binding, signed closure,
-partial-closure deduplication and native permissions. Revisit this design if
-real projects cannot identify a unique continuation without manual selection.
+Why: a 256 KiB budget rejected complete worktree diffs that could not be split
+without losing the requested review. The ceiling allows higher review cost and
+is not a token-window guarantee; revisit input packaging if real host context
+failures show complete input at this size is impractical.
 
 ## 2026-10-11: Retire review evidence governance and closure authorization
 
@@ -2713,3 +1883,147 @@ value ownership in the 2026-07-21 Codex config freshness decision.
 preferences, invalid input, parser failure, independent component refresh, status
 advice, status-line scope, backup retention, and uninstall ownership. Config
 validation, real execpolicy checks, and independent review remain separate evidence.
+
+## 2026-10-12: Hosts Own Skill Selection
+
+Claude Code and Codex select skills and the `goldband` capability router from
+each `SKILL.md` description. Goldband prompt hooks no longer match prompt
+keywords to suggest portable skills or `$goldband` capabilities. This removes
+`activation-rules.js`, the generated `capability-routing.generated.json` files,
+the Codex suggestion session state, and the manifest `triggers` field.
+
+Why: the keyword matcher duplicated native routing, added context, and missed
+cases it claimed to cover (for example, "debug and optimize performance" did
+not suggest `performance-optimization`). Description quality is the single
+routing input to maintain.
+
+The Claude `UserPromptSubmit` hook keeps cross-review arming, the knowledge
+advisory, and workflow-entry telemetry; the Codex prompt hook keeps
+cross-review arming. `prompt-trigger` remains a valid telemetry category so
+older JSONL still validates. `scripts/test-hook-noise-policy.mjs` asserts that
+task-shaped prompts produce no routing context on either host.
+
+## 2026-10-12: Telemetry Has No Upload Path
+
+Goldband Loop telemetry stays on the local machine. The inherited Supabase
+backend is removed: `goldband-loop/supabase/` (edge functions, migrations,
+project config), `goldband-telemetry-sync`, the background sync started by
+`goldband-telemetry-log`, and the install ping in `goldband-update-check`. The
+`telemetry` tiers remain valid config values but only control the local usage
+log.
+
+Why: the configured project was inherited, not verifiably owned by this
+repository, so enabling a non-`off` tier could send usage data to a third
+party. Keeping an unowned upload path is riskier than removing it. Manual OTLP
+export to a user-chosen endpoint is unchanged. GitHub version checks in
+`goldband-update-check` remain governed by `update_check`.
+
+## 2026-10-12: Goldband Commands Do Not Shadow Host Commands
+
+Claude Code resolves a user command over a built-in or bundled command with the
+same name. `commands/plan.md` is renamed to `commands/goldband-plan.md`, and
+`commands/verify.md` is removed in favor of the host's `/verify`; its guidance
+already lives in `rules/claim-verification.md` and the global instructions.
+New Goldband commands use the `goldband-` prefix unless no host command can
+share the name.
+
+## 2026-10-13: Retire the Goldband Browser in Favor of Host Browser Tools
+
+`goldband-loop/browse` (the persistent Chromium daemon, its Chrome extension and
+side panel, browser skills, the macOS browser app, `chrome-cdp`, and the
+prompt-injection classifier) is removed. The `browser/session` action and its
+`browser/cookies` safety gate are retired; the Codex launcher no longer stages a
+browser client or auto-admits browser commands. Browser work, including real
+`qa/app` QA, uses the active host's browser tool under `manuals/browser.md`.
+`mcp/` templates define a Playwright MCP entry pinned to
+`@playwright/mcp@0.0.83` with `--isolated` and a localhost-only
+`--allowed-origins` default. `make-pdf` keeps its feature and now drives
+Chromium directly through Playwright (`make-pdf/src/pdfRenderer.ts`).
+
+Why: on 2026-10-12 the three QA fixtures (15 seeded bugs, now under
+`goldband-loop/test/fixtures/qa-eval*.html`) were run with `browse` and with
+Playwright MCP. Playwright MCP found 15/15 and passed every capability probe
+(HttpOnly session, dialogs, upload, iframe, popup tabs, PDF). `browse` found
+14/15 because it never captured uncaught page exceptions, and it missed popup
+tabs. Keeping roughly 66k lines of browser runtime for no QA capability the
+hosts lack is not justified. Claude in Chrome was not measured because its
+extension was disconnected.
+
+Trade-off: page content from Playwright MCP is not wrapped as untrusted or
+scanned by a classifier. Protection against injected instructions rests on what
+the agent may do afterwards (native permissions, auto-mode review, sandboxing,
+and the approval rules in `manuals/browser.md`), plus the template's isolation
+and origin defaults. Playwright documents `--allowed-origins` as not a security
+boundary. On Windows `make-pdf` runs the Chromium job in a Node child process,
+because Bun 1.3 there cannot launch Chromium (oven-sh/bun#4253) and cannot use
+`chromium.connect` on any platform; the Windows CI job renders a real PDF to
+prove that path.
+
+`./install.sh all-with-workflow` adds that entry to Claude Code (`claude mcp add
+--scope user`) and Codex (an appended `[mcp_servers.playwright]` table), because
+`qa/app` cannot exercise a page without a browser tool and the Chrome extension
+is not always connected. It reads the template, never modifies an existing
+`playwright` entry, and honors `GOLDBAND_SKIP_PLAYWRIGHT_MCP=1`. Only that
+explicit target adds it; `auto-refresh` replays component targets, so a user
+who removes the entry keeps it removed. `codex mcp add` was rejected because it
+re-renders the whole user config. The template also sets `--output-dir` to a
+`/path/to/goldband-home` placeholder that the installer resolves to an
+absolute `$GOLDBAND_HOME/playwright-mcp`: without it Playwright MCP writes a
+`.playwright-mcp/` directory into the project, and the option does not expand
+`~`. `--output-max-size=5242880` uses Playwright MCP's own eviction instead of
+a goldband cleanup job. It is a threshold, not a hard cap: after each tool
+response, `_enforceOutputBudget` in 0.0.83 deletes the oldest earlier files
+until the directory is under 5 MB and never deletes that response's own files.
+Recent snapshots persist until evicted, so the README tells users to delete the
+directory after testing sensitive data. `--snapshot-mode none` was rejected
+because the agent needs page snapshots to do QA.
+
+The accepted trade-off is that a long session can evict a screenshot or
+snapshot an earlier response returned, so the agent may find that path gone and
+must capture it again. On the QA fixtures a PNG screenshot measured 19-44 KB and
+a page snapshot about 4 KB, so 5 MB holds well over a hundred captures there;
+image-heavy pages, estimated (not measured) at a few hundred KB per screenshot,
+still leave room for roughly ten to twenty. No full `qa/app` session has been
+measured against the threshold.
+
+## 2026-10-13: Review Findings Are Typed and Every Valid Finding Blocks
+
+Decision: findings carry `kind: "defect" | "improvement"`. A defect needs
+evidence, a failure scenario, and verification. An improvement records an
+adoptable design change without a reachable failure; it needs evidence and a
+recommendation and is `medium`, `low`, or `info`. Every valid finding blocks:
+the runtime forces an improvement's `blocking` to `true`, reports all valid
+findings after deduplication, and counts both kinds in the review signal, so a
+review is clean only when none remain. An invalid improvement is discarded with
+a reported reason; kind and severity are never reclassified. One
+`review-engine.ts` operation owns validity, deduplication, and ordering. The
+rubric Suppressions exclude pure style, consistency-only changes, and
+unsupported advice.
+
+Rule selection and prompt assembly use the changed paths collected with the
+diff; no consumer re-parses it.
+
+Why: an advisory improvement is easily left behind as design debt, and a
+display cap discarded findings the reviewer had already produced. A second diff
+parser dropped a path-routed rule for a Git-quoted path.
+
+## 2026-10-13: First-Party Exports Outside Knip Need a Consumer
+
+Decision: `scripts/check-unused-exports.mjs` fails when a first-party module in
+`hooks/`, `codex/hooks/`, `scripts/`, `goldband-loop/cross-review/`, skill
+scripts, or `mcp/server/src/` exports a name that no other first-party source
+file mentions. It runs in the pre-commit project style gate for any staged
+source file, in `npm test` as `root:unused-exports`, and in the validate
+workflow. `goldband-loop` TypeScript stays with its existing knip check.
+
+knip was tried on these directories and rejected: it does not see members used
+through `const core = require(...); core.name(...)` or modules loaded by path
+at runtime, so it reported mostly false positives. The dedicated check parses
+`module.exports = { ... }` and ESM `export` declarations and counts any
+identifier mention in another tracked source file as a consumer, including
+tests. Generated copies listed by `managedGeneratedFiles()` and `plugin-assets/`
+are neither checked nor counted, and `hooks/fixtures/` is excluded.
+
+The check is deliberately lenient: a common name mentioned elsewhere counts as
+used, and an export that tests import without exercising still passes. It
+guards against orphaned exports, not against dead code that review must judge.

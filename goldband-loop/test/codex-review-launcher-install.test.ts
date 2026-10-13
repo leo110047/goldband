@@ -11,7 +11,7 @@ const bunPath = process.execPath;
 describe("trusted workflow launcher", () => {
   test("rejects a trusted runtime inside the reviewed workspace", () => {
     expect(() => installCodexReviewLauncher({sourceRoot, runtimeRoot: join(sourceRoot, ".unsafe-review-runtime"),
-      ruleFile: "/tmp/unused-rule", markerFile: "/tmp/unused-marker", bunPath, codexPath: bunPath, browserPath: bunPath,
+      ruleFile: "/tmp/unused-rule", markerFile: "/tmp/unused-marker", bunPath, codexPath: bunPath,
     })).toThrow("must be outside the Goldband source workspace");
   });
 
@@ -31,21 +31,18 @@ describe("trusted workflow launcher", () => {
         '  for i in {1..200}; do [ -f "$GOLDBAND_TEST_RELEASE" ] && break; sleep 0.05; done',
         '  test -f "$GOLDBAND_TEST_RELEASE"',
         'fi',
-        'printf \'%s\\n\' \'{"findings":[{"file":"file.txt","line":1,"severity":"high","summary":"fixture concern","evidence":"observed code","failureScenario":"input triggers incorrect result","suggestedVerification":"exercise input","classification":"verified-failure","evidenceIds":["spoofed"]}]}\' > "$output"',
+        'printf \'%s\\n\' \'{"findings":[{"kind":"defect","file":"file.txt","line":1,"severity":"high","summary":"fixture concern","evidence":"observed code","failureScenario":"input triggers incorrect result","suggestedVerification":"exercise input","classification":"verified-failure","evidenceIds":["spoofed"]}]}\' > "$output"',
       ].join("\n"));
       chmodSync(fakeCodex, 0o755);
       const runtimeRoot = join(fixture, "runtime");
       const ruleFile = join(fixture, "rules", "review.rules");
       const markerFile = join(fixture, "skill", ".workflow-launcher.json");
-      const options = {sourceRoot, runtimeRoot, ruleFile, markerFile, bunPath, codexPath: fakeCodex,
-        browserPath: bunPath, bundleBrowserServer: (_bun: string, _entry: string, dir: string) => {
-          mkdirSync(dir, {recursive: true}); writeFileSync(join(dir, "server.js"), "// fixture\n");
-        }};
+      const options = {sourceRoot, runtimeRoot, ruleFile, markerFile, bunPath, codexPath: fakeCodex};
       const marker = installCodexReviewLauncher(options);
-      for (const file of ["bin/goldband", "workflows/run.ts", "review/shared-rubric.md", "browse/server/server.js"]) {
+      for (const file of ["bin/goldband", "workflows/run.ts", "review/shared-rubric.md"]) {
         expect(existsSync(join(runtimeRoot, file))).toBe(true);
       }
-      for (const file of ["workflows/review-contract-cli.ts", "review/review-evidence-manifest.md", "review/schemas/review-evidence-manifest.schema.json"]) {
+      for (const file of ["browse", "workflows/review-contract-cli.ts", "review/review-evidence-manifest.md", "review/schemas/review-evidence-manifest.schema.json"]) {
         expect(existsSync(join(runtimeRoot, file))).toBe(false);
       }
       expect(existsSync(join(fixture, "review-receipt.key"))).toBe(false);
@@ -137,11 +134,6 @@ describe("trusted workflow launcher", () => {
 				markerFile: join(fixture, "skills", "goldband", ".workflow-launcher.json"),
 				bunPath,
 				codexPath: bunPath,
-				browserPath: bunPath,
-				bundleBrowserServer: (_bun: string, _entry: string, outputDirectory: string) => {
-					mkdirSync(outputDirectory, { recursive: true });
-					writeFileSync(join(outputDirectory, "server.js"), "// fixture\n");
-				},
 			};
 			installCodexReviewLauncher(options);
 			writeFileSync(join(runtimeRoot, "healthy-runtime"), "preserve me\n");
@@ -177,7 +169,7 @@ describe("trusted workflow launcher", () => {
 		} finally { rmSync(fixture, {recursive: true, force: true}); }
 	});
 
-	test("an execpolicy probe matches only trusted review and browser prefixes", () => {
+	test("an execpolicy probe matches only trusted review prefixes", () => {
 		const codex = Bun.which("codex");
 		if (!codex) {
 			if (process.env.GOLDBAND_REQUIRE_CODEX_EXECPOLICY === "1") {
@@ -221,7 +213,7 @@ describe("trusted workflow launcher", () => {
 			expect(
 				probe([...marker.argvPrefix, "browser", "session", "--host", "codex", "status"])
 					.decision,
-			).toBe("allow");
+			).toBeUndefined();
 			expect(
 				probe([
 					...marker.argvPrefix,

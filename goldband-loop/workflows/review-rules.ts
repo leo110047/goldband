@@ -42,7 +42,6 @@ export type ReviewPromptTelemetry = {
   diffBytes: number;
   promptBytes: number;
   promptOverheadBytes: number;
-  selectedSpecialists: [];
   aggregateRulesBytes: number;
 };
 
@@ -149,8 +148,8 @@ export function assertRulesPayloadBudget(
 export function coreReviewRules(
   repoRoot: string,
   diff: string,
+  paths: string[],
   snapshot?: RulesSnapshot,
-  paths = reviewPathsFromDiff(diff),
 ) {
   const activeSnapshot = snapshot ?? createReviewRulesSnapshot(repoRoot);
   const bundle = rulesResolver.resolveRules(withTrustedRulesDirectory({
@@ -189,7 +188,6 @@ export function buildReviewPromptTelemetry(options: {
     diffBytes,
     promptBytes,
     promptOverheadBytes: promptBytes - diffBytes,
-    selectedSpecialists: [],
     aggregateRulesBytes: coreRulesBytes,
   };
 }
@@ -221,14 +219,4 @@ function projectRulesForReview(
     return { ...rule, content };
   });
   return { ...bundle, rules };
-}
-
-function reviewPathsFromDiff(diff: string): string[] {
-  const paths = new Set<string>();
-  for (const line of diff.split('\n')) {
-    if (!line.startsWith('diff --git ')) continue;
-    const match = line.match(/ b\/(.+)$/);
-    if (match?.[1]) paths.add(match[1]);
-  }
-  return [...paths].sort();
 }

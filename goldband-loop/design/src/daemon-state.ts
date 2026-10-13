@@ -2,10 +2,9 @@
  * Pure utilities for design-daemon discovery.
  *
  * Shared between daemon.ts (writes/removes the state file) and
- * daemon-client.ts (reads state, decides spawn-vs-attach). Mirrors
- * browse/src/cli.ts:109-315 — same atomic-write + fs.openSync 'wx' lock
- * pattern, with an added cmdline-based identity check to guard against
- * SIGTERM hitting a reused PID (Codex finding on the daemon plan).
+ * daemon-client.ts (reads state, decides spawn-vs-attach). Uses an
+ * atomic write plus an fs.openSync 'wx' lock, with a cmdline-based identity
+ * check to guard against SIGTERM hitting a reused PID.
  */
 
 import { execFileSync } from "child_process";

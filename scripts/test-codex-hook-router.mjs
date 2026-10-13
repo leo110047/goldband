@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -290,11 +291,35 @@ function testPostToolUseStyleGateAdvisory() {
     assert.equal(output.hookSpecificOutput.hookEventName, 'PostToolUse');
     assert.match(
       output.hookSpecificOutput.additionalContext,
-      /goldband style gate advisory/,
+      /^goldband style gate advisory: \[console-log\] fixture\.ts:1: .+ These warnings are advisory here; pre-commit enforces blocking rules\.$/,
     );
-    assert.match(output.hookSpecificOutput.additionalContext, /console-log/);
   } finally {
     fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+}
+
+function testPostToolUseStyleGateLaunchFailure() {
+  const require = createRequire(import.meta.url);
+  const childProcess = require('node:child_process');
+  const originalSpawnSync = childProcess.spawnSync;
+  delete require.cache[routerPath];
+  childProcess.spawnSync = () => ({ error: new Error('spawn EACCES') });
+  try {
+    const { evaluateInput } = require(routerPath);
+    const output = evaluateInput({
+      hook_event_name: 'PostToolUse',
+      tool_name: 'apply_patch',
+      tool_input: {
+        command: '*** Begin Patch\n*** Update File: fixture.ts\n*** End Patch',
+      },
+    });
+    assert.equal(
+      output.hookSpecificOutput.additionalContext,
+      'goldband style gate advisory failed: spawn EACCES',
+    );
+  } finally {
+    childProcess.spawnSync = originalSpawnSync;
+    delete require.cache[routerPath];
   }
 }
 
@@ -337,36 +362,10 @@ function testMutatingMcpWarnsOnly() {
   assert.match(output.hookSpecificOutput.additionalContext, /mutating/);
 }
 
-function testPromptWorkflowHint() {
-  const output = runHook({
-    hook_event_name: 'UserPromptSubmit',
-    prompt: 'please review this diff and debug the failing test',
-  });
-
-  assert.equal(output.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-  assert.match(
-    output.hookSpecificOutput.additionalContext,
-    /\$goldband review/,
-  );
-  assert.match(
-    output.hookSpecificOutput.additionalContext,
-    /\$goldband investigate/,
-  );
-}
-
-function testPromptWorkflowHintRequiresTriggerBoundaries() {
-  const output = runHook({
-    hook_event_name: 'UserPromptSubmit',
-    prompt: 'Please give me an explanation of this file.',
-  });
-
-  assertNoopOutput(output);
-}
-
 function testDirectWorkflowInvocationSuppressesHints() {
   for (const prompt of [
     '$goldband plan create 重構認證邏輯',
-    '/plan 重構認證邏輯',
+    '/goldband-plan 重構認證邏輯',
   ]) {
     assertNoopOutput(
       runHook({
@@ -375,33 +374,6 @@ function testDirectWorkflowInvocationSuppressesHints() {
       }),
     );
   }
-}
-
-function testWorkflowHintsLoadOnlyForPromptRouting() {
-  const routingPath = path.join(
-    repoDir,
-    'codex',
-    'hooks',
-    'capability-routing.generated.json',
-  );
-  const program = `
-    const assert = require('node:assert/strict');
-    const routerPath = ${JSON.stringify(routerPath)};
-    const routingPath = require.resolve(${JSON.stringify(routingPath)});
-    const router = require(routerPath);
-    assert.equal(require.cache[routingPath], undefined);
-    router.evaluateInput({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} });
-    assert.equal(require.cache[routingPath], undefined);
-    router.evaluateInput({ hook_event_name: 'Stop' });
-    assert.equal(require.cache[routingPath], undefined);
-    router.evaluateInput({ hook_event_name: 'UserPromptSubmit', prompt: 'please review this diff' });
-    assert.ok(require.cache[routingPath]);
-  `;
-  const result = spawnSync(process.execPath, ['-e', program], {
-    cwd: repoDir,
-    encoding: 'utf8',
-  });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
 }
 
 function testWorkflowTelemetry() {
@@ -492,13 +464,11 @@ testGitPatchDenied();
 testPostToolUseFailureContext();
 testRegisteredNoopHooksEmitJson();
 testPostToolUseStyleGateAdvisory();
+testPostToolUseStyleGateLaunchFailure();
 testPostToolUseStyleGateAdvisoryUsesExplicitProjectRoot();
 testPassiveLifecycleHooksAreNotRegistered();
 testMutatingMcpWarnsOnly();
-testPromptWorkflowHint();
-testPromptWorkflowHintRequiresTriggerBoundaries();
 testDirectWorkflowInvocationSuppressesHints();
-testWorkflowHintsLoadOnlyForPromptRouting();
 testWorkflowTelemetry();
 testCompletionClaimsDoNotUseRegex();
 testStopDoesNotSuggestKnowledgeCapture();

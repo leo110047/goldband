@@ -42,7 +42,7 @@ export interface RenderOptions {
 }
 
 export interface RenderResult {
-  html: string;                   // full HTML document, ready for $B load-html
+  html: string;                   // full HTML document, ready for Chromium
   printCss: string;               // for debugging / preview
   bodyHtml: string;               // just the rendered body (tests, snapshots)
   meta: {

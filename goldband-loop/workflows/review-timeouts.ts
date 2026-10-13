@@ -3,7 +3,6 @@ import { assertValidReviewExecutionOptions } from '../lib/review-runtime-contrac
 import type { WorkflowRunOptions } from './types';
 
 export type ReviewTimeoutPolicy = {
-  specialistMode: 'off';
   hostTimeoutMs: number;
   passTimeoutMs: number;
 };
@@ -25,7 +24,6 @@ export function resolveReviewTimeoutPolicy(
   options: WorkflowRunOptions,
 ): ReviewTimeoutPolicy {
   assertValidReviewExecutionOptions(options);
-  const specialistMode = 'off' as const;
   const hostTimeoutMs = validatedTimeout(
     options.reviewHostTimeoutMs ?? DEFAULT_REVIEW_HOST_TIMEOUT_MS,
     '--review-host-timeout-seconds',
@@ -39,7 +37,7 @@ export function resolveReviewTimeoutPolicy(
       '--review-host-timeout-seconds cannot exceed --review-pass-timeout-seconds',
     );
   }
-  return { specialistMode, hostTimeoutMs, passTimeoutMs };
+  return { hostTimeoutMs, passTimeoutMs };
 }
 
 export function createReviewTimeBudget(
@@ -50,7 +48,7 @@ export function createReviewTimeBudget(
   const policy = resolveReviewTimeoutPolicy(options);
   const deadlineAt = (startedAtMonotonicMs ?? monotonicNow()) + policy.passTimeoutMs;
   const timeoutError = () => new Error(
-    `review/code ${policy.specialistMode} pass timed out after ${policy.passTimeoutMs}ms`,
+    `review/code pass timed out after ${policy.passTimeoutMs}ms`,
   );
   const assertWithinDeadline = () => {
     if (monotonicNow() >= deadlineAt) {

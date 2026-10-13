@@ -13,13 +13,59 @@ const {
   evaluateNotification,
 } = require('../lib/hook-router/stop-policy');
 const { appendMetric } = require('../lib/hook-router/metrics');
-const { appendUsageEvent } = require('../lib/hook-router/usage-telemetry');
 const {
-  buildHookOutcomeUsageEvents,
+  appendUsageEvent,
+  claudeUsageContext,
+} = require('../lib/hook-router/usage-telemetry');
+const {
   buildWorkflowUsageEvents,
 } = require('../lib/hook-router/workflow-telemetry');
 
 const MAX_STDIN_BYTES = 1024 * 1024;
+const TELEMETRY_SOURCE = 'hooks/scripts/hooks/hook-router.js';
+
+function hasAdditionalContext(outputJson) {
+  return Boolean(
+    outputJson?.systemMessage ||
+      outputJson?.hookSpecificOutput?.additionalContext,
+  );
+}
+
+function hookOutcomeUsageEvents(input, outcome, context) {
+  const base = {
+    run_id: context.runId,
+    source: context.source,
+    sessionId: context.sessionId,
+  };
+  const hookEventName = input.hook_event_name || 'unknown';
+  const toolName = input.tool_name || null;
+
+  if (outcome?.decision === 'block') {
+    return [
+      {
+        ...base,
+        category: 'hook-decision',
+        name: outcome.blockedBy || hookEventName,
+        action: 'deny',
+        detail: { host: context.host, hookEventName, toolName },
+      },
+    ];
+  }
+
+  const logCount = Array.isArray(outcome?.logs)
+    ? outcome.logs.filter(Boolean).length
+    : 0;
+  if (logCount === 0 && !hasAdditionalContext(outcome?.outputJson)) return [];
+  return [
+    {
+      ...base,
+      category: 'hook-advisory',
+      name: hookEventName,
+      action: 'emit',
+      detail: { host: context.host, hookEventName, toolName, logCount },
+    },
+  ];
+}
 
 function readStdinRaw() {
   return new Promise((resolve) => {
@@ -135,18 +181,10 @@ async function main() {
 
   writeLogs(outcome.logs);
   appendMetric(metric);
+  const telemetryContext = claudeUsageContext(input, TELEMETRY_SOURCE);
   const usageEvents = [
-    ...buildWorkflowUsageEvents(
-      input,
-      'claude',
-      'hooks/scripts/hooks/hook-router.js',
-    ),
-    ...buildHookOutcomeUsageEvents(
-      input,
-      outcome,
-      'claude',
-      'hooks/scripts/hooks/hook-router.js',
-    ),
+    ...buildWorkflowUsageEvents(input, telemetryContext),
+    ...hookOutcomeUsageEvents(input, outcome, telemetryContext),
     ...(outcome.usageEvents || []),
   ];
   for (const usageEvent of usageEvents) {

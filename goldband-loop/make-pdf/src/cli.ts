@@ -7,11 +7,11 @@
  *   stderr: progress spinner per stage, final "Done in Xs. N pages."
  *   --quiet: suppress progress. Errors still print.
  *   --verbose: per-stage timings.
- *   exit 0 success / 1 bad args / 2 render error / 3 Paged.js timeout / 4 browse unavailable.
+ *   exit 0 success / 1 bad args / 2 render error / 3 Paged.js timeout / 4 Chromium unavailable.
  */
 
 import { COMMANDS } from "./commands";
-import { ExitCode, BrowseClientError } from "./types";
+import { ExitCode, ChromiumUnavailableError } from "./types";
 import type { GenerateOptions, PreviewOptions } from "./types";
 
 interface ParsedArgs {
@@ -60,7 +60,7 @@ function printUsage(): void {
     "Usage:",
   ];
   for (const [, info] of COMMANDS) {
-    lines.push(`  $P ${info.usage}`);
+    lines.push(`  make-pdf ${info.usage}`);
     lines.push(`      ${info.description}`);
   }
   lines.push("");
@@ -90,20 +90,20 @@ function printUsage(): void {
   lines.push("  --allow-network           Load external images (off by default).");
   lines.push("");
   lines.push("Examples:");
-  lines.push("  $P generate letter.md");
-  lines.push("  $P generate --cover --toc essay.md essay.pdf");
-  lines.push("  $P generate --watermark DRAFT memo.md draft.pdf");
-  lines.push("  $P preview letter.md");
+  lines.push("  make-pdf generate letter.md");
+  lines.push("  make-pdf generate --cover --toc essay.md essay.pdf");
+  lines.push("  make-pdf generate --watermark DRAFT memo.md draft.pdf");
+  lines.push("  make-pdf preview letter.md");
   lines.push("");
-  lines.push("Run `$P setup` to verify browse + Chromium + pdftotext install.");
+  lines.push("Run `make-pdf setup` to verify the Chromium install.");
   console.error(lines.join("\n"));
 }
 
 function generateOptionsFromFlags(parsed: ParsedArgs): GenerateOptions {
   const p = parsed.positional;
   if (p.length === 0) {
-    console.error("$P generate: missing <input.md>");
-    console.error("Usage: $P generate <input.md> [output.pdf] [options]");
+    console.error("make-pdf generate: missing <input.md>");
+    console.error("Usage: make-pdf generate <input.md> [output.pdf] [options]");
     process.exit(ExitCode.BadArgs);
   }
   const f = parsed.flags;
@@ -145,8 +145,8 @@ function generateOptionsFromFlags(parsed: ParsedArgs): GenerateOptions {
 function previewOptionsFromFlags(parsed: ParsedArgs): PreviewOptions {
   const p = parsed.positional;
   if (p.length === 0) {
-    console.error("$P preview: missing <input.md>");
-    console.error("Usage: $P preview <input.md> [options]");
+    console.error("make-pdf preview: missing <input.md>");
+    console.error("Usage: make-pdf preview <input.md> [options]");
     process.exit(ExitCode.BadArgs);
   }
   const f = parsed.flags;
@@ -180,7 +180,7 @@ async function main(): Promise<void> {
   }
 
   if (!COMMANDS.has(parsed.command)) {
-    console.error(`$P: unknown command: ${parsed.command}`);
+    console.error(`make-pdf: unknown command: ${parsed.command}`);
     console.error("");
     printUsage();
     process.exit(ExitCode.BadArgs);
@@ -233,19 +233,19 @@ async function main(): Promise<void> {
         process.exit(ExitCode.BadArgs);
     }
   } catch (err: any) {
-    if (err instanceof BrowseClientError) {
-      console.error(`$P: ${err.message}`);
-      process.exit(ExitCode.BrowseUnavailable);
+    if (err instanceof ChromiumUnavailableError) {
+      console.error(`make-pdf: ${err.message}`);
+      process.exit(ExitCode.ChromiumUnavailable);
     }
     if (err?.code === "ENOENT") {
-      console.error(`$P: file not found: ${err.path ?? err.message}`);
+      console.error(`make-pdf: file not found: ${err.path ?? err.message}`);
       process.exit(ExitCode.BadArgs);
     }
     if (err?.name === "PagedJsTimeout") {
-      console.error(`$P: ${err.message}`);
+      console.error(`make-pdf: ${err.message}`);
       process.exit(ExitCode.PagedJsTimeout);
     }
-    console.error(`$P: ${err?.message ?? String(err)}`);
+    console.error(`make-pdf: ${err?.message ?? String(err)}`);
     if (parsed.flags.verbose && err?.stack) {
       console.error(err.stack);
     }

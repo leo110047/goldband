@@ -10,6 +10,11 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(scriptDir, '..');
+const inventoryPath = path.resolve(
+  serverRoot,
+  '..',
+  'first-party-servers.json',
+);
 
 async function main() {
   const foreignGitRepo = createForeignGitRepo();
@@ -33,6 +38,11 @@ async function main() {
       'goldband_telemetry_query',
       'knowledge-query',
     ]);
+    const inventory = JSON.parse(fs.readFileSync(inventoryPath, 'utf8'));
+    const inventoryServer = inventory.servers.find(
+      (server) => server.package === 'mcp/server',
+    );
+    assert.deepEqual([...inventoryServer.tools].sort(), names);
 
     const policyResult = await client.callTool({
       name: 'goldband_policy_check',

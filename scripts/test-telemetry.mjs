@@ -166,7 +166,6 @@ function testCodexPluginDataRoot() {
       XDG_DATA_HOME: undefined,
     },
     () => {
-      assert.equal(codexTelemetry.dataRoot(), pluginRoot);
       assert.equal(
         codexTelemetry.usageFile(),
         path.join(pluginRoot, 'hook-router', 'usage-events.jsonl'),
@@ -189,7 +188,10 @@ function testCodexDataRootFallbacks() {
       XDG_DATA_HOME: xdgRoot,
     },
     () => {
-      assert.equal(codexTelemetry.dataRoot(), path.join(xdgRoot, 'goldband'));
+      assert.equal(
+        codexTelemetry.usageFile(),
+        path.join(xdgRoot, 'goldband', 'hook-router', 'usage-events.jsonl'),
+      );
       codexTelemetry.appendUsageEvent({ category: 'test', name: 'xdg' });
       const event = readJsonl(codexTelemetry.usageFile()).at(-1);
       assert.equal(event.name, 'xdg');
@@ -213,7 +215,6 @@ function testCodexTempFallback() {
     "const t = require('./codex/hooks/telemetry.js');",
     "t.appendUsageEvent({ category: 'test', name: 'temp-fallback' });",
     'console.log(JSON.stringify({',
-    '  root: t.dataRoot(),',
     '  file: t.usageFile(),',
     '  events: fs.readFileSync(t.usageFile(), "utf8").trim().split("\\n").map(JSON.parse),',
     '}));',
@@ -234,7 +235,6 @@ function testCodexTempFallback() {
 
   assert.equal(result.status, 0, result.stderr);
   const observed = JSON.parse(result.stdout);
-  assert.equal(observed.root, path.join(tempRoot, 'goldband'));
   assert.equal(
     observed.file,
     path.join(tempRoot, 'goldband', 'hook-router', 'usage-events.jsonl'),
@@ -358,6 +358,61 @@ function testCodexRunIdFileFallback() {
       });
       assert.equal(events.length, 1);
       assert.equal(events[0].run_id, fs.readFileSync(runIdFile, 'utf8').trim());
+    },
+  );
+}
+
+function testWorkflowEventsMatchAcrossHosts() {
+  const codexTelemetry = require('../codex/hooks/telemetry.js');
+  const {
+    claudeUsageContext,
+  } = require('../hooks/scripts/lib/hook-router/usage-telemetry.js');
+  const {
+    buildWorkflowUsageEvents,
+  } = require('../hooks/scripts/lib/hook-router/workflow-telemetry.js');
+  const inputs = [
+    {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Skill',
+      tool_input: { name: '/goldband-review', skill: 'goldband-qa' },
+    },
+    {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'FOO=1 env BAR=2 goldband-investigate --help' },
+    },
+    {
+      hook_event_name: 'UserPromptSubmit',
+      prompt: 'Run /goldband-plan then (/goldband-review)',
+    },
+  ];
+  const comparable = (events) =>
+    events.map(({ host, source, run_id, sessionId, ...rest }) => rest);
+
+  withEnv(
+    { CLAUDE_SESSION_ID: 'claude-session', CODEX_SESSION_ID: 'codex-session' },
+    () => {
+      for (const input of inputs) {
+        const claude = buildWorkflowUsageEvents(
+          input,
+          claudeUsageContext(input, 'claude-source'),
+        );
+        const codex = codexTelemetry.workflowUsageEvents(input);
+        assert.ok(claude.length > 0);
+        assert.deepEqual(comparable(codex), comparable(claude));
+        assert.ok(
+          claude.every(
+            (event) =>
+              event.host === 'claude' && event.sessionId === 'claude-session',
+          ),
+        );
+        assert.ok(
+          codex.every(
+            (event) =>
+              event.host === 'codex' && event.sessionId === 'codex-session',
+          ),
+        );
+      }
     },
   );
 }
@@ -533,6 +588,7 @@ withEnv(
     testCodexStructuredDenyTelemetryName();
     testSchemaValidationAndLegacyCompatibility();
     testCodexRunIdFileFallback();
+    testWorkflowEventsMatchAcrossHosts();
     testClaudeSessionStartIsSilent();
     testTelemetryCapture();
     testReportSummary();

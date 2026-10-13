@@ -80,9 +80,10 @@ CONFIG_HEADER='# goldband configuration — edit freely, changes take effect on 
 #
 # ─── Telemetry ───────────────────────────────────────────────────────
 # telemetry: off            # off | anonymous | community
-#                           #   off       — no data sent, no local analytics (default)
-#                           #   anonymous — counter only, no device ID
-#                           #   community — usage data + stable device ID
+#                           #   off       — no local analytics (default)
+#                           #   anonymous — local usage log, no device ID
+#                           #   community — local usage log + local install ID
+#                           # All tiers stay on this machine; nothing is uploaded.
 #
 # ─── Updates ─────────────────────────────────────────────────────────
 # auto_upgrade: false       # true = silently upgrade on session start

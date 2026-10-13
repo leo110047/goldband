@@ -10,9 +10,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import fs from "fs";
 import path from "path";
 
-import { __testInternals__, fetchHandler, idleCheckTick } from "../src/daemon";
+import { __testInternals__, fetchHandler } from "../src/daemon";
 
-const { markMeaningfulActivity } = __testInternals__;
 import { makeBoardHtml, makeTmpDir, req, resetDaemon } from "./daemon-tests-fixtures";
 
 let tmpDir: string;
@@ -380,9 +379,10 @@ describe("daemon /shutdown", () => {
 describe("daemon LRU eviction", () => {
   test("evicts done boards in preference to non-done", async () => {
     // Seed the map directly so we don't have to publish 50 real boards.
-    // Setup: 10 done (oldest) + 40 serving (newer) = 50 total, 40 non-done.
+    // Setup: 40 serving (oldest) + 10 done (newer) = 50 total, 40 non-done.
     // Publishing a 51st board: nonDoneCount(40) < MAX(50) → accepts, inserts,
-    // size=51, then evictUntilUnderCap kicks out the LRU done.
+    // size=51, then evictUntilUnderCap kicks out the LRU done board even though
+    // older serving boards exist.
     const boards = __testInternals__.boards;
     const mk = (id: string, state: "serving" | "done", lastTouched: number) => {
       boards.set(id, {
@@ -396,22 +396,21 @@ describe("daemon LRU eviction", () => {
         publisherPid: 0,
       });
     };
-    for (let i = 0; i < 10; i++) mk(`b-done-${i}`, "done", 1000 + i);
-    for (let i = 0; i < 40; i++) mk(`b-active-${i}`, "serving", 2000 + i);
+    for (let i = 0; i < 40; i++) mk(`b-active-${i}`, "serving", 1000 + i);
+    for (let i = 0; i < 10; i++) mk(`b-done-${i}`, "done", 2000 + i);
     expect(boards.size).toBe(50);
 
     const htmlPath = makeBoardHtml(tmpDir);
     const r = await fetchHandler(req("POST", "/api/boards", { html: htmlPath }));
     expect(r.status).toBe(200);
 
-    expect(boards.size).toBeLessThanOrEqual(50);
-    // At least one of the (oldest) done boards is gone; non-done untouched.
-    let doneGoneCount = 0;
-    for (let i = 0; i < 10; i++) if (!boards.has(`b-done-${i}`)) doneGoneCount += 1;
-    expect(doneGoneCount).toBeGreaterThanOrEqual(1);
-    // All non-done preserved
+    const boardStatus = async (id: string) =>
+      (await fetchHandler(req("GET", `/boards/${id}/`))).status;
+    // The oldest done board is evicted first; every non-done board survives.
+    expect(await boardStatus("b-done-0")).toBe(404);
+    expect(await boardStatus("b-done-1")).toBe(200);
     for (let i = 0; i < 40; i++) {
-      expect(boards.has(`b-active-${i}`)).toBe(true);
+      expect(await boardStatus(`b-active-${i}`)).toBe(200);
     }
   });
 
@@ -432,24 +431,6 @@ describe("daemon LRU eviction", () => {
     const htmlPath = makeBoardHtml(tmpDir);
     const r = await fetchHandler(req("POST", "/api/boards", { html: htmlPath }));
     expect(r.status).toBe(503);
-  });
-});
-
-// ─── Idle + meaningful activity ──────────────────────────────────
-//
-// The behavioral tests for idle shutdown — actual process exit, bare-GET-
-// doesn't-reset-idle, MAX_EXTENSIONS hard ceiling — live in
-// daemon-discovery.test.ts because they require a real spawned daemon
-// (lastMeaningfulActivity isn't observable in-process). The in-process
-// version of these tests previously was a smoke that the testing specialist
-// correctly flagged as misleading; it was removed.
-
-describe("daemon idle + activity tracking (smoke)", () => {
-  test("idleCheckTick on a freshly-touched daemon does not throw or shut down", () => {
-    markMeaningfulActivity();
-    expect(() => idleCheckTick()).not.toThrow();
-    // boards map shouldn't have been wiped (no graceful shutdown happened)
-    expect(typeof __testInternals__.boards.size).toBe("number");
   });
 });
 

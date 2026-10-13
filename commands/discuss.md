@@ -12,7 +12,7 @@ Explore ambiguities, surface hidden assumptions, and lock down decisions **befor
 
 ## When to Use
 
-- Before `/plan` when requirements have gray areas
+- Before `/goldband-plan` when requirements have gray areas
 - When the user describes a feature but key details are unspecified
 - When multiple valid approaches exist and the choice matters
 - When domain-specific edge cases could derail implementation
@@ -106,7 +106,7 @@ BACKLOG (new ideas surfaced during discussion)
 - **Every recommendation needs a short pre-mortem** — include assumptions, failure modes, switch criteria, best alternative, and unknowns to verify
 - **Scope guardrail is mandatory** — new features go to backlog, never to the current task
 - **Decisions are final** — once locked, do not revisit unless the user explicitly asks
-- This command produces **decisions**, not code. Use `/plan` after `/discuss`.
+- This command produces **decisions**, not code. Use `/goldband-plan` after `/discuss`.
 
 ## Arguments
 

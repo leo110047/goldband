@@ -113,7 +113,7 @@ class MockHostAdapter implements HostAdapter {
     _cwd?: string,
     _options?: HostRunOptions,
   ): Promise<HostResult> {
-    const findings = [{ file: 'src/example.ts', line: 2,
+    const findings = [{ kind: 'defect', file: 'src/example.ts', line: 2,
         severity: prompt.includes('GOLDBAND_HIGH_SEMANTIC_FIXTURE') ? 'high' : 'medium',
         summary: 'Mock review finding with concrete diff evidence.', evidence: '+ riskyChange();',
         failureScenario: 'A valid request reaches riskyChange() and returns the wrong result.',

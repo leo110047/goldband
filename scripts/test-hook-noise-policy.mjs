@@ -122,117 +122,118 @@ function testPromptHookDoesNotInjectGenericPolicy() {
   assert.doesNotMatch(genericCheck.stdout, /goldband review code/);
 }
 
-function testCodexPromptSuggestionsAreScopedAndDeduplicated() {
-  const input = {
-    hook_event_name: 'UserPromptSubmit',
-    session_id: 'noise-repeat',
-    cwd: repoDir,
-    prompt: 'Please review this code',
-  };
-  const context = (value) =>
-    JSON.parse(runNode(codexRouter, value).stdout).hookSpecificOutput
-      ?.additionalContext ?? '';
-  assert.match(context(input), /\$goldband review code/);
-  assert.equal(
-    context(input),
-    '',
-    'same session and scope must not repeat the hint',
-  );
-  assert.match(context({ ...input, cwd: tmpDir }), /\$goldband review code/);
-  assert.match(
-    context({ ...input, session_id: 'noise-new-session' }),
-    /\$goldband review code/,
-  );
-  assert.match(
-    context({ ...input, prompt: 'Find the root cause of this failing test' }),
-    /\$goldband investigate code/,
-  );
-  assert.equal(context({ ...input, prompt: '$goldband review code' }), '');
-  const anonymous = { ...input, session_id: undefined };
-  assert.match(context(anonymous), /\$goldband review code/);
-  assert.match(context(anonymous), /\$goldband review code/);
+function testPromptHooksLeaveSkillRoutingToHosts() {
+  for (const prompt of [
+    'Please review this code',
+    'Find the root cause of this failing test',
+    'debug and optimize performance',
+    '請幫我 debug 這個 test failure 並優化效能',
+  ]) {
+    const claude = runNode(suggestionHook, {
+      hook_event_name: 'UserPromptSubmit',
+      session_id: 'noise-routing',
+      cwd: repoDir,
+      prompt,
+    });
+    assert.equal(claude.status, 0, claude.stderr);
+    assert.deepEqual(JSON.parse(claude.stdout), {}, `Claude: ${prompt}`);
+
+    const codex = runNode(codexRouter, {
+      hook_event_name: 'UserPromptSubmit',
+      session_id: 'noise-routing',
+      cwd: repoDir,
+      prompt,
+    });
+    assert.equal(codex.status, 0, codex.stderr);
+    assert.deepEqual(JSON.parse(codex.stdout), {}, `Codex: ${prompt}`);
+  }
 }
 
-function testPerformanceSuggestionsNeedCodeContext() {
-  const { matchPrompt } = require(
-    path.join(
-      repoDir,
-      'hooks/scripts/lib/skill-activation/activation-rules.js',
+testPromptHooksLeaveSkillRoutingToHosts();
+
+function filesUnder(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { recursive: true }).map(String);
+}
+
+function testRepeatedToolUseKeepsNoContextCounter() {
+  for (let index = 0; index < 8; index += 1) {
+    const result = runNode(
+      claudeRouter,
+      {
+        hook_event_name: 'PostToolUse',
+        session_id: 'noise-context-counter',
+        cwd: repoDir,
+        tool_name: 'Read',
+        tool_input: {},
+      },
+      { CONTEXT_WARN_THRESHOLD: '1', CONTEXT_CRIT_THRESHOLD: '2' },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(
+      `${result.stdout}${result.stderr}`,
+      /compact|tool calls/i,
+    );
+  }
+  assert.deepEqual(
+    filesUnder(tmpDir).filter((file) =>
+      /(^|[\\/])context-[^\\/]*\.json$/.test(file),
     ),
+    [],
   );
-  for (const prompt of [
-    'Please optimize the wording of this paragraph',
-    'Optimize this prompt',
-    'Review the performance of our marketing campaign',
-  ]) {
-    assert.equal(
-      matchPrompt(prompt).some(
-        (match) => match.skill === 'performance-optimization',
-      ),
-      false,
-      `not a code performance task: ${prompt}`,
-    );
-  }
-  for (const prompt of [
-    'Optimize the database query latency',
-    'Profile memory allocations in this function',
-    'Fix the N+1 query',
-    '這個 API 很慢，請分析效能',
-    'Reduce bundle size',
-  ]) {
-    assert.equal(
-      matchPrompt(prompt).some(
-        (match) => match.skill === 'performance-optimization',
-      ),
-      true,
-      `code performance task: ${prompt}`,
-    );
+}
+
+const posttoolPolicyPath = path.join(
+  repoDir,
+  'hooks/scripts/lib/hook-router/posttool-policy.js',
+);
+
+function testClaudeStyleAdvisoryPresentation() {
+  const projectDir = fs.mkdtempSync(path.join(tmpDir, 'style-advisory-'));
+  const originalCwd = process.cwd();
+  spawnSync('git', ['init', '--quiet'], { cwd: projectDir });
+  fs.writeFileSync(
+    path.join(projectDir, 'notes.md'),
+    '<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n',
+  );
+  process.chdir(projectDir);
+  try {
+    const { evaluatePostToolUse } = require(posttoolPolicyPath);
+    const { logs } = evaluatePostToolUse({
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Edit',
+      tool_input: { file_path: 'notes.md' },
+    });
+    assert.deepEqual(logs, [
+      [
+        '[Hook] WARNING: goldband style gate advisory:',
+        '[merge-conflict] notes.md:1: merge conflict marker block found',
+        'These warnings are advisory here; pre-commit enforces blocking rules.',
+      ].join('\n'),
+    ]);
+  } finally {
+    process.chdir(originalCwd);
   }
 }
 
-testCodexPromptSuggestionsAreScopedAndDeduplicated();
-testPerformanceSuggestionsNeedCodeContext();
-
-function testContextMonitorOnlyEmitsOnSeverityChanges() {
-  const { evaluatePostToolUse } = require(
-    path.join(repoDir, 'hooks/scripts/lib/hook-router/posttool-policy.js'),
-  );
-  const stateFile = path.join(tmpDir, 'context-state.json');
-  const previous = {
-    state: process.env.HOOK_ROUTER_CONTEXT_STATE_FILE,
-    warn: process.env.CONTEXT_WARN_THRESHOLD,
-    critical: process.env.CONTEXT_CRIT_THRESHOLD,
-  };
-  process.env.HOOK_ROUTER_CONTEXT_STATE_FILE = stateFile;
-  process.env.CONTEXT_WARN_THRESHOLD = '2';
-  process.env.CONTEXT_CRIT_THRESHOLD = '10';
-
+function testClaudeStyleAdvisoryLaunchFailure() {
+  const childProcess = require('node:child_process');
+  const originalSpawnSync = childProcess.spawnSync;
+  delete require.cache[posttoolPolicyPath];
+  childProcess.spawnSync = () => ({ error: new Error('spawn EACCES') });
   try {
-    const messages = Array.from(
-      { length: 8 },
-      () =>
-        evaluatePostToolUse({
-          hook_event_name: 'PostToolUse',
-          session_id: 'noise-context-monitor',
-          tool_name: 'Read',
-          tool_input: {},
-        }).logs,
-    ).flat();
-    assert.equal(messages.length, 1);
-    assert.match(messages[0], /WARNING: 2 tool calls/);
+    const { evaluatePostToolUse } = require(posttoolPolicyPath);
+    const { logs } = evaluatePostToolUse({
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Write',
+      tool_input: { file_path: 'notes.md' },
+    });
+    assert.deepEqual(logs, [
+      '[Hook] WARNING: style gate advisory failed: spawn EACCES',
+    ]);
   } finally {
-    if (previous.state === undefined) {
-      delete process.env.HOOK_ROUTER_CONTEXT_STATE_FILE;
-    } else {
-      process.env.HOOK_ROUTER_CONTEXT_STATE_FILE = previous.state;
-    }
-    if (previous.warn === undefined) delete process.env.CONTEXT_WARN_THRESHOLD;
-    else process.env.CONTEXT_WARN_THRESHOLD = previous.warn;
-    if (previous.critical === undefined) {
-      delete process.env.CONTEXT_CRIT_THRESHOLD;
-    } else {
-      process.env.CONTEXT_CRIT_THRESHOLD = previous.critical;
-    }
+    childProcess.spawnSync = originalSpawnSync;
+    delete require.cache[posttoolPolicyPath];
   }
 }
 
@@ -250,7 +251,9 @@ function testOrdinaryStopHasNoDesktopNotification() {
 testPassiveLifecycleHooksAreNotRegistered();
 testPassiveLifecycleEvaluationIsSilent();
 testPromptHookDoesNotInjectGenericPolicy();
-testContextMonitorOnlyEmitsOnSeverityChanges();
+testRepeatedToolUseKeepsNoContextCounter();
+testClaudeStyleAdvisoryPresentation();
+testClaudeStyleAdvisoryLaunchFailure();
 testOrdinaryStopHasNoDesktopNotification();
 
 console.log(

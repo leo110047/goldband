@@ -44,8 +44,8 @@ the creator is not installed.
 - Do not put long reference material in `SKILL.md`; keep it focused and use
   references only when progressive disclosure genuinely helps.
 - Do not add scripts without mentioning when to run them from `SKILL.md`.
-- Do not change hook suggestion behavior without checking
-  `hooks/scripts/lib/skill-activation/activation-rules.js`.
+- Skill selection belongs to the host, driven by the `description` field. Do not
+  add prompt hooks that suggest skills by keyword; improve the description.
 - Do not add, remove, or merge a global skill without updating installer profile
   docs and inventory.
 

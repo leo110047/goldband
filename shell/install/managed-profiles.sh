@@ -13,22 +13,24 @@ is_safe_managed_entry_name() {
 }
 
 read_profile_skill_array() {
-    local skills_csv="$1"
-    local __resultvar="$2"
-    local skill_array=()
+    # Locals use a reserved prefix: callers pass their own array name (often
+    # skill_array), and a same-named local would capture the eval assignment.
+    local __profile_csv="$1"
+    local __profile_resultvar="$2"
+    local __profile_entries=()
 
-    IFS=',' read -r -a skill_array <<< "$skills_csv"
-    eval "$__resultvar=()"
+    IFS=',' read -r -a __profile_entries <<< "$__profile_csv"
+    eval "$__profile_resultvar=()"
 
-    local skill
-    if [ "${#skill_array[@]}" -gt 0 ]; then
-        for skill in "${skill_array[@]}"; do
-            [ -z "$skill" ] && continue
-            if ! is_safe_managed_entry_name "$skill"; then
-                echo "invalid managed entry name: $skill" >&2
+    local __profile_entry
+    if [ "${#__profile_entries[@]}" -gt 0 ]; then
+        for __profile_entry in "${__profile_entries[@]}"; do
+            [ -z "$__profile_entry" ] && continue
+            if ! is_safe_managed_entry_name "$__profile_entry"; then
+                echo "invalid managed entry name: $__profile_entry" >&2
                 continue
             fi
-            eval "$__resultvar+=(\"\$skill\")"
+            eval "$__profile_resultvar+=(\"\$__profile_entry\")"
         done
     fi
 }

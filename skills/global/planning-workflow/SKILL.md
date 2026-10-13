@@ -5,7 +5,7 @@ description: |
   multi-file changes, refactors, or work that needs explicit phases and
   verification.
 
-  Prefer `/plan` or workflow planning skills for full implementation plans. This
+  Prefer `/goldband-plan` or workflow planning skills for full implementation plans. This
   portable skill only defines shared planning policy and decision-quality
   requirements.
 allowed-tools:
@@ -17,7 +17,7 @@ allowed-tools:
 
 # Planning Workflow
 
-This is a thin shared-policy entrypoint. Full planning belongs in `/plan` /
+This is a thin shared-policy entrypoint. Full planning belongs in `/goldband-plan` /
 workflow so Claude and Codex do not carry duplicate planning playbooks in
 portable skills.
 
@@ -34,7 +34,7 @@ portable skills.
 
 ## Workflow Handoff
 
-Use `/plan`, the `$goldband plan create` capability, or workflow planning skills when
+Use `/goldband-plan`, the `$goldband plan create` capability, or workflow planning skills when
 available for multi-file implementation, cross-host policy work, refactors,
 release plans, or work that needs reviewable phases.
 

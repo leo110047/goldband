@@ -7,7 +7,6 @@
       "Bash(npm run *)",
       "Bash(npm test *)",
       "Bash(npm install *)",
-      "Bash(npx *)",
       "Bash(git status*)",
       "Bash(git diff*)",
       "Bash(git log*)",
@@ -64,7 +63,7 @@
             "command": "node \"${HOOKS_DIR}/scripts/hooks/skill-activation-suggestions.js\""
           }
         ],
-        "description": "Prompt-time skill suggestions + prompt-trigger telemetry"
+        "description": "Cross-review arming, knowledge advisory, and workflow telemetry"
       }
     ],
     "PreToolUse": [

@@ -63,7 +63,7 @@ function registerKnowledgeTool(server: McpServer) {
     {
       title: 'Goldband knowledge query',
       description:
-        'Reads the local curated goldband knowledge index and returns matching entry paths and summaries.',
+        'Reads the local curated goldband knowledge index and returns matching entry paths and summaries. Status "all" excludes retired entries; request them with status "retired".',
       inputSchema: {
         domain: z.string().optional(),
         type: z.enum(['problem-solution', 'decision', 'practice']).optional(),

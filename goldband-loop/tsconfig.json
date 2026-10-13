@@ -18,8 +18,6 @@
   },
   "include": [
     "bin/**/*.ts",
-    "browse/src/**/*.ts",
-    "browser-skills/**/*.ts",
     "design/prototype.ts",
     "design/src/**/*.ts",
     "hosts/**/*.ts",
@@ -36,7 +34,6 @@
     "**/*.test.ts",
     "**/test/**",
     "generated/**",
-    "supabase/**",
     "workflows/**/*.generated.ts"
   ]
 }

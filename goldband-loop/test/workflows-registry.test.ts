@@ -12,8 +12,6 @@ import {
 
 const ROOT = resolve(import.meta.dir, '..');
 const INACTIVE_DOC_DIRECTORIES = new Set([
-  'archive',
-  'designs',
   'plans',
   'reports',
 ]);
@@ -69,7 +67,7 @@ describe('workflow registry', () => {
       const expected = core.has(entry.name) ? 'integrated' : 'registered-only';
       expect(entry.integrationStatus).toBe(expected);
     }
-    expect(publicWorkflows()).toHaveLength(20);
+    expect(publicWorkflows()).toHaveLength(19);
     expect(experimentalWorkflows().map((entry) => entry.name).sort()).toEqual([
       'release/land',
       'release/setup',
@@ -78,12 +76,11 @@ describe('workflow registry', () => {
     expect(registeredOnlyWorkflows().every((entry) => entry.lifecycle === 'experimental')).toBe(true);
   });
 
-  test('nine high-risk operations have fail-closed safety contracts', () => {
+  test('eight high-risk operations have fail-closed safety contracts', () => {
     const gates = WORKFLOW_REGISTRY.flatMap((entry) =>
       entry.safetyGates.map((gate) => ({ ...gate, action: entry.name })),
     );
     expect(gates.map((gate) => gate.operation).sort()).toEqual([
-      'browser/cookies',
       'ios/qa',
       'ios/sync',
       'plan/sync',
@@ -101,7 +98,7 @@ describe('workflow registry', () => {
 	).toEqual(['ios/qa', 'plan/sync', 'plan/sync-preview', 'system/upgrade']);
     expect(
       gates.filter((gate) => gate.enforcement === 'blocked-before-runtime'),
-    ).toHaveLength(5);
+    ).toHaveLength(4);
     for (const entry of WORKFLOW_REGISTRY.filter(
       (workflow) => workflow.riskLevel === 'high',
     )) {
@@ -110,8 +107,6 @@ describe('workflow registry', () => {
       ).toBe(true);
     }
     expect(WORKFLOW_REGISTRY.some((entry) => entry.name === 'release/canary'))
-      .toBe(false);
-    expect(WORKFLOW_REGISTRY.some((entry) => entry.name === 'browser/cookies'))
       .toBe(false);
     expect(WORKFLOW_REGISTRY.some((entry) => entry.name === 'ios/sync'))
       .toBe(false);
@@ -204,20 +199,12 @@ describe('workflow registry', () => {
       resolve(ROOT, 'generated/host-skills/claude.SKILL.md'),
       'utf8',
     );
-    const codexHints = readFileSync(
-      resolve(ROOT, '../codex/hooks/capability-routing.generated.json'),
-      'utf8',
-    );
     expect(codexMenu).toContain('$goldband plan create');
-    expect(codexHints).toContain('$goldband plan create');
     expect(claudeMenu).toContain('$goldband plan create');
   });
 
   test('active documentation exposes only the capability interface', () => {
     expect(existsSync(resolve(ROOT, 'docs/skills.md'))).toBe(false);
-    expect(activeDocumentationFiles('docs')).not.toContain(
-      'docs/archive/TODOS_COMPLETED.md',
-    );
 
     const activeDocs = [
       '../README.md',
@@ -229,10 +216,7 @@ describe('workflow registry', () => {
       '../AGENTS.md',
       '../CLAUDE.md',
       'README.md',
-      'CONTRIBUTING.md',
       'ARCHITECTURE.md',
-      'BROWSER.md',
-      'DESIGN.md',
       'ETHOS.md',
       'AGENTS.md',
       'CLAUDE.md',

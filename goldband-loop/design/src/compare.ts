@@ -1,6 +1,6 @@
 /**
  * Generate HTML comparison board for user review of design variants.
- * Opens in headed Chrome via $B goto. User picks favorite, rates, comments, submits.
+ * Opens in the user's browser. User picks favorite, rates, comments, submits.
  * Agent reads feedback from hidden DOM element.
  *
  * Design spec: single column, full-width mockups, APP UI aesthetic.

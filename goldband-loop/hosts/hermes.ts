@@ -11,7 +11,7 @@ const hermes: HostConfig = {
   hostSubdir: '.hermes',
 
   runtimeRoot: {
-    globalSymlinks: ['bin', 'browse/dist', 'browse/bin', 'goldband-upgrade', 'ETHOS.md'],
+    globalSymlinks: ['bin', 'goldband-upgrade', 'ETHOS.md'],
     globalFiles: {
       'review': ['checklist.md', 'TODOS-format.md'],
     },

@@ -3,7 +3,7 @@
  * test-free-shards — enumerate, shard, and curate the free test suite.
  *
  * Three jobs:
- *   1. Enumeration. Walk `browse/test/`, `test/`, `make-pdf/test/` and return
+ *   1. Enumeration. Walk `test/` and `make-pdf/test/` and return
  *      every `*.test.{ts,tsx,js,jsx,mjs,cjs}` that isn't a paid-eval test.
  *   2. Sharding. Stable-hash assign each test to one of N shards. Used by CI
  *      to parallelize the free suite when needed.
@@ -29,16 +29,12 @@ import * as path from 'path';
 import { superviseCommand } from './process-supervisor.mjs';
 
 const ROOT = path.resolve(import.meta.dir, '..');
-const TEST_ROOTS = ['browse/test', 'test', 'make-pdf/test'] as const;
+const TEST_ROOTS = ['test', 'make-pdf/test'] as const;
 const TEST_FILE_REGEX = /\.test\.(?:[cm]?[jt]s|tsx|jsx)$/;
 
 // Tests that require API spend, external services, or e2e harnesses.
 // These are filtered out before any sharding or curation.
 const PAID_EVAL_TESTS = [
-  /^browse\/test\/security-bench\.test\.ts$/,
-  /^browse\/test\/security-bunnative\.test\.ts$/,
-  /^browse\/test\/security-bench-ensemble-live\.test\.ts$/,
-  /^browse\/test\/security-review-fullstack\.test\.ts$/,
   /^test\/skill-e2e-.*\.test\.ts$/,
   /^test\/skill-llm-eval\.test\.ts$/,
   /^test\/llm-judge-recommendation\.test\.ts$/,
@@ -81,17 +77,6 @@ const WINDOWS_FRAGILE_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   // matching `await foo.launch(` need Chromium and fail with "Executable
   // doesn't exist" on the runner.
   { pattern: /await\s+\w+\.launch\(/, reason: 'launches Playwright browser (Chromium not installed in windows-free CI)' },
-  // Tests that spawn the browse server as a subprocess via `bun run server.ts`.
-  // The Bun → server.ts → Playwright path is the same one that doesn't work
-  // on Windows (PR #1238 windows-pty-bun-pty-fix). Tests typically set
-  // BROWSE_HEADLESS_SKIP=1 to skip the browser launch but still need a working
-  // server, which they don't get on Windows.
-  { pattern: /BROWSE_HEADLESS_SKIP|spawn\(\[['"]bun['"],\s*['"]run['"]/, reason: 'spawns the browse server subprocess (Bun-driven path is Windows-broken)' },
-  // Tests that read browse/src/sidebar-agent.ts — deleted in v1.14.0.0
-  // sidebar refactor (replaced by sidepanel-terminal.js). Keep this curation
-  // guard so stale sidebar-agent contract tests do not re-enter the Windows
-  // subset if a legacy file is reintroduced.
-  { pattern: /sidebar-agent\.ts/, reason: 'reads deleted browse/src/sidebar-agent.ts (stale pre-PTY sidebar contract)' },
 ];
 
 // Explicit known-Windows-incompatible test files that don't fit a regex
@@ -104,8 +89,8 @@ const KNOWN_WINDOWS_INCOMPATIBLE: Array<{ file: string; reason: string }> = [
     reason: 'host detection uses POSIX command-v and executable mock PATH semantics',
   },
   {
-    file: 'browse/test/findport.test.ts',
-    reason: 'asserts Bun.serve.stop() is fire-and-forget — Bun behavior differs on Windows for this polyfill',
+    file: 'make-pdf/test/pdfRenderer.test.ts',
+    reason: 'renders a real PDF with Playwright Chromium, which windows-free CI does not install',
   },
 ];
 

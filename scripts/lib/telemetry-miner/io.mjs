@@ -21,7 +21,7 @@ export function defaultWorkflowRunsDir(env = process.env) {
   return path.join(root, 'workflow-runs');
 }
 
-export function resolveInputs(options = {}) {
+function resolveInputs(options = {}) {
   const usageFile = path.resolve(options.usageFile || getUsageFile());
   const workflowRunsDir = path.resolve(
     options.workflowRunsDir || defaultWorkflowRunsDir(),
@@ -123,7 +123,7 @@ export function sortedCounts(map, limit) {
     .slice(0, limit);
 }
 
-export function dateStamp(date = new Date()) {
+function dateStamp(date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 

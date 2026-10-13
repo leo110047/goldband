@@ -6,23 +6,20 @@
  *
  *   ensureDaemon() → publishBoard(html, opts) → openBrowser(url) → exit 0
  *
- * Mirrors browse/src/cli.ts:317-415 — same health-check-first attach
- * decision, same fs.openSync('wx') lock, same re-read-under-lock guard.
- * Adds two design-specific safety properties Codex flagged on the daemon
- * plan:
+ * The attach decision is health-check-first, guarded by an fs.openSync('wx')
+ * lock and a re-read under the lock. Two safety properties:
  *
- *   1. Identity verification before any SIGTERM. Browse signals on PID
- *      alone; here we require the cmdline to contain CMDLINE_MARKER so a
- *      stale state file pointing at a reused PID doesn't kill an
- *      unrelated process.
+ *   1. Identity verification before any SIGTERM: the cmdline must contain
+ *      CMDLINE_MARKER so a stale state file pointing at a reused PID doesn't
+ *      kill an unrelated process.
  *
- *   2. Refuse-to-kill on version mismatch with active boards. Browse will
- *      restart on version drift; here in-memory boards would be lost, so
- *      we exit 1 with a user-actionable message instead of silent loss.
+ *   2. Refuse-to-kill on version mismatch with active boards: in-memory
+ *      boards would be lost, so we exit 1 with a user-actionable message
+ *      instead of silent loss.
  *
  * Spawn uses Node's child_process.spawn with detached: true + stdio
- * pointed at a log file. Bun.spawn().unref() has macOS session-detach
- * quirks browse already discovered (browse/src/cli.ts:225-275).
+ * pointed at a log file, because Bun.spawn().unref() has macOS
+ * session-detach quirks.
  */
 
 import { spawn as nodeSpawn } from "child_process";
@@ -269,7 +266,7 @@ async function spawnDaemon(opts: SpawnDaemonOpts): Promise<number> {
   const logPath = resolveStartupLogPath();
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
   // Truncate the startup log on each spawn so a later read finds only THIS
-  // attempt's output (mirrors browse's per-spawn log truncation).
+  // attempt's output.
   fs.writeFileSync(logPath, "");
   const logFd = fs.openSync(logPath, "a");
 

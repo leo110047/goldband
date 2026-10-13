@@ -97,7 +97,6 @@ export type WorkflowRunOptions = {
   staged?: boolean;
   worktree?: boolean;
   includeUntracked?: boolean;
-  specialists?: 'off' | 'auto' | 'all';
   reviewHostTimeoutMs?: number;
   reviewPassTimeoutMs?: number;
   reviewClaudeMaxBudgetUsd?: number;
@@ -131,6 +130,7 @@ export type StepEvidenceEvent = {
 
 export type ReviewFinding = {
   id?: string;
+  kind: 'defect' | 'improvement';
   file: string;
   line?: number;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
@@ -143,9 +143,20 @@ export type ReviewFinding = {
   failureScenario?: string;
   suggestedVerification?: string;
   blocking?: boolean;
-  specialist?: string;
-  contributingSpecialists?: string[];
   reproductionStep?: string;
+};
+
+export type ReviewFindingDiagnostic = {
+  file: string;
+  line?: number;
+  severity: ReviewFinding['severity'];
+  summary: string;
+  reason: string;
+};
+
+export type ReviewFindingSet = {
+  findings: ReviewFinding[];
+  diagnostics: ReviewFindingDiagnostic[];
 };
 
 export type QaCheck = {

@@ -28,6 +28,10 @@
 - Keep each domain fact and capability under one authoritative owner. Keep
   provider SDK and wire details inside its adapter. Shared contracts stay
   provider-neutral and runtime-validated; preserve native permission authority.
+- Settle contracts, data flow, and safety boundaries before implementing. Once
+  the feature works, check for duplicated responsibility, misplaced errors,
+  needless abstraction, and caller burden; restructure only for concrete
+  benefit, then verify before review.
 - Wire only surfaces required by the current request or product contract.
   Do not add UI, API, CLI, or MCP surfaces just for symmetry.
 - Use deterministic logic for known structure and safety invariants. Isolate

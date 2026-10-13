@@ -39,9 +39,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build Node-compatible browse server
-        run: bash browse/scripts/build-node-server.sh
-
       - name: Generate host skill outputs
         run: bun run gen:surfaces
 
@@ -52,17 +49,13 @@ jobs:
         run: |
           bun test \
             test/goldband-paths.test.ts \
-            browse/test/claude-bin.test.ts \
+            test/claude-bin.test.ts \
             test/test-free-shards.test.ts \
-            browse/test/file-permissions.test.ts \
-            browse/test/security.test.ts \
-            browse/test/server-sanitize-surrogates.test.ts \
             test/setup-windows-fallback.test.ts \
             test/build-script-shell-compat.test.ts \
             test/docs-config-keys.test.ts \
             test/brain-sync-windows-paths.test.ts \
-            make-pdf/test/browseClient.test.ts \
-            make-pdf/test/pdftotext.test.ts
+            make-pdf/test/cli.test.ts
 
   windows-setup-e2e:
     name: Windows Setup E2E
@@ -96,18 +89,19 @@ jobs:
       - name: Verify Windows binaries
         run: |
           set -e
-          test -f browse/dist/browse.exe || test -f browse/dist/browse || (echo "MISSING: browse" && exit 1)
-          test -f browse/dist/find-browse.exe || test -f browse/dist/find-browse || (echo "MISSING: find-browse" && exit 1)
+          test -f make-pdf/dist/pdf.exe || test -f make-pdf/dist/pdf || (echo "MISSING: make-pdf" && exit 1)
           test -f design/dist/design.exe || test -f design/dist/design || (echo "MISSING: design" && exit 1)
           test -f bin/goldband-global-discover.exe || test -f bin/goldband-global-discover || (echo "MISSING: goldband-global-discover" && exit 1)
           test -f bin/goldband-task-emission.exe || test -f bin/goldband-task-emission || (echo "MISSING: goldband-task-emission" && exit 1)
 
-      - name: Verify find-browse binary resolution
+      # make-pdf renders through Node on Windows (oven-sh/bun#4253); prove it.
+      - name: Render a PDF with the Windows binary
         run: |
           set -e
-          OUT=$(bun browse/src/find-browse.ts 2>&1) || true
-          echo "find-browse output: $OUT"
-          echo "$OUT" | grep -qE '(browse\.exe|browse)$' || (echo "find-browse failed to resolve binary on Windows" && exit 1)
+          bunx playwright install chromium
+          printf '# Windows render\n\n## Section\n\nHello.\n' > "$RUNNER_TEMP/render.md"
+          make-pdf/dist/pdf generate "$RUNNER_TEMP/render.md" "$RUNNER_TEMP/render.pdf" --toc
+          test "$(head -c 5 "$RUNNER_TEMP/render.pdf")" = "%PDF-"
 
       - name: Verify state-root resolution
         run: |

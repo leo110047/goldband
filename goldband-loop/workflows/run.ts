@@ -34,7 +34,6 @@ function parseArgs(args: string[]): { capability: string; action: string; option
     else if (arg === '--mode') options.mode = takeValue(args, ++index, arg) as WorkflowRunOptions['mode'];
     else if (arg === '--host') options.host = takeValue(args, ++index, arg) as WorkflowRunOptions['host'];
     else if (arg === '--diff-file') options.diffFile = takeValue(args, ++index, arg);
-    else if (arg === '--specialists') options.specialists = takeValue(args, ++index, arg) as WorkflowRunOptions['specialists'];
     else if (arg === '--review-host-timeout-seconds') options.reviewHostTimeoutMs = takeSeconds(args, ++index, arg);
     else if (arg === '--review-pass-timeout-seconds') options.reviewPassTimeoutMs = takeSeconds(args, ++index, arg);
     else if (arg === '--review-claude-max-budget-usd') options.reviewClaudeMaxBudgetUsd = takeUsd(args, ++index, arg);
@@ -75,9 +74,6 @@ function validateOptions(
   }
   if (options.goldbandHome && !isAbsolute(options.goldbandHome)) {
     usageError('--goldband-home requires an absolute path');
-  }
-  if (options.specialists && !['off', 'auto', 'all'].includes(options.specialists)) {
-    usageError(`invalid --specialists: ${options.specialists}`);
   }
   const hasReviewOnlyOverride =
     options.reviewHostTimeoutMs !== undefined ||

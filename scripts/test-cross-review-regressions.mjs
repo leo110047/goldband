@@ -369,11 +369,18 @@ function testCodexOnlyInstallLoadsCrossReviewRuntime() {
     path.join(process.cwd(), 'codex', 'hooks', 'cross-review-gate.js'),
     path.join(hooksDir, 'cross-review-gate.js'),
   );
-  fs.copyFileSync(
-    path.join(process.cwd(), 'codex', 'hooks', 'module-loader.js'),
-    path.join(hooksDir, 'module-loader.js'),
-  );
-  for (const file of ['core.cjs', 'reviewer-prompt.md', 'rubric.md']) {
+  for (const file of ['module-loader.js', 'cross-review-request.cjs']) {
+    fs.copyFileSync(
+      path.join(process.cwd(), 'codex', 'hooks', file),
+      path.join(hooksDir, file),
+    );
+  }
+  for (const file of [
+    'core.cjs',
+    'cross-review-request.cjs',
+    'reviewer-prompt.md',
+    'rubric.md',
+  ]) {
     fs.copyFileSync(
       path.join(process.cwd(), 'goldband-loop', 'cross-review', file),
       path.join(runtimeDir, file),
@@ -401,6 +408,108 @@ function testCodexOnlyInstallLoadsCrossReviewRuntime() {
   });
 }
 
+function copyFiles(sourceDir, targetDir, files) {
+  fs.mkdirSync(targetDir, { recursive: true });
+  for (const file of files) {
+    fs.copyFileSync(path.join(sourceDir, file), path.join(targetDir, file));
+  }
+}
+
+function testClaudePluginInstallLoadsCrossReviewRuntime() {
+  const dir = makeRepo();
+  const home = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'goldband-claude-plugin-'),
+  );
+  const hooksDir = path.join(
+    home,
+    'plugin-cache/hooks/scripts/lib/hook-router',
+  );
+  copyFiles(
+    path.join(
+      process.cwd(),
+      'plugin-assets/claude-code-plugin/hooks/scripts/lib/hook-router',
+    ),
+    hooksDir,
+    ['cross-review-gate.js', 'cross-review-request.cjs', 'module-loader.js'],
+  );
+  copyFiles(
+    path.join(process.cwd(), 'goldband-loop/cross-review'),
+    path.join(home, '.claude/skills/goldband/cross-review'),
+    ['core.cjs', 'cross-review-request.cjs', 'reviewer-prompt.md', 'rubric.md'],
+  );
+  const script = [
+    `const gate = require(${JSON.stringify(path.join(hooksDir, 'cross-review-gate.js'))});`,
+    `const contract = gate.armFromPrompt({ session_id: 'plugin-session', prompt: '/goldband-cross-review PLAN.md' }, { cwd: ${JSON.stringify(dir)}, env: process.env, implementer: 'claude' });`,
+    `process.stdout.write(JSON.stringify({ planFile: contract.planFile, reviewer: contract.reviewer }));`,
+  ].join('\n');
+  const result = spawnSync(process.execPath, ['-e', script], {
+    cwd: dir,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: home,
+      GOLDBAND_ROOT: '',
+      GOLDBAND_CROSS_REVIEW_ROOT: path.join(home, 'state'),
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    planFile: 'PLAN.md',
+    reviewer: 'codex',
+  });
+}
+
+function testMissingCoreFailsOnlyExplicitRequests() {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'goldband-no-core-'));
+  const hooksDir = path.join(
+    home,
+    'plugin',
+    'hooks',
+    'scripts',
+    'lib',
+    'hook-router',
+  );
+  fs.mkdirSync(hooksDir, { recursive: true });
+  for (const file of [
+    'cross-review-gate.js',
+    'cross-review-request.cjs',
+    'module-loader.js',
+  ]) {
+    fs.copyFileSync(
+      path.join(process.cwd(), 'hooks', 'scripts', 'lib', 'hook-router', file),
+      path.join(hooksDir, file),
+    );
+  }
+  const script = [
+    `const gate = require(${JSON.stringify(path.join(hooksDir, 'cross-review-gate.js'))});`,
+    `const ordinary = gate.armFromPrompt({ prompt: 'please review this' }, {});`,
+    `const bareAlias = gate.armFromPrompt({ prompt: '/cross-review notes' }, {});`,
+    `const inlineCode = gate.armFromPrompt({ prompt: 'run \\x60/goldband-cross-review PLAN.md\\x60 later' }, {});`,
+    `let laterLineError = null;`,
+    `try { gate.armFromPrompt({ prompt: 'Context first\\n/goldband-cross-review PLAN.md' }, {}); } catch (caught) { laterLineError = caught.message; }`,
+    `const decision = gate.evaluateCrossReviewGate({ hook_event_name: 'Stop' }, {}).decision;`,
+    `let error = null;`,
+    `try { gate.armFromPrompt({ prompt: '/goldband-cross-review PLAN.md' }, {}); } catch (caught) { error = caught.message; }`,
+    `process.stdout.write(JSON.stringify({ ordinary, bareAlias, inlineCode, decision, error, laterLineError }));`,
+  ].join('\n');
+  const result = spawnSync(process.execPath, ['-e', script], {
+    cwd: home,
+    encoding: 'utf8',
+    env: { ...process.env, HOME: home, GOLDBAND_ROOT: '' },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const observed = JSON.parse(result.stdout);
+  assert.equal(observed.ordinary, null);
+  assert.equal(observed.bareAlias, null);
+  assert.equal(observed.inlineCode, null);
+  assert.match(
+    observed.laterLineError,
+    /cross-review runtime is not installed/,
+  );
+  assert.equal(observed.decision, 'allow');
+  assert.match(observed.error, /cross-review runtime is not installed/);
+}
+
 testChangesRequestedNeverRewritesToApproved();
 testMissingFindingsLineEscalates();
 testApprovedWithBlockingFindingEscalates();
@@ -414,5 +523,7 @@ testSlashCommandRequiresPlanAndAvoidsInlineMentions();
 testOnlySlashCommandTriggersCrossReview();
 testCodexAdapterLoadsTheSharedCrossReviewCore();
 testCodexOnlyInstallLoadsCrossReviewRuntime();
+testMissingCoreFailsOnlyExplicitRequests();
+testClaudePluginInstallLoadsCrossReviewRuntime();
 
 console.log('[OK] cross-review regression tests passed');

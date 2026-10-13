@@ -8,12 +8,15 @@ const CONFIG_BIN = path.join(ROOT, 'bin', 'goldband-config');
 
 function scanDocsForConfigKeys(): { docPath: string; key: string; line: number }[] {
   const hits: { docPath: string; key: string; line: number }[] = [];
-  const docsDir = path.join(ROOT, 'docs');
-  // Recurse docs/ but skip dotfiles. CHANGELOG.md/TODOS.md are excluded by virtue
-  // of being top-level; we only scan docs/**.
-  const stack = [docsDir];
+  // Recurse docs/ (skipping dotfiles) plus the top-level README, which documents
+  // the user-facing config commands.
+  const stack = [path.join(ROOT, 'docs'), path.join(ROOT, 'README.md')];
   while (stack.length) {
     const cur = stack.pop()!;
+    if (fs.statSync(cur).isFile()) {
+      collectConfigKeys(cur, hits);
+      continue;
+    }
     for (const ent of fs.readdirSync(cur, { withFileTypes: true })) {
       if (ent.name.startsWith('.')) continue;
       const full = path.join(cur, ent.name);
@@ -22,17 +25,23 @@ function scanDocsForConfigKeys(): { docPath: string; key: string; line: number }
         continue;
       }
       if (!ent.name.endsWith('.md')) continue;
-      const text = fs.readFileSync(full, 'utf-8');
-      const lines = text.split('\n');
-      lines.forEach((line, idx) => {
-        // Match `goldband-config set <key>` or `goldband-config get <key>`.
-        for (const m of line.matchAll(/goldband-config\s+(?:set|get)\s+([a-z][a-z0-9_]*)/g)) {
-          hits.push({ docPath: full, key: m[1], line: idx + 1 });
-        }
-      });
+      collectConfigKeys(full, hits);
     }
   }
   return hits;
+}
+
+function collectConfigKeys(
+  docPath: string,
+  hits: { docPath: string; key: string; line: number }[],
+): void {
+  const lines = fs.readFileSync(docPath, 'utf-8').split('\n');
+  lines.forEach((line, idx) => {
+    // Match `goldband-config set <key>` or `goldband-config get <key>`.
+    for (const m of line.matchAll(/goldband-config\s+(?:set|get)\s+([a-z][a-z0-9_]*)/g)) {
+      hits.push({ docPath, key: m[1], line: idx + 1 });
+    }
+  });
 }
 
 function runConfig(args: string[], tmpHome: string) {
@@ -44,7 +53,7 @@ function runConfig(args: string[], tmpHome: string) {
 }
 
 describe('docs ↔ goldband-config key drift guard', () => {
-  test('docs/ references at least one config key (smoke)', () => {
+  test('docs reference at least one config key (smoke)', () => {
     const hits = scanDocsForConfigKeys();
     expect(hits.length).toBeGreaterThan(0);
   });

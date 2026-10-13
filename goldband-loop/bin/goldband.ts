@@ -3,18 +3,13 @@
 import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
-	closeSync,
-	constants,
 	cpSync,
 	existsSync,
-	fstatSync,
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
-	openSync,
 	readdirSync,
 	readFileSync,
-	readSync,
 	realpathSync,
 	rmSync,
 	statSync,
@@ -34,6 +29,7 @@ import {
 	runManagedCommand,
 } from "../lib/managed-worktree-boundary";
 import { superviseReviewRuntime } from "../lib/review-runtime-process";
+import { readStableRegularFile } from "../lib/stable-file-read";
 import {
 	acquireReviewExecutionLease,
 	releaseReviewExecutionLease,
@@ -41,7 +37,6 @@ import {
 import {
 	assertReviewNotNested,
 	assertValidReviewScopeFlags,
-	INDEPENDENT_REVIEWER_ERROR,
 	REVIEW_ACTIVE_ENV,
 	REVIEW_SCOPE_FLAGS,
 	type ReviewScopeFlag,
@@ -54,12 +49,6 @@ import {
 
 type ReviewHost = "claude" | "codex";
 const MAX_PLAN_INPUT_BYTES = 1024 * 1024;
-
-type TrustedBrowserRuntime = {
-	browserExecutable: string;
-	browserServerScript: string;
-	bunExecutable: string;
-};
 
 type TrustedRulesRuntime = {
 	rulesResolverScript: string;
@@ -85,14 +74,12 @@ type ReviewProcessEnvironmentOptions = {
 };
 
 const TRUSTED_CODEX_EXECUTABLE_ENV = "GOLDBAND_TRUSTED_CODEX_EXECUTABLE";
-const TRUSTED_BROWSER_EXECUTABLE_ENV = "GOLDBAND_TRUSTED_BROWSER_EXECUTABLE";
 
 const TRUSTED_LAUNCHER_ACTION_SET = new Set<string>(TRUSTED_LAUNCHER_ACTIONS);
 const PROMPT_CONTRACT_ACTION_SET = new Set<string>(PROMPT_CONTRACT_ACTIONS);
 
 type TrustedLauncherHandlers = {
 	"review/code": (args: string[]) => number | Promise<number>;
-	"browser/session": (args: string[]) => number;
 	"plan/create": (args: string[]) => number;
 	"plan/sync": (args: string[]) => number;
 };
@@ -106,9 +93,6 @@ function printUsage(stream: Pick<Console, "log">): void {
 	stream.log("    Default: current worktree. Tests and runtime verification remain project-owned.");
 	stream.log("    Advanced: --host <claude|codex> --include-untracked");
 	stream.log("    Budgets: --review-host-timeout-seconds <60-1800> --review-pass-timeout-seconds <60-1800> --review-claude-max-budget-usd <0.01-100.00>");
-	stream.log(
-		"  goldband browser session --host <claude|codex> [command] [args...]",
-	);
 	stream.log("  goldband plan create --input <file> [--host <claude|codex>]");
 	stream.log(
 		"  goldband plan <block|cancel> --work-id <id> --ticket-id <id> --reason <text> [--host <claude|codex>]",
@@ -258,13 +242,7 @@ function parseReviewRuntimeArgs(args: string[]): string[] {
 			);
 		}
 		if (arg === "--specialists") {
-			const value = args[index + 1];
-			if (!value) throw new Error("--specialists requires a value");
-			if (value !== "off") {
-				throw new Error(`${INDEPENDENT_REVIEWER_ERROR}; remove --specialists`);
-			}
-			index += 1;
-			continue;
+			throw new Error("--specialists was removed; review code always uses exactly one core reviewer");
 		}
 		if (arg === "--review-claude-max-budget-usd") {
 			const value = args[index + 1];
@@ -385,77 +363,6 @@ function resolveReviewLaunchArgs(args: string[], entryFile: string, config?: Rec
 	return buildReviewRuntimeArgs(args, context);
 }
 
-function browserSession(args: string[]): number {
-	const hostFlag = args[0];
-	const host = args[1];
-	if (hostFlag !== "--host" || (host !== "claude" && host !== "codex")) {
-		throw new Error(
-			"browser session requires --host claude or --host codex before the browser command",
-		);
-	}
-	const command = args[2] || "status";
-	const commandArgs = args.slice(3);
-	const runtimeFile = resolveWorkflowRuntimeFile();
-	const runtimeEnvironment = prepareReviewProcessEnvironment(process.env);
-	const trustedBrowser = resolveTrustedBrowserRuntime();
-	if (trustedBrowser) resolveTrustedRulesRuntime();
-	if (host === "codex" && !trustedBrowser) {
-		throw new Error(
-			"trusted Codex browser runtime is not installed; rerun ./install.sh workflow-codex",
-		);
-	}
-	if (trustedBrowser) {
-		runtimeEnvironment.env[TRUSTED_BROWSER_EXECUTABLE_ENV] =
-			trustedBrowser.browserExecutable;
-		runtimeEnvironment.env.BROWSE_SERVER_SCRIPT =
-			trustedBrowser.browserServerScript;
-		runtimeEnvironment.env.BROWSE_BUN_EXECUTABLE = trustedBrowser.bunExecutable;
-	}
-	if (runtimeEnvironment.durability === "ephemeral") {
-		console.error(
-			`Goldband browser: durable state root is not writable in this sandbox; reports will use sandbox-safe temporary root ${runtimeEnvironment.evidenceRoot}.`,
-		);
-	}
-
-	const inputRoot = mkdtempSync(join(tmpdir(), "goldband-browser-input-"));
-	const inputFile = join(inputRoot, "request.json");
-	writeFileSync(
-		inputFile,
-		`${JSON.stringify({ command, args: commandArgs })}\n`,
-		{ mode: 0o600 },
-	);
-	try {
-		const result = spawnSync(
-			process.execPath,
-			[
-				runtimeFile,
-				"browser",
-				"session",
-				"--mode",
-				"real",
-				"--host",
-				host,
-				"--input",
-				inputFile,
-			],
-			{
-				cwd: process.cwd(),
-				env: runtimeEnvironment.env,
-				stdio: "inherit",
-			},
-		);
-		if (result.error) throw result.error;
-		if (result.status === null) {
-			throw new Error(
-				`browser runtime terminated without an exit status (${result.signal ?? "unknown signal"})`,
-			);
-		}
-		return result.status;
-	} finally {
-		rmSync(inputRoot, { recursive: true, force: true });
-	}
-}
-
 export function resolvePlanRuntimeFile(
 	entryFile = fileURLToPath(import.meta.url),
 ): string {
@@ -500,87 +407,15 @@ export function readStablePlanInput(
 		afterFirstRead?: () => void;
 	} = {},
 ): Buffer {
-	const resolvedFile = resolve(file);
-	const pathBefore = lstatSync(resolvedFile);
-	if (pathBefore.isSymbolicLink()) {
-		throw new Error("plan create --input must not be a symbolic link");
-	}
-	if (!pathBefore.isFile()) {
-		throw new Error("plan create --input must be a regular file");
-	}
-	const noFollowFlag =
-		options.noFollowFlag === undefined
-			? (constants.O_NOFOLLOW ?? null)
-			: options.noFollowFlag;
-	const flags = constants.O_RDONLY | (noFollowFlag ?? 0);
-	let descriptor: number;
-	try {
-		descriptor = openSync(resolvedFile, flags);
-	} catch (error) {
-		if (error instanceof Error && "code" in error && error.code === "ELOOP") {
-			throw new Error("plan create --input must not be a symbolic link");
-		}
-		throw error;
-	}
-	try {
-		const before = fstatSync(descriptor);
-		const preciseBefore = fstatSync(descriptor, { bigint: true });
-		if (
-			!before.isFile() ||
-			before.ino !== pathBefore.ino ||
-			before.dev !== pathBefore.dev
-		) {
-			throw new Error("plan create --input must be a regular file");
-		}
-		if (before.size > MAX_PLAN_INPUT_BYTES) {
-			throw new Error(
-				`plan create --input exceeds ${MAX_PLAN_INPUT_BYTES} bytes`,
-			);
-		}
-		const content = readPlanInputBuffer(descriptor, before.size);
-		options.afterFirstRead?.();
-		const confirmation = readPlanInputBuffer(descriptor, before.size);
-		const after = fstatSync(descriptor);
-		const preciseAfter = fstatSync(descriptor, { bigint: true });
-		const pathAfter = lstatSync(resolvedFile);
-		if (
-			!content.equals(confirmation) ||
-			after.size !== before.size ||
-			after.ino !== before.ino ||
-			after.dev !== before.dev ||
-			after.mtimeMs !== before.mtimeMs ||
-			preciseAfter.mtimeNs !== preciseBefore.mtimeNs ||
-			preciseAfter.ctimeNs !== preciseBefore.ctimeNs ||
-			pathAfter.isSymbolicLink() ||
-			pathAfter.ino !== before.ino ||
-			pathAfter.dev !== before.dev
-		) {
-			throw new Error("plan create --input changed while being read");
-		}
-		return content;
-	} finally {
-		closeSync(descriptor);
-	}
-}
-
-function readPlanInputBuffer(descriptor: number, size: number): Buffer {
-	const content = Buffer.alloc(size);
-	let offset = 0;
-	while (offset < content.length) {
-		const bytes = readSync(
-			descriptor,
-			content,
-			offset,
-			content.length - offset,
-			offset,
-		);
-		if (bytes === 0) break;
-		offset += bytes;
-	}
-	if (offset !== size) {
-		throw new Error("plan create --input changed while being read");
-	}
-	return content;
+	return readStableRegularFile(resolve(file), {
+		label: "plan create --input",
+		maxBytes: MAX_PLAN_INPUT_BYTES,
+		tooLarge: () =>
+			new Error(`plan create --input exceeds ${MAX_PLAN_INPUT_BYTES} bytes`),
+		confirmContent: true,
+		noFollowFlag: options.noFollowFlag,
+		afterFirstRead: options.afterFirstRead,
+	});
 }
 
 export function planCreate(
@@ -827,9 +662,6 @@ export function prepareReviewProcessEnvironment(
 ): ReviewProcessEnvironment {
 	const cleanEnv = { ...env };
 	delete cleanEnv[TRUSTED_CODEX_EXECUTABLE_ENV];
-	delete cleanEnv[TRUSTED_BROWSER_EXECUTABLE_ENV];
-	delete cleanEnv.BROWSE_SERVER_SCRIPT;
-	delete cleanEnv.BROWSE_BUN_EXECUTABLE;
 	const explicitRoot = hasExplicitStateRoot(env);
 	const evidenceRoot = resolveGoldbandStateRoot(
 		undefined,
@@ -890,31 +722,6 @@ export function resolveTrustedCodexExecutable(
 		"codexExecutable",
 		resolved.config.codexExecutable,
 	);
-}
-
-export function resolveTrustedBrowserRuntime(
-	entryFile = fileURLToPath(import.meta.url),
-): TrustedBrowserRuntime | undefined {
-	const resolved = readTrustedRuntimeConfig(entryFile);
-	if (!resolved) return undefined;
-	if (resolved.config.runtimeHost === "claude") return undefined;
-	return {
-		browserExecutable: requireTrustedExecutable(
-			resolved.configFile,
-			"browserExecutable",
-			resolved.config.browserExecutable,
-		),
-		browserServerScript: requireTrustedFile(
-			resolved.configFile,
-			"browserServerScript",
-			resolved.config.browserServerScript,
-		),
-		bunExecutable: requireTrustedExecutable(
-			resolved.configFile,
-			"bunExecutable",
-			resolved.config.bunExecutable,
-		),
-	};
 }
 
 export function resolveTrustedRulesRuntime(
@@ -1020,7 +827,6 @@ function dispatchTrustedLauncherAction(
 	handlers: TrustedLauncherHandlers,
 ): number | Promise<number> | undefined {
 	if (action === "review/code") return handlers["review/code"](args);
-	if (action === "browser/session") return handlers["browser/session"](args);
 	if (action === "plan/create") return handlers["plan/create"](args);
 	if (action === "plan/sync") return handlers["plan/sync"](args);
 	return undefined;
@@ -1028,7 +834,6 @@ function dispatchTrustedLauncherAction(
 
 const TRUSTED_LAUNCHER_HANDLERS: TrustedLauncherHandlers = {
 	"review/code": reviewCode,
-	"browser/session": browserSession,
 	"plan/create": planCreate,
 	"plan/sync": planSync,
 };
@@ -1054,7 +859,6 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
 		};
 		const fakeHandlers: TrustedLauncherHandlers = {
 			"review/code": fakeRoute("review/code"),
-			"browser/session": fakeRoute("browser/session"),
 			"plan/create": fakeRoute("plan/create"),
 			"plan/sync": fakeRoute("plan/sync"),
 		};
@@ -1085,9 +889,6 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
 		promptContractUsage(trustedAction);
 	}
 	if (scope === "review") usage();
-	if (scope === "browser") {
-		usage();
-	}
 	if (scope === "plan") {
 		const planArgs = [name, ...rest].filter(
 			(value): value is string => value !== undefined,

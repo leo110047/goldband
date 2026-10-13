@@ -244,3 +244,24 @@ async function safeInspect(
 		return null;
 	}
 }
+
+export function parseArray(value: string, label: string): unknown[] {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(value);
+	} catch {
+		throw new Error(`${label} returned invalid JSON`);
+	}
+	if (!Array.isArray(parsed)) throw new Error(`${label} must return an array`);
+	return parsed;
+}
+
+export function requiredString(value: unknown, label: string): string {
+	if (typeof value !== "string" || value.length === 0)
+		throw new Error(`invalid ${label}`);
+	return value;
+}
+
+export function boundedError(value: string): string {
+	return value.replace(/[\r\n]+/g, " ").slice(0, 500) || "command failed";
+}

@@ -19,7 +19,7 @@ Review 失敗時，Claude／Codex hook 會提示讀取既有啟動契約；環�
 - 準備 Git、Node.js，以及要使用的 Claude Code 或 Codex CLI。
 - 使用 installer 安裝 Claude 設定另需 `jq`；Codex 設定安裝與檢查需要 Python **3.11 以上**。
 - 使用完整 Git checkout；請勿只下載 `install.sh`。
-- Goldband Loop 另需 Bun **1.3.11 以上**。瀏覽器工作流程需要 Playwright Chromium，安裝器會處理其安裝與驗證。
+- Goldband Loop 另需 Bun **1.3.11 以上**。`make-pdf` 需要 Playwright Chromium，安裝器會處理其安裝與驗證。瀏覽器 QA 使用 Claude Code／Codex 自己的瀏覽器工具；`all-with-workflow` 會替兩邊設定 Playwright MCP，已有設定則保留，可用 `GOLDBAND_SKIP_PLAYWRIGHT_MCP=1` 跳過（見 [mcp/README.md](mcp/README.md)）。
 - macOS／Linux 使用 Bash；Windows 請用 Git Bash 或 WSL，沒有原生 PowerShell 安裝器。各工作流程的平台限制見下方說明。
 
 Installer 會修改家目錄內的工具設定、hooks 與 skills。Claude plugin 與 installer 的 Claude 核心設定請擇一安裝，避免重複載入。
@@ -74,7 +74,7 @@ Codex:       $goldband system health
 
 `review/code` 預設對目前 worktree 執行一次獨立語意審查。reviewer 會讀取 diff、相關程式與規則，並回報具體觸發條件、影響和建議驗證方式；不執行專案測試，也不授權結案或變更工作票狀態。
 
-Claude 使用 `/goldband review code`，Codex 使用 `$goldband review code`。可用 `--base <ref>`、`--staged` 或 `--diff-file <file>` 指定範圍。修正後以相同入口重新審查；每次都檢查目前範圍，不需要 manifest、registry、lineage 或簽章憑證。舊治理參數會明確拒絕。
+Claude 使用 `/goldband review code`，Codex 使用 `$goldband review code`。可用 `--base <ref>`、`--staged` 或 `--diff-file <file>` 指定範圍。修正後以相同入口重新審查；每次都檢查目前範圍。
 
 專案原有的 test、lint、typecheck、CI 及需要的實際環境驗證仍須照常執行。報告中的「無 findings」不代表這些驗證已通過。
 

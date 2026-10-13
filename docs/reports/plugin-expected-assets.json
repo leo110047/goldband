@@ -14,10 +14,9 @@
       "commands/discuss.md",
       "commands/goldband-cross-review.md",
       "commands/goldband-language.md",
+      "commands/goldband-plan.md",
       "commands/goldband.md",
-      "commands/plan.md",
-      "commands/verify-config.md",
-      "commands/verify.md"
+      "commands/verify-config.md"
     ],
     "skills": [
       "careful-mode",
@@ -111,19 +110,20 @@
       "hooks/scripts/lib/rules-resolver.js"
     ],
     "hookRuntimeDependencies": [
-      "codex/hooks/capability-routing.generated.json",
       "codex/hooks/cross-review-gate.js",
       "codex/hooks/high-risk-policy.js",
       "codex/hooks/module-loader.js",
       "codex/hooks/telemetry.js",
       "codex/hooks/telemetry-schema.cjs",
       "codex/hooks/review-launch-advisory.js",
-      "codex/hooks/session-state.js",
       "codex/hooks/secret-patterns.js",
       "codex/hooks/shell-commands.js",
       "codex/hooks/shell-policy.js",
       "codex/hooks/shell-output.js",
-      "codex/hooks/shell-invocation.js"
+      "codex/hooks/shell-invocation.js",
+      "codex/hooks/retained-jsonl.js",
+      "codex/hooks/utils.js",
+      "codex/hooks/workflow-telemetry.js"
     ],
     "reason": "Codex plugins exist but package Codex skills/apps/MCP, not Claude Code settings. Root Codex install remains install.sh."
   },

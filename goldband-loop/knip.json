@@ -2,28 +2,21 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "bin/*.ts",
-    "browse/src/{cli,server,security-sidecar-entry}.ts",
-    "browser-skills/**/_lib/browse-client.ts",
-    "browser-skills/**/script.ts",
     "design/{prototype.ts,src/cli.ts}",
     "ios-qa/daemon/src/{cli-mint,index}.ts",
     "ios-qa/scripts/*.ts",
     "scripts/*.{ts,mjs}",
-    "supabase/functions/*/index.ts",
     "workflows/{run,work-map-cli}.ts",
     "**/*.test.ts"
   ],
   "project": [
     "bin/**/*.ts",
-    "browse/{src,test}/**/*.ts",
-    "browser-skills/**/*.ts",
     "design/**/*.ts",
     "hosts/**/*.ts",
     "ios-qa/**/*.ts",
     "lib/**/*.ts",
     "make-pdf/{src,test}/**/*.ts",
     "scripts/**/*.{ts,mts,mjs}",
-    "supabase/functions/**/*.ts",
     "test/**/*.ts",
     "workflows/**/*.ts",
     "!generated/**"

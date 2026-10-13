@@ -44,7 +44,5 @@ function managedWorktreeBashViolation(command, cwd = process.cwd()) {
 }
 
 module.exports = {
-  GIT_WRITE_COMMAND,
   managedWorktreeBashViolation,
-  resolveManagedWorktreeMarker,
 };

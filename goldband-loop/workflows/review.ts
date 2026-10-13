@@ -1,27 +1,26 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import {
-  closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync,
-  readFileSync, readSync, realpathSync, writeFileSync,
-} from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { assertValidReviewExecutionOptions, MAX_REVIEW_DIFF_BYTES, MAX_REVIEW_PROMPT_OVERHEAD_BYTES } from '../lib/review-runtime-contract';
+import { readStableRegularFile } from '../lib/stable-file-read';
 import { materializeReviewUntrackedFile } from '../lib/verification-receipt';
 import { stateRoot } from './evidence';
 import { adapterFor, HostRunError, type HostExecutionPolicy, type HostUsage } from './host-adapter';
 import { workflowAssetPath } from './paths';
-import { aggregateReviewFindings, unwrapFindings } from './review-engine';
+import { organizeReviewFindings, unwrapFindings } from './review-engine';
 import { collectReviewImpactContext, formatReviewImpactContext, impactTelemetry,
   type ReviewDiffInput, type ReviewImpactContext, reviewDiffSchema, reviewInputSchema } from './review-impact';
 import { buildReviewPromptTelemetry, coreReviewRules, type RulesBundle } from './review-rules';
 import { createReviewTimeBudget, type ReviewTimeBudget, type ReviewTimeoutPolicy } from './review-timeouts';
-import { findingsSchema, normalizeFindings, textSchema } from './schema';
-import type { EvaluationSignalSnapshot, ReviewFinding, SeverityCounts, WorkflowContext, WorkflowStep } from './types';
+import { findingsSchema, reviewFindingSetSchema, textSchema } from './schema';
+import type {
+  EvaluationSignalSnapshot, ReviewFinding, ReviewFindingSet, SeverityCounts, WorkflowContext, WorkflowStep,
+} from './types';
 import { resolveReviewWorkspace } from './review-workspace';
 
 export type UntrackedDiffState = { includedBytes: number };
 const REVIEW_GIT_MAX_BUFFER_BYTES = MAX_REVIEW_DIFF_BYTES + 1024 * 1024;
-const REVIEW_FILE_READ_CHUNK_BYTES = 64 * 1024;
 
 type ReviewResult = {
   schemaVersion: 1;
@@ -32,6 +31,7 @@ type ReviewResult = {
   changedFiles: string[];
   diffDigest: string;
   findings: ReviewFinding[];
+  diagnostics: ReviewFindingSet['diagnostics'];
   checksExecuted: string[];
   createdAt: string;
 };
@@ -41,8 +41,7 @@ export const reviewSteps: WorkflowStep[] = [
   { name: 'collect-diff', kind: 'typed', produces: reviewDiffSchema, run: collectDiff },
   { name: 'collect-impact-context', kind: 'typed', produces: reviewInputSchema, run: collectImpactContext },
   { name: 'run-review', kind: 'llm', produces: findingsSchema, run: runReview },
-  { name: 'parse-findings', kind: 'typed', produces: findingsSchema, run: parseFindings },
-  { name: 'verify-findings', kind: 'typed', produces: findingsSchema, run: verifyFindings },
+  { name: 'verify-findings', kind: 'typed', produces: reviewFindingSetSchema, run: verifyFindings },
   { name: 'render-report', kind: 'typed', produces: textSchema, run: renderReport },
 ];
 
@@ -51,8 +50,9 @@ export function reviewSignalFromOutput(
   _ctx: WorkflowContext,
   stepName: string,
 ): EvaluationSignalSnapshot | undefined {
-  if (!['run-review', 'parse-findings', 'verify-findings'].includes(stepName)) return undefined;
-  return reviewFindingsSignal(findingsSchema.validate(output));
+  if (stepName === 'run-review') return reviewFindingsSignal(findingsSchema.validate(output));
+  if (stepName === 'verify-findings') return reviewFindingsSignal(reviewFindingSetSchema.validate(output).findings);
+  return undefined;
 }
 
 function collectDiff(ctx: WorkflowContext): ReviewDiffInput {
@@ -64,12 +64,13 @@ function collectDiff(ctx: WorkflowContext): ReviewDiffInput {
   );
   if (ctx.options.diffFile) {
     const file = resolve(ctx.cwd, ctx.options.diffFile);
-    const diff = readBoundedRegularFile(
-      file,
-      MAX_REVIEW_DIFF_BYTES,
-      timeBudget,
-      'review/code diff file',
-    ).toString('utf8');
+    const label = 'review/code diff file';
+    const diff = readStableRegularFile(file, {
+      label,
+      maxBytes: MAX_REVIEW_DIFF_BYTES,
+      checkpoint: () => timeBudget.assertWithinDeadline(),
+      tooLarge: () => reviewDiffSizeError(label),
+    }).toString('utf8');
     return {
       source: `diff-file:${file}`,
       diff,
@@ -106,12 +107,12 @@ async function runReview(ctx: WorkflowContext): Promise<ReviewFinding[]> {
   const input = reviewInputSchema.validate(ctx.input);
   const repository = resolveReviewWorkspace(ctx.cwd).repositoryRoot;
   const diffDigest = sha256(input.diff);
-  const rules = coreReviewRules(ctx.cwd, input.diff);
+  const rules = coreReviewRules(ctx.cwd, input.diff, input.changedFiles);
   const budget = createReviewTimeBudget(ctx.options, undefined, ctx.passStartedAtMonotonicMs);
   let findings: ReviewFinding[] = [];
   if (input.diff.trim()) {
     const adapter = adapterFor(reviewHost(ctx));
-    const prompt = buildReviewPrompt(ctx, input.diff, { rules, impact: input.impact });
+    const prompt = buildReviewPrompt(ctx, input, rules);
     recordReviewPromptTelemetry(ctx, adapter.name, prompt, rules.bundle, rules.text, input.diff, budget.policy, input.impact);
     let result;
     try {
@@ -126,7 +127,7 @@ async function runReview(ctx: WorkflowContext): Promise<ReviewFinding[]> {
     const current = collectDiff(ctx);
     if (sha256(current.diff) !== diffDigest ||
         JSON.stringify(current.changedFiles) !== JSON.stringify(input.changedFiles) ||
-        buildReviewPrompt(ctx, input.diff, { impact: input.impact }) !== prompt) {
+        buildReviewPrompt(ctx, input) !== prompt) {
       throw new Error('review scope or policy changed during review; run a new review');
     }
     findings = findingsSchema.validate(unwrapFindings(result.parsed));
@@ -134,24 +135,20 @@ async function runReview(ctx: WorkflowContext): Promise<ReviewFinding[]> {
   results.set(ctx.runId, {
     schemaVersion: 1, runId: ctx.runId, mode: 'semantic', repository,
     source: input.source, changedFiles: input.changedFiles, diffDigest,
-    findings, checksExecuted: [], createdAt: new Date().toISOString(),
+    findings, diagnostics: [], checksExecuted: [], createdAt: new Date().toISOString(),
   });
   return findings;
 }
 
-function parseFindings(ctx: WorkflowContext): ReviewFinding[] {
-  return normalizeFindings(findingsSchema.validate(ctx.input));
-}
-
-function verifyFindings(ctx: WorkflowContext): ReviewFinding[] {
-  return aggregateReviewFindings(parseFindings(ctx)).filter(hasConcreteFailurePath);
+function verifyFindings(ctx: WorkflowContext): ReviewFindingSet {
+  return organizeReviewFindings(findingsSchema.validate(ctx.input));
 }
 
 function renderReport(ctx: WorkflowContext): string {
   const result = results.get(ctx.runId);
   if (!result) throw new Error('semantic review result is missing');
   results.delete(ctx.runId);
-  result.findings = findingsSchema.validate(ctx.input);
+  Object.assign(result, reviewFindingSetSchema.validate(ctx.input));
   const lines = [
     '# review/code report', '', 'Read-only semantic review: no files were modified.',
     `Scope: ${result.source}.`, `Diff digest: ${result.diffDigest}.`,
@@ -159,16 +156,7 @@ function renderReport(ctx: WorkflowContext): string {
     'Tests, builds, browser and live-provider checks were not executed by this review.',
     'Findings are code observations, not reproduced failures. No findings does not establish runtime correctness or deployment readiness.', '',
   ];
-  if (!result.findings.length) lines.push(result.changedFiles.length ? 'No findings.' : 'No changes to review.');
-  for (const finding of result.findings) {
-    lines.push(`- [${finding.severity}] ${finding.summary} — ${finding.file}:${finding.line}`);
-    if (finding.evidence) lines.push(`  Code observation: ${finding.evidence}`);
-    if (finding.failureScenario) lines.push(`  Trigger and impact: ${finding.failureScenario}`);
-    if (finding.recommendation) lines.push(`  Fix: ${finding.recommendation}`);
-    if (finding.reproductionStep || finding.suggestedVerification) {
-      lines.push(`  Suggested verification (not executed): ${finding.reproductionStep ?? finding.suggestedVerification}`);
-    }
-  }
+  lines.push(...renderFindingSections(result));
   const report = lines.join('\n');
   const dir = join(stateRoot(ctx.options), 'workflow-runs', 'artifacts');
   mkdirSync(dir, { recursive: true });
@@ -180,9 +168,54 @@ function renderReport(ctx: WorkflowContext): string {
   return report;
 }
 
-function hasConcreteFailurePath(finding: ReviewFinding): boolean {
-  return Boolean(finding.line && finding.evidence && finding.failureScenario &&
-    (finding.reproductionStep || finding.suggestedVerification));
+function renderFindingSections(result: ReviewResult): string[] {
+  const defects = result.findings.filter((finding) => finding.kind === 'defect');
+  const improvements = result.findings.filter((finding) => finding.kind === 'improvement');
+  const empty = !defects.length && !improvements.length;
+  return [
+    ...(empty ? [result.changedFiles.length ? 'No findings.' : 'No changes to review.'] : []),
+    ...defects.flatMap(renderDefect),
+    ...renderImprovements(improvements),
+    ...renderDiagnostics(result.diagnostics),
+  ];
+}
+
+function renderDefect(finding: ReviewFinding): string[] {
+  return [
+    `- [${finding.severity}] ${finding.summary} — ${findingLocation(finding)}`,
+    ...(finding.evidence ? [`  Code observation: ${finding.evidence}`] : []),
+    ...(finding.failureScenario ? [`  Trigger and impact: ${finding.failureScenario}`] : []),
+    ...(finding.recommendation ? [`  Fix: ${finding.recommendation}`] : []),
+    ...renderVerification(finding),
+  ];
+}
+
+function renderVerification(finding: ReviewFinding): string[] {
+  const verification = finding.reproductionStep ?? finding.suggestedVerification;
+  return verification ? [`  Suggested verification (not executed): ${verification}`] : [];
+}
+
+function renderImprovements(improvements: ReviewFinding[]): string[] {
+  if (!improvements.length) return [];
+  return [
+    '', '## Design improvements (blocking until fixed)', '',
+    ...improvements.flatMap((finding) => [
+      `- [${finding.severity}] ${finding.summary} — ${findingLocation(finding)}`,
+      `  Code observation: ${finding.evidence}`,
+      `  Recommendation: ${finding.recommendation}`,
+      ...renderVerification(finding),
+    ]),
+  ];
+}
+
+function renderDiagnostics(diagnostics: ReviewFindingSet['diagnostics']): string[] {
+  if (!diagnostics.length) return [];
+  return ['', '## Discarded findings', '', ...diagnostics.map((diagnostic) =>
+    `- [${diagnostic.severity}] ${diagnostic.summary} — ${findingLocation(diagnostic)}: ${diagnostic.reason}`)];
+}
+
+function findingLocation(finding: { file: string; line?: number }): string {
+  return finding.line ? `${finding.file}:${finding.line}` : finding.file;
 }
 
 function collectTrackedDiff(
@@ -326,7 +359,7 @@ function runReviewGit(
     const code = (result.error as NodeJS.ErrnoException).code;
     if (code === 'ETIMEDOUT') {
       throw new Error(
-        `review/code ${timeBudget.policy.specialistMode} pass timed out after ${timeBudget.policy.passTimeoutMs}ms`,
+        `review/code pass timed out after ${timeBudget.policy.passTimeoutMs}ms`,
       );
     }
     if (code === 'ENOBUFS') throw reviewDiffSizeError();
@@ -351,88 +384,6 @@ export function untrackedFileDiff(
     beforeOpen,
     afterFirstRead,
   );
-}
-
-function readBoundedRegularFile(
-  file: string,
-  maxBytes: number,
-  timeBudget: ReviewTimeBudget | undefined,
-  label: string,
-  beforeOpen: () => void = () => {},
-  expectedStat = lstatSync(file),
-  afterFirstRead: () => void = () => {},
-): Buffer {
-  if (expectedStat.isSymbolicLink() || !expectedStat.isFile()) {
-    throw new Error(`${label} must be a regular file: ${file}`);
-  }
-  if (expectedStat.size > maxBytes) throw reviewDiffSizeError(label, maxBytes);
-
-  beforeOpen();
-  const flags = constants.O_RDONLY |
-    (constants.O_NOFOLLOW ?? 0) |
-    (constants.O_NONBLOCK ?? 0);
-  let fd: number | undefined;
-  try {
-    fd = openSync(file, flags);
-    const openedStat = fstatSync(fd);
-    if (!sameFileVersion(openedStat, expectedStat)) {
-      throw new Error(`${label} changed while it was being opened: ${file}`);
-    }
-    if (openedStat.size > maxBytes) throw reviewDiffSizeError(label, maxBytes);
-    const buffer = readDescriptorWithinLimit(
-      fd,
-      maxBytes,
-      timeBudget,
-      label,
-      afterFirstRead,
-    );
-    if (!sameFileVersion(fstatSync(fd), openedStat)) {
-      throw new Error(`${label} changed while it was being read: ${file}`);
-    }
-    return buffer;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
-}
-
-function readDescriptorWithinLimit(
-  fd: number,
-  maxBytes: number,
-  timeBudget: ReviewTimeBudget | undefined,
-  label: string,
-  afterFirstRead: () => void,
-): Buffer {
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-  while (true) {
-    timeBudget?.assertWithinDeadline();
-    const remainingWithSentinel = (maxBytes + 1) - totalBytes;
-    if (remainingWithSentinel <= 0) throw reviewDiffSizeError(label, maxBytes);
-    const chunk = Buffer.allocUnsafe(
-      Math.min(REVIEW_FILE_READ_CHUNK_BYTES, remainingWithSentinel),
-    );
-    const bytesRead = readSync(fd, chunk, 0, chunk.length, null);
-    if (bytesRead === 0) break;
-    totalBytes += bytesRead;
-    if (totalBytes > maxBytes) throw reviewDiffSizeError(label, maxBytes);
-    chunks.push(chunk.subarray(0, bytesRead));
-    if (chunks.length === 1) afterFirstRead();
-  }
-  timeBudget?.assertWithinDeadline();
-  return Buffer.concat(chunks, totalBytes);
-}
-
-function sameFileVersion(
-  left: ReturnType<typeof fstatSync>,
-  right: ReturnType<typeof fstatSync>,
-): boolean {
-  return left.isFile() &&
-    right.isFile() &&
-    left.dev === right.dev &&
-    left.ino === right.ino &&
-    left.size === right.size &&
-    left.mtimeMs === right.mtimeMs &&
-    left.ctimeMs === right.ctimeMs;
 }
 
 function assertReviewDiffSize(diff: string): void {
@@ -469,12 +420,16 @@ function buildReviewPolicyText(ctx: WorkflowContext, rules: ReturnType<typeof co
   ].join('\n');
 }
 
-export function buildReviewPrompt(ctx: WorkflowContext, diff: string, context: {
-  rules?: ReturnType<typeof coreReviewRules>; impact?: ReviewImpactContext;
-} = {}): string {
-  const rules = context.rules ?? coreReviewRules(ctx.cwd, diff);
+type ReviewPromptInput = Pick<ReviewDiffInput, 'diff' | 'changedFiles'> & { impact?: ReviewImpactContext };
+
+export function buildReviewPrompt(
+  ctx: WorkflowContext,
+  input: ReviewPromptInput,
+  rules = coreReviewRules(ctx.cwd, input.diff, input.changedFiles),
+): string {
+  const { diff } = input;
   const sections = [buildReviewPolicyText(ctx, rules),
-    context.impact ? formatReviewImpactContext(context.impact) : '', 'DIFF_START', diff, 'DIFF_END'];
+    input.impact ? formatReviewImpactContext(input.impact) : '', 'DIFF_START', diff, 'DIFF_END'];
   const prompt = sections.join('\n');
   if (Buffer.byteLength(prompt) - Buffer.byteLength(diff) > MAX_REVIEW_PROMPT_OVERHEAD_BYTES) {
     throw new Error('review prompt overhead exceeds budget');
@@ -509,7 +464,6 @@ function recordReviewPromptTelemetry(
     hostCallBudget: 1,
     hostCallCount: 1,
     originalDiffBytesSent: Buffer.byteLength(diff),
-    specialistMode: timeoutPolicy.specialistMode,
     hostTimeoutMs: timeoutPolicy.hostTimeoutMs,
     passTimeoutMs: timeoutPolicy.passTimeoutMs,
     impactPromptBytes: Buffer.byteLength(formatReviewImpactContext(impact)),
@@ -612,14 +566,14 @@ function normalizedChangedFiles(files: string[]): string[] {
 }
 
 function reviewFindingsSignal(findings: ReviewFinding[]): EvaluationSignalSnapshot {
-  const blockingFindings = findings.filter((finding) => finding.category !== 'specialist-skipped');
+  // Defects and validated improvements both block; neither is optional debt.
   const severityCounts = emptySeverityCounts();
-  for (const finding of blockingFindings) severityCounts[finding.severity] += 1;
+  for (const finding of findings) severityCounts[finding.severity] += 1;
   return {
     kind: 'review-findings',
-    findingCount: blockingFindings.length,
+    findingCount: findings.length,
     severityCounts,
-    blockerKey: blockingFindings.length > 0 ? blockingFindings.map(findingKey).sort().join('|') : undefined,
+    blockerKey: findings.length > 0 ? findings.map(findingKey).sort().join('|') : undefined,
   };
 }
 
@@ -691,6 +645,7 @@ const findingsJsonSchema = {
     type: 'object',
     properties: {
       id: { type: ['string', 'null'] },
+      kind: { enum: ['defect', 'improvement'] },
       file: { type: 'string' },
       line: { type: ['number', 'null'] },
       severity: { enum: ['critical', 'high', 'medium', 'low', 'info'] },
@@ -703,15 +658,11 @@ const findingsJsonSchema = {
       failureScenario: { type: ['string', 'null'] },
       suggestedVerification: { type: ['string', 'null'] },
       blocking: { type: ['boolean', 'null'] },
-      specialist: { type: ['string', 'null'] },
-      contributingSpecialists: {
-        type: ['array', 'null'],
-        items: { type: 'string' },
-      },
       reproductionStep: { type: ['string', 'null'] },
     },
     required: [
       'id',
+      'kind',
       'file',
       'line',
       'severity',
@@ -724,8 +675,6 @@ const findingsJsonSchema = {
       'failureScenario',
       'suggestedVerification',
       'blocking',
-      'specialist',
-      'contributingSpecialists',
       'reproductionStep',
     ],
     additionalProperties: false,

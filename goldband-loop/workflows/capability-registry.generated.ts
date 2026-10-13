@@ -370,52 +370,6 @@ export const CAPABILITY_ACTIONS: CapabilityActionRecord[] = [
     ]
   },
   {
-    "capability": "browser",
-    "action": "session",
-    "name": "browser/session",
-    "description": "Use the persistent browser for interactive work.",
-    "contractPath": "generated/workflow-contracts/browser/session.workflow.md",
-    "runtime": "typed",
-    "dispatch": "trusted-launcher",
-    "lifecycle": "public",
-    "runtimeOwner": "browse",
-    "runtimeContract": null,
-    "safetyGates": [
-      {
-        "operation": "browser/cookies",
-        "mode": "cookies",
-        "enforcement": "blocked-before-runtime",
-        "owner": null,
-        "authorization": "native-host-approval",
-        "preconditions": [
-          "source-profile-resolved",
-          "domain-scope-explicit",
-          "credential-store-approval"
-        ],
-        "sideEffects": [
-          "session-cookie-import"
-        ],
-        "readback": [
-          "imported-domain-list",
-          "import-count",
-          "no-cookie-values-in-evidence"
-        ]
-      }
-    ],
-    "riskLevel": "medium",
-    "hostSupport": [
-      "claude",
-      "codex",
-      "factory",
-      "kiro",
-      "opencode",
-      "slate",
-      "cursor",
-      "openclaw",
-      "hermes"
-    ]
-  },
-  {
     "capability": "design",
     "action": "consult",
     "name": "design/consult",

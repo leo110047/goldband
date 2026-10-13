@@ -44,8 +44,6 @@ const RETIRED_SHIP_REFERENCE_PATTERNS = [
   /TEST_FAILURE_TRIAGE/,
 ];
 const RETIRED_SHIP_REFERENCE_ALLOWLIST = [
-  'goldband-loop/CHANGELOG.md',
-  'goldband-loop/docs/designs/',
   'goldband-loop/docs/prompts/',
   'goldband-loop/test/uninstall.test.ts',
   'scripts/check-goldband-loop-inventory.mjs',
@@ -497,11 +495,14 @@ function assertInstalledStandardInventory(home, inventory, capabilityContract) {
 function assertInstalledRuntimeSupportFiles(...runtimeRoots) {
   const requiredFiles = [
     path.join('lib', 'knowledge.ts'),
+    path.join('lib', 'knowledge-search.cjs'),
+    path.join('lib', 'secret-patterns.cjs'),
     path.join('review', 'shared-rubric.md'),
     path.join('review', 'findings-schema.md'),
     path.join('review', 'checklist.md'),
     path.join('review', 'greptile-triage.md'),
     path.join('cross-review', 'core.cjs'),
+    path.join('cross-review', 'cross-review-request.cjs'),
     path.join('cross-review', 'cli.cjs'),
   ];
   for (const runtimeRoot of runtimeRoots) {

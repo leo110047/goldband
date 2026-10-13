@@ -29,8 +29,6 @@ const RETIRED_REFERENCE_PATTERNS = [
 ];
 const REFERENCE_ALLOWLIST = [
   'docs/DECISIONS.md',
-  'goldband-loop/CHANGELOG.md',
-  'goldband-loop/docs/archive/',
   'goldband-loop/lib/retired-workflow-entry-names.txt',
   'goldband-loop/test/migrations-v1.27.0.0.test.ts',
   'scripts/check-goldband-loop-inventory.mjs',
@@ -54,7 +52,6 @@ const SCAN_ROOTS = [
   'plugin-assets',
   'scripts/generate-goldband-surfaces.mjs',
   'goldband-loop/README.md',
-  'goldband-loop/TODOS.md',
   'goldband-loop/setup',
   'goldband-loop/bin',
   'goldband-loop/lib',

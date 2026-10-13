@@ -37,7 +37,6 @@ function shouldEmit(sessionId, field, value, scope) {
     fs.writeFileSync(
       file,
       JSON.stringify({
-        lastSuggestedSkills: state.lastSuggestedSkills,
         lastKnowledgeAdvisoryKey: state.lastKnowledgeAdvisoryKey,
         [field]: value,
       }),
@@ -49,15 +48,6 @@ function shouldEmit(sessionId, field, value, scope) {
   return true;
 }
 
-function shouldEmitSuggestions(sessionId, skills, scope) {
-  return shouldEmit(
-    sessionId,
-    'lastSuggestedSkills',
-    [...skills].sort(),
-    scope,
-  );
-}
-
 function shouldEmitKnowledgeAdvisory(sessionId, advisoryKey, scope) {
   const key = String(advisoryKey || '').trim();
   return (
@@ -66,4 +56,4 @@ function shouldEmitKnowledgeAdvisory(sessionId, advisoryKey, scope) {
   );
 }
 
-module.exports = { shouldEmitKnowledgeAdvisory, shouldEmitSuggestions };
+module.exports = { shouldEmitKnowledgeAdvisory };

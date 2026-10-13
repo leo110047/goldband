@@ -63,7 +63,7 @@ cd ~/.claude/skills/goldband && ./setup --team
 ```
 
 Use the `$goldband <capability> <action>` interface after install.
-Use /browse for all web browsing. Use ~/.claude/skills/goldband/... for goldband file paths.'
+Use ~/.claude/skills/goldband/... for goldband file paths.'
 else
   SNIPPET='## goldband (REQUIRED — global install)
 

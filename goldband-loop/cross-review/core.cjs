@@ -3,6 +3,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const {
+  matchCrossReviewCommand,
+  promptRequestsCrossReview,
+} = require('./cross-review-request.cjs');
 let normalizeUsageEvent = null;
 
 function loadTelemetryNormalizer() {
@@ -37,8 +41,6 @@ const VALID_HOSTS = new Set(['claude', 'codex']);
 const VALID_STATUSES = new Set(['active', 'passed', 'overridden', 'expired']);
 const VERDICTS = new Set(['APPROVED', 'CHANGES_REQUESTED', 'ESCALATE']);
 const MARKER_PREFIX = 'GOLDBAND-CROSS-REVIEW';
-const CODE_FENCE_PATTERN = /```[\s\S]*?```/g;
-const INLINE_CODE_PATTERN = /`[^`\n]*`/g;
 
 function nowIso() {
   return new Date().toISOString();
@@ -1072,17 +1074,6 @@ function appendResponse(sessionId, response, env = process.env) {
   return payload;
 }
 
-function promptTextWithoutInlineCode(prompt) {
-  return String(prompt || '')
-    .replace(CODE_FENCE_PATTERN, ' ')
-    .replace(INLINE_CODE_PATTERN, ' ');
-}
-
-function promptRequestsCrossReview(prompt) {
-  const text = promptTextWithoutInlineCode(prompt);
-  return /(?:^|\n)\s*\/goldband-cross-review(?:\s|$)/i.test(text);
-}
-
 function tokenizeRequestText(text) {
   const tokens = [];
   let token = '';
@@ -1165,8 +1156,7 @@ function parseCrossReviewArgs(tokens, options = {}) {
 }
 
 function parseCrossReviewRequest(prompt) {
-  const text = promptTextWithoutInlineCode(prompt);
-  const commandMatch = text.match(/(?:^|\n)\s*\/goldband-cross-review(?:\s|$)/i);
+  const commandMatch = matchCrossReviewCommand(prompt);
   if (!commandMatch) {
     return {
       requested: false,
@@ -1176,7 +1166,9 @@ function parseCrossReviewRequest(prompt) {
       reviewerModel: null,
     };
   }
-  const tail = text.slice(commandMatch.index + commandMatch[0].length).trim();
+  const tail = commandMatch.text
+    .slice(commandMatch.index + commandMatch.length)
+    .trim();
   return {
     requested: true,
     source: 'command',
@@ -1273,32 +1265,20 @@ function markDone(sessionId, cwd = process.cwd(), env = process.env) {
 }
 
 module.exports = {
-  CONTRACT_SCHEMA_VERSION,
   appendResponse,
   armFromPrompt,
-  artifactPath,
-  artifactsDir,
-  canonicalReviewBundle,
   contractPath,
   createContract,
   crossReviewDir,
-  detectHost,
   evaluateCrossReviewGate,
-  isBlockingFinding,
   markDone,
   buildReviewerPrompt,
   normalizeReviewResult,
-  oppositeHost,
   parseCrossReviewRequest,
-  parseMarker,
   promptRequestsCrossReview,
-  readArtifact,
   readContract,
-  reviewScopePromptText,
   reviewedSha,
   runReviewRound,
-  stateRoot,
-  validateApprovalArtifact,
   writeArtifact,
   writeContract,
   overrideContract,

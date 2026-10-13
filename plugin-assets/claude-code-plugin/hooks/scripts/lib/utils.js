@@ -1,31 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execSync, spawnSync } = require('child_process');
-
-// Platform detection
-const isWindows = process.platform === 'win32';
-const isMacOS = process.platform === 'darwin';
-const isLinux = process.platform === 'linux';
-
-function getHomeDir() {
-  return os.homedir();
-}
-
-function getClaudeDir() {
-  return path.join(getHomeDir(), '.claude');
-}
-
-function getSessionsDir() {
-  return path.join(getClaudeDir(), 'sessions');
-}
-
-function getLearnedSkillsDir() {
-  return path.join(getClaudeDir(), 'skills', 'learned');
-}
 
 function getTempDir() {
   return os.tmpdir();
+}
+
+function envPath(name) {
+  const raw = process.env[name];
+  return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : null;
 }
 
 /**
@@ -33,31 +16,25 @@ function getTempDir() {
  * Returns null when the runtime does not provide a stable plugin data path.
  */
 function getPluginDataDir() {
-  const raw = process.env.CLAUDE_PLUGIN_DATA;
-  if (typeof raw !== 'string') return null;
-
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  return envPath('CLAUDE_PLUGIN_DATA');
 }
 
-function getGoldbandDataRoot() {
-  const explicit = process.env.GOLDBAND_DATA_DIR;
-  if (typeof explicit === 'string' && explicit.trim().length > 0) {
-    return explicit.trim();
-  }
-
-  const xdgDataHome = process.env.XDG_DATA_HOME;
-  if (typeof xdgDataHome === 'string' && xdgDataHome.trim().length > 0) {
-    return path.join(xdgDataHome.trim(), 'goldband');
-  }
-
-  return path.join(getHomeDir(), '.local', 'share', 'goldband');
+/** Durable data roots in precedence order; temp storage is the last resort. */
+function dataRootCandidates() {
+  const xdgDataHome = envPath('XDG_DATA_HOME');
+  return [
+    getPluginDataDir(),
+    envPath('GOLDBAND_DATA_DIR'),
+    xdgDataHome ? path.join(xdgDataHome, 'goldband') : null,
+    path.join(os.homedir(), '.local', 'share', 'goldband'),
+    path.join(getTempDir(), 'goldband'),
+  ].filter(Boolean);
 }
 
 /**
  * Get a persistent data directory for this plugin namespace.
- * Prefers CLAUDE_PLUGIN_DATA when available, then stable local data storage.
- * Temp storage is only a last resort when durable paths cannot be created.
+ * Uses the first data root that can be created, so an unusable configured root
+ * falls through to the next durable location before temp storage.
  */
 function getPersistentDataDir(namespace = 'goldband') {
   const safeNamespace = String(namespace || 'goldband')
@@ -69,13 +46,13 @@ function getPersistentDataDir(namespace = 'goldband') {
   const normalizedNamespace =
     safeNamespace.length > 0 ? safeNamespace : ['goldband'];
 
-  const pluginDataDir = getPluginDataDir();
   const candidates = [
-    pluginDataDir ? path.join(pluginDataDir, ...normalizedNamespace) : null,
-    path.join(getGoldbandDataRoot(), ...normalizedNamespace),
-    path.join(getTempDir(), ...normalizedNamespace),
-  ].filter(Boolean);
-
+    ...new Set(
+      dataRootCandidates().map((root) =>
+        path.join(root, ...normalizedNamespace),
+      ),
+    ),
+  ];
   for (const candidate of candidates) {
     try {
       return ensureDir(candidate);
@@ -84,7 +61,7 @@ function getPersistentDataDir(namespace = 'goldband') {
     }
   }
 
-  return path.join(getTempDir(), ...normalizedNamespace);
+  return candidates.at(-1);
 }
 
 function getPersistentDataPath(namespace, ...parts) {
@@ -116,152 +93,6 @@ function ensureDir(dirPath) {
     }
   }
   return dirPath;
-}
-
-/**
- * Get current date in YYYY-MM-DD format
- */
-function getDateString() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-/**
- * Get current time in HH:MM format
- */
-function getTimeString() {
-  const now = new Date();
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}`;
-}
-
-/**
- * Get the git repository name
- */
-function getGitRepoName() {
-  const result = runCommand('git rev-parse --show-toplevel');
-  if (!result.success) return null;
-  return path.basename(result.output);
-}
-
-/**
- * Get project name from git repo or current directory
- */
-function getProjectName() {
-  const repoName = getGitRepoName();
-  if (repoName) return repoName;
-  return path.basename(process.cwd()) || null;
-}
-
-/**
- * Get short session ID from CLAUDE_SESSION_ID environment variable
- * Returns last 8 characters, falls back to project name then 'default'
- */
-function getSessionIdShort(fallback = 'default') {
-  const sessionId = process.env.CLAUDE_SESSION_ID;
-  if (sessionId && sessionId.length > 0) {
-    return sessionId.slice(-8);
-  }
-  return getProjectName() || fallback;
-}
-
-/**
- * Get current datetime in YYYY-MM-DD HH:MM:SS format
- */
-function getDateTimeString() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const seconds = String(now.getSeconds()).padStart(2, '0');
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-}
-
-/**
- * Find files matching a pattern in a directory (cross-platform alternative to find)
- * @param {string} dir - Directory to search
- * @param {string} pattern - File pattern (e.g., "*.tmp", "*.md")
- * @param {object} options - Options { maxAge: days, recursive: boolean }
- */
-function findFiles(dir, pattern, options = {}) {
-  if (!dir || typeof dir !== 'string') return [];
-  if (!pattern || typeof pattern !== 'string') return [];
-
-  const { maxAge = null, recursive = false } = options;
-  const results = [];
-
-  if (!fs.existsSync(dir)) {
-    return results;
-  }
-
-  // Escape all regex special characters, then convert glob wildcards.
-  // Order matters: escape specials first, then convert * and ? to regex equivalents.
-  const regexPattern = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*')
-    .replace(/\?/g, '.');
-  const regex = new RegExp(`^${regexPattern}$`);
-
-  searchMatchingFiles({
-    currentDir: dir,
-    regex,
-    maxAge,
-    recursive,
-    results,
-  });
-
-  // Sort by modification time (newest first)
-  results.sort((a, b) => b.mtime - a.mtime);
-
-  return results;
-}
-
-function fileMatchesAge(stats, maxAge) {
-  if (maxAge === null) return true;
-  const ageInDays = (Date.now() - stats.mtimeMs) / (1000 * 60 * 60 * 24);
-  return ageInDays <= maxAge;
-}
-
-function collectMatchingFile(fullPath, maxAge, results) {
-  try {
-    const stats = fs.statSync(fullPath);
-    if (fileMatchesAge(stats, maxAge)) {
-      results.push({ path: fullPath, mtime: stats.mtimeMs });
-    }
-  } catch {
-    // File deleted between readdir and stat.
-  }
-}
-
-function searchMatchingFiles(options) {
-  const { currentDir, regex, maxAge, recursive, results } = options;
-  let entries;
-  try {
-    entries = fs.readdirSync(currentDir, { withFileTypes: true });
-  } catch (_err) {
-    return;
-  }
-
-  for (const entry of entries) {
-    const fullPath = path.join(currentDir, entry.name);
-    if (entry.isFile() && regex.test(entry.name)) {
-      collectMatchingFile(fullPath, maxAge, results);
-    } else if (entry.isDirectory() && recursive) {
-      searchMatchingFiles({
-        currentDir: fullPath,
-        regex,
-        maxAge,
-        recursive,
-        results,
-      });
-    }
-  }
 }
 
 /**
@@ -320,24 +151,6 @@ function parseJsonOrEmpty(data) {
 }
 
 /**
- * Log to stderr (visible to user in Claude Code)
- */
-function log(message) {
-  console.error(message);
-}
-
-/**
- * Output to stdout (returned to Claude)
- */
-function output(data) {
-  if (typeof data === 'object') {
-    console.log(JSON.stringify(data));
-  } else {
-    console.log(data);
-  }
-}
-
-/**
  * Read a text file safely
  */
 function readFile(filePath) {
@@ -356,245 +169,10 @@ function writeFile(filePath, content) {
   fs.writeFileSync(filePath, content, 'utf8');
 }
 
-/**
- * Append to a text file
- */
-function appendFile(filePath, content) {
-  ensureDir(path.dirname(filePath));
-  fs.appendFileSync(filePath, content, 'utf8');
-}
-
-/**
- * Check if a command exists in PATH
- * Uses execFileSync to prevent command injection
- */
-function commandExists(cmd) {
-  // Validate command name - only allow alphanumeric, dash, underscore, dot
-  if (!/^[a-zA-Z0-9_.-]+$/.test(cmd)) {
-    return false;
-  }
-
-  try {
-    if (isWindows) {
-      // Use spawnSync to avoid shell interpolation
-      const result = spawnSync('where', [cmd], { stdio: 'pipe' });
-      return result.status === 0;
-    } else {
-      const result = spawnSync('which', [cmd], { stdio: 'pipe' });
-      return result.status === 0;
-    }
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Run a command and return output
- *
- * SECURITY NOTE: This function executes shell commands. Only use with
- * trusted, hardcoded commands. Never pass user-controlled input directly.
- * For user input, use spawnSync with argument arrays instead.
- *
- * @param {string} cmd - Command to execute (should be trusted/hardcoded)
- * @param {object} options - execSync options
- */
-function runCommand(cmd, options = {}) {
-  try {
-    const result = execSync(cmd, {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      ...options,
-    });
-    return { success: true, output: result.trim() };
-  } catch (err) {
-    return { success: false, output: err.stderr || err.message };
-  }
-}
-
-/**
- * Check if current directory is a git repository
- */
-function isGitRepo() {
-  return runCommand('git rev-parse --git-dir').success;
-}
-
-/**
- * Get git modified files, optionally filtered by regex patterns
- * @param {string[]} patterns - Array of regex pattern strings to filter files.
- *   Invalid patterns are silently skipped.
- * @returns {string[]} Array of modified file paths
- */
-function getGitModifiedFiles(patterns = []) {
-  if (!isGitRepo()) return [];
-
-  const result = runCommand('git diff --name-only HEAD');
-  if (!result.success) return [];
-
-  let files = result.output.split('\n').filter(Boolean);
-
-  return filterFilesByPatterns(files, patterns);
-}
-
-function compilePatterns(patterns) {
-  const compiled = [];
-  for (const pattern of patterns) {
-    if (typeof pattern !== 'string' || pattern.length === 0) continue;
-    try {
-      compiled.push(new RegExp(pattern));
-    } catch {
-      // Skip invalid regex patterns.
-    }
-  }
-  return compiled;
-}
-
-function filterFilesByPatterns(files, patterns) {
-  if (patterns.length === 0) return files;
-  const compiled = compilePatterns(patterns);
-  if (compiled.length === 0) return files;
-  return files.filter((file) => compiled.some((regex) => regex.test(file)));
-}
-
-/**
- * Replace text in a file (cross-platform sed alternative)
- * @param {string} filePath - Path to the file
- * @param {string|RegExp} search - Pattern to search for. String patterns replace
- *   the FIRST occurrence only; use a RegExp with the `g` flag for global replacement.
- * @param {string} replace - Replacement string
- * @param {object} options - Options
- * @param {boolean} options.all - When true and search is a string, replaces ALL
- *   occurrences (uses String.replaceAll). Ignored for RegExp patterns.
- * @returns {boolean} true if file was written, false on error
- */
-function replaceInFile(filePath, search, replace, options = {}) {
-  const content = readFile(filePath);
-  if (content === null) return false;
-
-  try {
-    let newContent;
-    if (options.all && typeof search === 'string') {
-      newContent = content.replaceAll(search, replace);
-    } else {
-      newContent = content.replace(search, replace);
-    }
-    writeFile(filePath, newContent);
-    return true;
-  } catch (err) {
-    log(`[Utils] replaceInFile failed for ${filePath}: ${err.message}`);
-    return false;
-  }
-}
-
-/**
- * Count occurrences of a pattern in a file
- * @param {string} filePath - Path to the file
- * @param {string|RegExp} pattern - Pattern to count. Strings are treated as
- *   global regex patterns. RegExp instances are used as-is but the global
- *   flag is enforced to ensure correct counting.
- * @returns {number} Number of matches found
- */
-function countInFile(filePath, pattern) {
-  const content = readFile(filePath);
-  if (content === null) return 0;
-
-  let regex;
-  try {
-    if (pattern instanceof RegExp) {
-      // Always create new RegExp to avoid shared lastIndex state; ensure global flag
-      regex = new RegExp(
-        pattern.source,
-        pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g',
-      );
-    } else if (typeof pattern === 'string') {
-      regex = new RegExp(pattern, 'g');
-    } else {
-      return 0;
-    }
-  } catch {
-    return 0; // Invalid regex pattern
-  }
-  const matches = content.match(regex);
-  return matches ? matches.length : 0;
-}
-
-/**
- * Search for pattern in file and return matching lines with line numbers
- */
-function grepFile(filePath, pattern) {
-  const content = readFile(filePath);
-  if (content === null) return [];
-
-  let regex;
-  try {
-    if (pattern instanceof RegExp) {
-      // Always create a new RegExp without the 'g' flag to prevent lastIndex
-      // state issues when using .test() in a loop (g flag makes .test() stateful,
-      // causing alternating match/miss on consecutive matching lines)
-      const flags = pattern.flags.replace('g', '');
-      regex = new RegExp(pattern.source, flags);
-    } else {
-      regex = new RegExp(pattern);
-    }
-  } catch {
-    return []; // Invalid regex pattern
-  }
-  const lines = content.split('\n');
-  const results = [];
-
-  lines.forEach((line, index) => {
-    if (regex.test(line)) {
-      results.push({ lineNumber: index + 1, content: line });
-    }
-  });
-
-  return results;
-}
-
 module.exports = {
-  // Platform info
-  isWindows,
-  isMacOS,
-  isLinux,
-
-  // Directories
-  getHomeDir,
-  getClaudeDir,
-  getSessionsDir,
-  getLearnedSkillsDir,
-  getTempDir,
-  getGoldbandDataRoot,
-  getPluginDataDir,
-  getPersistentDataDir,
   getPersistentDataPath,
-  ensureDir,
-
-  // Date/Time
-  getDateString,
-  getTimeString,
-  getDateTimeString,
-
-  // Session/Project
-  getSessionIdShort,
-  getGitRepoName,
-  getProjectName,
-
-  // File operations
-  findFiles,
+  getPluginDataDir,
   readFile,
-  writeFile,
-  appendFile,
-  replaceInFile,
-  countInFile,
-  grepFile,
-
-  // Hook I/O
   readStdinJson,
-  log,
-  output,
-
-  // System
-  commandExists,
-  runCommand,
-  isGitRepo,
-  getGitModifiedFiles,
+  writeFile,
 };

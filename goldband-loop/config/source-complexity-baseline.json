@@ -22,276 +22,14 @@
     "bin/goldband.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
         49,
-        42,
+        36,
         30,
         25,
-        24,
-        18,
-        15,
-        13
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        57,
-        56,
-        55,
-        51
-      ]
-    },
-    "browse/src/activity.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        18,
-        16
-      ]
-    },
-    "browse/src/browse-client.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        18,
-        17
-      ]
-    },
-    "browse/src/browser-manager.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        50,
-        25,
-        25,
-        19,
-        19,
-        18,
-        15,
-        15,
-        14
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        150,
-        59
-      ]
-    },
-    "browse/src/browser-skill-commands.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
         23,
-        16
-      ]
-    },
-    "browse/src/browser-skill-write.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        14
-      ]
-    },
-    "browse/src/browser-skills.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        28,
-        24,
-        23
-      ]
-    },
-    "browse/src/bun-polyfill.cjs": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        14
-      ]
-    },
-    "browse/src/cdp-inspector.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        115,
-        25,
-        19
+        18
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
-        155,
-        65,
-        55
-      ]
-    },
-    "browse/src/cli.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        77,
-        34,
-        29,
-        27,
-        15,
-        14,
-        14,
-        13
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        137,
-        92
-      ]
-    },
-    "browse/src/config.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        14
-      ]
-    },
-    "browse/src/content-security.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        73
-      ]
-    },
-    "browse/src/cookie-import-browser.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        43,
-        36,
-        26,
-        13,
-        13
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        67
-      ]
-    },
-    "browse/src/cookie-picker-routes.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        70
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        138
-      ]
-    },
-    "browse/src/media-extract.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        43
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        74,
-        70
-      ]
-    },
-    "browse/src/meta-commands.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        255,
-        54,
-        25
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        539,
-        64
-      ],
-      "lint/complexity/useMaxParams": [
-        6
-      ]
-    },
-    "browse/src/network-capture.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        14
-      ]
-    },
-    "browse/src/proxy-config.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        23
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        51
-      ]
-    },
-    "browse/src/read-commands.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        136,
-        28,
-        19
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        316
-      ]
-    },
-    "browse/src/security-bunnative.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        24
-      ]
-    },
-    "browse/src/security-classifier.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        21
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        88
-      ]
-    },
-    "browse/src/security-sidecar-client.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        15
-      ]
-    },
-    "browse/src/security.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        32
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        65
-      ]
-    },
-    "browse/src/server.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        255,
-        99,
-        77,
-        23,
-        21,
-        14
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        739,
-        660,
-        660,
-        192,
-        150
-      ]
-    },
-    "browse/src/snapshot.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        163,
-        60,
-        17,
-        17
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        288,
         53
-      ]
-    },
-    "browse/src/socks-bridge.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        35,
-        22,
-        20,
-        13
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        95,
-        63
-      ]
-    },
-    "browse/src/terminal-agent.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        71,
-        41,
-        27,
-        25,
-        16,
-        13
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        179,
-        69
-      ]
-    },
-    "browse/src/url-validation.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        23,
-        15
-      ]
-    },
-    "browse/src/write-commands.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        255
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        818
-      ]
-    },
-    "browser-skills/hackernews-frontpage/_lib/browse-client.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        18,
-        17
       ]
     },
     "cross-review/core.cjs": {
@@ -365,63 +103,6 @@
         5
       ]
     },
-    "extension/background.js": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        27
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        116
-      ]
-    },
-    "extension/content.js": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        47,
-        24
-      ]
-    },
-    "extension/inspector.js": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        60,
-        31,
-        24,
-        13
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        279
-      ]
-    },
-    "extension/sidepanel-terminal.js": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        41,
-        36,
-        29,
-        26,
-        22,
-        19,
-        18,
-        16,
-        14,
-        13,
-        13
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        500,
-        103,
-        71,
-        55
-      ]
-    },
-    "extension/sidepanel.js": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        16,
-        14,
-        13,
-        13
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        54
-      ]
-    },
     "ios-qa/daemon/src/cli-mint.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
         18,
@@ -462,8 +143,7 @@
     "lib/knowledge.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
         27,
-        22,
-        20
+        22
       ]
     },
     "lib/managed-worktree-boundary.ts": {
@@ -502,25 +182,19 @@
     "lib/verification-receipt.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
         22,
-        20,
         18,
         15,
+        14,
         13
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
         80,
-        68,
+        62,
         62,
         56
       ],
       "lint/complexity/useMaxParams": [
         6
-      ]
-    },
-    "make-pdf/src/browseClient.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        15,
-        15
       ]
     },
     "make-pdf/src/cli.ts": {
@@ -531,30 +205,9 @@
         54
       ]
     },
-    "make-pdf/src/orchestrator.ts": {
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        65
-      ]
-    },
     "make-pdf/src/render.ts": {
       "lint/complexity/noExcessiveLinesPerFunction": [
         63
-      ]
-    },
-    "make-pdf/src/setup.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        13
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        64
-      ]
-    },
-    "scripts/analytics.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        28
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        53
       ]
     },
     "scripts/eval-watch.ts": {
@@ -563,19 +216,16 @@
       ]
     },
     "scripts/gen-llms-txt.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        17
-      ],
       "lint/complexity/noExcessiveLinesPerFunction": [
-        81
+        62
       ]
     },
     "scripts/install-codex-review-launcher.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        16
+        14
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
-        120
+        98
       ]
     },
     "scripts/one-way-doors.ts": {
@@ -609,22 +259,6 @@
       "lint/complexity/noExcessiveCognitiveComplexity": [
         21,
         17
-      ]
-    },
-    "supabase/functions/community-pulse/index.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        39
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        141
-      ]
-    },
-    "supabase/functions/telemetry-ingest/index.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        35
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        65
       ]
     },
     "workflows/host-adapter.ts": {
@@ -670,20 +304,17 @@
     },
     "workflows/review.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        16,
         16
       ],
       "lint/complexity/useMaxParams": [
         8,
-        7,
-        6,
-        5
+        6
       ]
     },
     "workflows/run.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        34,
-        25
+        32,
+        23
       ]
     },
     "workflows/runtime.ts": {
@@ -715,20 +346,18 @@
     },
     "workflows/tracker-adapters/github.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        17,
-        16
+        14
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
-        80
+        79
       ]
     },
     "workflows/tracker-adapters/gitlab.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        19,
         16
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
-        92
+        88
       ]
     },
     "workflows/tracker-adapters/import.ts": {

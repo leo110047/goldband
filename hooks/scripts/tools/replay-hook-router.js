@@ -136,7 +136,6 @@ function buildTempPaths() {
   return {
     runDir,
     metricsFile: makePath('metrics', 'jsonl'),
-    contextStateFile: makePath('context', 'json'),
     debounceFile: makePath('debounce', 'json'),
     modeStateFile: makePath('mode', 'json'),
     usageFile: makePath('usage', 'jsonl'),
@@ -147,7 +146,6 @@ function tempFileList(paths) {
   return [
     paths.runDir,
     paths.metricsFile,
-    paths.contextStateFile,
     paths.debounceFile,
     paths.modeStateFile,
     paths.usageFile,
@@ -171,7 +169,6 @@ function buildFixtureEnv(fixture, paths, fixtureDir) {
     ...process.env,
     HOOK_ROUTER_METRICS_ENABLED: '1',
     HOOK_ROUTER_METRICS_FILE: paths.metricsFile,
-    HOOK_ROUTER_CONTEXT_STATE_FILE: paths.contextStateFile,
     HOOK_ROUTER_DEBOUNCE_FILE: paths.debounceFile,
     HOOK_ROUTER_MODE_STATE_FILE: paths.modeStateFile,
     GOLDBAND_USAGE_FILE: paths.usageFile,

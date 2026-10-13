@@ -7,6 +7,7 @@ const tests = [
   ['hook config triggers hook reference check', testHookReferenceSelection],
   ['codex rules trigger portability check', testCodexPortabilitySelection],
   ['style gate files trigger self-test', testStyleGateSelection],
+  ['source files trigger the unused export check', testUnusedExportSelection],
   ['unrelated files trigger no checks', testUnrelatedSelection],
 ];
 
@@ -30,7 +31,18 @@ function testCodexPortabilitySelection() {
 
 function testStyleGateSelection() {
   const result = dryRun(['scripts/lib/code-style/checks.mjs']);
-  assert.deepEqual(result.checks, ['style-gate-self-test']);
+  assert.deepEqual(result.checks, ['unused-exports', 'style-gate-self-test']);
+}
+
+function testUnusedExportSelection() {
+  assert.deepEqual(dryRun(['goldband-loop/lib/knowledge.ts']).checks, [
+    'unused-exports',
+  ]);
+  assert.deepEqual(
+    dryRun(['plugin-assets/claude-code-plugin/hooks/scripts/lib/utils.js'])
+      .checks,
+    ['plugin-distribution'],
+  );
 }
 
 function testUnrelatedSelection() {

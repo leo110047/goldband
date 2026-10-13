@@ -2,10 +2,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const DISTRIBUTION_MANIFEST_FILE = 'distribution-manifest.json';
+const DISTRIBUTION_MANIFEST_FILE = 'distribution-manifest.json';
 const MAX_SIDE_ARTIFACT_BYTES = 1024 * 1024;
 const OPTIONAL_GENERATED_SOURCE_INPUTS = new Set([
-  'goldband-loop/browse/dist',
   'goldband-loop/design/dist',
   'goldband-loop/make-pdf/dist',
 ]);
@@ -21,9 +20,6 @@ export const SOURCE_INPUTS = [
   'goldband-loop/VERSION',
   'goldband-loop/bin',
   'goldband-loop/biome.json',
-  'goldband-loop/browse/bin',
-  'goldband-loop/browse/dist',
-  'goldband-loop/browse/src',
   'goldband-loop/bunfig.toml',
   'goldband-loop/bun.lock',
   'goldband-loop/cross-review',
@@ -35,9 +31,6 @@ export const SOURCE_INPUTS = [
   'goldband-loop/make-pdf/dist',
   'goldband-loop/manuals',
   'goldband-loop/package.json',
-  'goldband-loop/plan-devex-review',
-  'goldband-loop/qa/references',
-  'goldband-loop/qa/templates',
   'goldband-loop/review',
   'goldband-loop/scripts',
   'goldband-loop/setup',
@@ -59,7 +52,7 @@ export function workflowSourceInputManifest(
   };
 }
 
-export function installedArtifactManifest(runtimeRoot) {
+function installedArtifactManifest(runtimeRoot) {
   const entries = collectEntries(
     runtimeRoot,
     ['.'],

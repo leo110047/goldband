@@ -2,63 +2,47 @@
   "name": "goldband",
   "version": "1.46.0.0",
   "packageManager": "bun@1.3.11",
-  "description": "Goldband Loop — Claude Code skills + fast headless browser. One repo, one install, entire AI engineering workflow.",
+  "description": "Goldband Loop — workflow runtime for Claude Code and Codex.",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "browse": "./browse/dist/browse",
     "goldband": "./bin/goldband",
     "make-pdf": "./make-pdf/dist/pdf"
   },
   "scripts": {
     "build": "bash scripts/build.sh",
-    "lint:source": "biome lint --config-path biome.json bin browse/src browser-skills cross-review design hosts ios-qa/daemon/src ios-qa/scripts/gen-accessors.ts lib make-pdf/src scripts supabase/functions workflows extension/background.js extension/content.js extension/inspector.js extension/popup.js extension/sidepanel-terminal.js extension/sidepanel.js",
+    "lint:source": "biome lint --config-path biome.json bin cross-review design hosts ios-qa/daemon/src ios-qa/scripts/gen-accessors.ts lib make-pdf/src scripts workflows",
     "lint:complexity": "bun run scripts/check-source-complexity.ts",
     "lint:complexity:update": "bun run scripts/check-source-complexity.ts --update",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint:exports": "knip --config knip.json --include files,exports,nsExports,types,nsTypes,enumMembers,namespaceMembers,duplicates",
     "check:source": "bun run lint:source && bun run lint:complexity && bun run typecheck && bun run lint:exports",
-    "vendor:xterm": "mkdir -p extension/lib && cp node_modules/xterm/lib/xterm.js extension/lib/xterm.js && cp node_modules/xterm/css/xterm.css extension/lib/xterm.css && cp node_modules/xterm-addon-fit/lib/xterm-addon-fit.js extension/lib/xterm-addon-fit.js",
     "dev:make-pdf": "bun run make-pdf/src/cli.ts",
     "dev:design": "bun run design/src/cli.ts",
     "gen:surfaces": "node ../scripts/generate-goldband-surfaces.mjs && bun run scripts/gen-llms-txt.ts",
-    "dev": "bun run browse/src/cli.ts",
-    "server": "bun run browse/src/server.ts",
     "test": "bun run test:free",
     "test:workflows": "bun run scripts/test-workflows.ts",
     "test:free": "bun run scripts/test-free-shards.ts",
     "test:windows": "bun run scripts/test-free-shards.ts --windows-only",
-    "test:ml": "bun test browse/test/security-bunnative.test.ts browse/test/security-bench.test.ts",
-    "probe:browser-close": "bun run scripts/browser-close-probe.ts",
     "check:surfaces": "node ../scripts/test-workflow-contracts.mjs && bun run scripts/gen-llms-txt.ts --dry-run",
-    "start": "bun run browse/src/server.ts",
     "eval:list": "bun run scripts/eval-list.ts",
     "eval:compare": "bun run scripts/eval-compare.ts",
     "eval:summary": "bun run scripts/eval-summary.ts",
     "eval:watch": "bun run scripts/eval-watch.ts",
-    "analytics": "bun run scripts/analytics.ts",
     "slop": "npx slop-scan scan . 2>/dev/null || echo 'slop-scan not available (install with: npm i -g slop-scan)'",
     "slop:diff": "bun run scripts/slop-diff.ts"
   },
   "dependencies": {
-    "@huggingface/transformers": "^4.1.0",
-    "@ngrok/ngrok": "^1.7.0",
-    "diff": "^7.0.0",
     "marked": "^18.0.2",
-    "playwright": "^1.60.0",
-    "puppeteer-core": "^24.40.0",
-    "socks": "^2.8.8"
+    "playwright": "^1.60.0"
   },
   "engines": {
     "bun": ">=1.3.11"
   },
   "keywords": [
-    "browser",
-    "automation",
-    "playwright",
-    "headless",
     "cli",
     "claude",
+    "codex",
     "ai-agent",
     "devtools"
   ],
@@ -69,8 +53,6 @@
     "@types/bun": "^1.3.14",
     "ajv": "^8.18.0",
     "knip": "^6.26.0",
-    "typescript": "^7.0.2",
-    "xterm": "5",
-    "xterm-addon-fit": "^0.8.0"
+    "typescript": "^7.0.2"
   }
 }

@@ -160,26 +160,6 @@ fi
 # ─── Step 4: Slow path — fetch remote version ────────────────
 mkdir -p "$STATE_DIR"
 
-# Fire Supabase install ping in background (parallel, non-blocking)
-# This logs an update check event for community health metrics via edge function.
-# If Supabase is not configured or telemetry is off, this is a no-op.
-if [ -z "${GOLDBAND_SUPABASE_URL:-}" ] && [ -f "$GOLDBAND_DIR/supabase/config.sh" ]; then
-  . "$GOLDBAND_DIR/supabase/config.sh"
-fi
-_SUPA_URL="${GOLDBAND_SUPABASE_URL:-}"
-_SUPA_KEY="${GOLDBAND_SUPABASE_ANON_KEY:-}"
-# Respect telemetry opt-out — don't ping Supabase if user set telemetry: off
-_TEL_TIER="$("$GOLDBAND_DIR/bin/goldband-config" get telemetry 2>/dev/null || true)"
-if [ -n "$_SUPA_URL" ] && [ -n "$_SUPA_KEY" ] && [ "${_TEL_TIER:-off}" != "off" ]; then
-  _OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
-  curl -sf --max-time 5 \
-    -X POST "${_SUPA_URL}/functions/v1/update-check" \
-    -H "Content-Type: application/json" \
-    -H "apikey: ${_SUPA_KEY}" \
-    -d "{\"version\":\"$LOCAL\",\"os\":\"$_OS\"}" \
-    >/dev/null 2>&1 &
-fi
-
 # Resolve VERSION via a SHA-pinned raw URL. GitHub's branch-raw CDN
 # (raw.githubusercontent.com/<owner>/<repo>/<branch>/...) can serve stale
 # content for several minutes after a push, which previously caused

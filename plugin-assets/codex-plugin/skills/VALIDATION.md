@@ -15,8 +15,9 @@ bash scripts/check-skills.sh
 - 檢查 skill 檔案是否存在
 - 提醒過長文件
 
-### prompt-trigger / conflict 行為
+### skill 選擇行為
 
+Skill 由 host 依 description 選擇，hook 不再依關鍵字推薦。修改 description 後，
 建議至少用這些場景做人工 spot check：
 
 ```text

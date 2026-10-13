@@ -44,16 +44,16 @@ describe("trusted Codex workflow status", () => {
 		try {
 			const sourceRoot = join(fixture, "goldband-loop");
 			mkdirSync(sourceRoot);
-			const sourceInputs = ["goldband-loop/browse/dist"];
+			const sourceInputs = ["goldband-loop/make-pdf/dist"];
 			const before = workflowSourceInputManifest(sourceRoot, sourceInputs);
 			expect(before.inputs).toEqual([]);
 
-			const bundle = join(sourceRoot, "browse", "dist", "browse");
-			mkdirSync(join(sourceRoot, "browse", "dist"), { recursive: true });
+			const bundle = join(sourceRoot, "make-pdf", "dist", "pdf");
+			mkdirSync(join(sourceRoot, "make-pdf", "dist"), { recursive: true });
 			writeFileSync(bundle, "compiled fixture\n");
 			const after = workflowSourceInputManifest(sourceRoot, sourceInputs);
 			expect(after.inputs.map((entry: { path: string }) => entry.path)).toEqual([
-				"goldband-loop/browse/dist/browse",
+				"goldband-loop/make-pdf/dist/pdf",
 			]);
 			expect(after.digest).not.toBe(before.digest);
 		} finally {
@@ -85,7 +85,6 @@ describe("trusted Codex workflow status", () => {
 			const poisonBin = join(fixture, "poison-bin");
 			for (const directory of [
 				join(runtimeRoot, "bin"),
-				join(runtimeRoot, "browse", "server"),
 				join(runtimeRoot, "review", "rules"),
 				skillRoot,
 				rulesRoot,
@@ -99,8 +98,6 @@ describe("trusted Codex workflow status", () => {
 			const poisonCodex = join(poisonBin, "codex");
 			const bunExecutable = join(trustedBin, "bun");
 			const brokenRouterFlag = join(fixture, "broken-router");
-			const browserExecutable = join(runtimeRoot, "browse", "browse");
-			const browserServer = join(runtimeRoot, "browse", "server", "server.js");
 			const rulesResolver = join(runtimeRoot, "review", "rules-resolver.js");
 			const rulesDirectory = join(runtimeRoot, "review", "rules");
 			const launcher = join(runtimeRoot, "bin", "goldband.js");
@@ -109,15 +106,12 @@ describe("trusted Codex workflow status", () => {
 			const markerFile = join(skillRoot, ".workflow-launcher.json");
 			writeFileSync(
 				bunExecutable,
-				'#!/usr/bin/env bash\nif [ "$2" = "--contract-probe" ] && [ -n "${3:-}" ]; then [ ! -f "$BROKEN_ROUTER_FLAG" ] || exit 2; printf \'{"schemaVersion":1,"action":"%s","routable":true}\\n\' "$3"; exit 0; fi\nif [ "$2" = "--contract-probe" ]; then printf \'%s\\n\' \'{"schemaVersion":1,"dispatch":"trusted-launcher","actions":["browser/session","plan/create","plan/sync","review/code"]}\'; fi\nexit 0\n',
+				'#!/usr/bin/env bash\nif [ "$2" = "--contract-probe" ] && [ -n "${3:-}" ]; then [ ! -f "$BROKEN_ROUTER_FLAG" ] || exit 2; printf \'{"schemaVersion":1,"action":"%s","routable":true}\\n\' "$3"; exit 0; fi\nif [ "$2" = "--contract-probe" ]; then printf \'%s\\n\' \'{"schemaVersion":1,"dispatch":"trusted-launcher","actions":["plan/create","plan/sync","review/code"]}\'; fi\nexit 0\n',
 			);
-			writeFileSync(browserExecutable, "#!/usr/bin/env bash\nexit 0\n");
 			writeFileSync(reviewEntry, "#!/usr/bin/env bash\nexit 0\n");
 			chmodSync(bunExecutable, 0o755);
-			chmodSync(browserExecutable, 0o755);
 			chmodSync(reviewEntry, 0o755);
 			writeFileSync(launcher, "// fixture\n");
-			writeFileSync(browserServer, "// fixture\n");
 			writeFileSync(rulesResolver, "module.exports = {};\n");
 			writeFileSync(join(rulesDirectory, "manifest.json"), "{}\n");
 			writeFileSync(rule, "# fixture\n");
@@ -137,8 +131,6 @@ describe("trusted Codex workflow status", () => {
 					schemaVersion: 2,
 					bunExecutable,
 					codexExecutable: pinnedCodex,
-					browserExecutable,
-					browserServerScript: browserServer,
 					rulesResolverScript: rulesResolver,
 					rulesDirectory,
 				}),
@@ -186,7 +178,7 @@ describe("trusted Codex workflow status", () => {
 			const healthy = runStatus();
 			expect(healthy.status).toBe(0);
 			expect(healthy.stdout).toContain("[OK] trusted Codex workflow launcher");
-			expect(readFileSync(pinnedLog, "utf8").trim().split("\n")).toHaveLength(3);
+			expect(readFileSync(pinnedLog, "utf8").trim().split("\n")).toHaveLength(2);
 			expect(() => readFileSync(poisonLog, "utf8")).toThrow();
 			writeFileSync(brokenRouterFlag, "broken\n");
 			const brokenRouter = runStatus();

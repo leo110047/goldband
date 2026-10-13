@@ -165,7 +165,6 @@ function matchFreezeModeBashViolation(command) {
 }
 
 module.exports = {
-  FREEZE_MODE_ALLOWED_BASH,
   FREEZE_MODE_PROTECTIONS,
   matchFreezeModeBashViolation,
 };

@@ -309,17 +309,17 @@ if (typeof marker.ruleFile !== "string" || typeof marker.runtimeRoot !== "string
 process.stdout.write(marker.argvPrefix[0] + "\t" + marker.argvPrefix[1] + "\t" + marker.ruleFile + "\t" + marker.runtimeRoot);
 ' "$marker" 2>/dev/null || true)"
     IFS=$'\t' read -r bun_path launcher_path marker_rule runtime_root <<<"$marker_values"
-    local trusted_config="$runtime_root/trusted-runtime.json" config_values config_bun codex_path browser_path browser_server rules_resolver rules_directory
+    local trusted_config="$runtime_root/trusted-runtime.json" config_values config_bun codex_path rules_resolver rules_directory
     config_values="$(node -e '
 const fs = require("node:fs"), config = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 if (config.schemaVersion !== 2) process.exit(2);
-for (const field of ["bunExecutable", "codexExecutable", "browserExecutable", "browserServerScript", "rulesResolverScript", "rulesDirectory"]) {
+for (const field of ["bunExecutable", "codexExecutable", "rulesResolverScript", "rulesDirectory"]) {
   if (typeof config[field] !== "string" || !config[field]) process.exit(2);
 }
-process.stdout.write([config.bunExecutable, config.codexExecutable, config.browserExecutable, config.browserServerScript, config.rulesResolverScript, config.rulesDirectory].join("\t"));
+process.stdout.write([config.bunExecutable, config.codexExecutable, config.rulesResolverScript, config.rulesDirectory].join("\t"));
 ' "$trusted_config" 2>/dev/null || true)"
-    IFS=$'\t' read -r config_bun codex_path browser_path browser_server rules_resolver rules_directory <<<"$config_values"
-    if [ ! -x "$bun_path" ] || [ "$config_bun" != "$bun_path" ] || [ ! -x "$codex_path" ] || [ ! -f "$launcher_path" ] || [ ! -f "$trusted_config" ] || [ ! -x "$browser_path" ] || [ ! -f "$browser_server" ] || [ ! -f "$rules_resolver" ] || [ ! -d "$rules_directory" ] || [ ! -f "$rules_directory/manifest.json" ] || [ "$marker_rule" != "$rule" ]; then
+    IFS=$'\t' read -r config_bun codex_path rules_resolver rules_directory <<<"$config_values"
+    if [ ! -x "$bun_path" ] || [ "$config_bun" != "$bun_path" ] || [ ! -x "$codex_path" ] || [ ! -f "$launcher_path" ] || [ ! -f "$trusted_config" ] || [ ! -f "$rules_resolver" ] || [ ! -d "$rules_directory" ] || [ ! -f "$rules_directory/manifest.json" ] || [ "$marker_rule" != "$rule" ]; then
         echo -e "  ${RED}[stale]${NC} trusted Codex workflow launcher — marker target missing or inconsistent"
         echo "    建議: 重跑 ./install.sh workflow-codex。"
         GOLDBAND_STATUS_EXIT_CODE=2
@@ -334,12 +334,7 @@ process.stdout.write([config.bunExecutable, config.codexExecutable, config.brows
         GOLDBAND_STATUS_EXIT_CODE=2
         return 0
     fi
-    if ! codex_workflow_policy_allows "$codex_path" "$rule" "$bun_path" "$launcher_path" browser session --host codex status; then
-        echo -e "  ${RED}[stale]${NC} trusted Codex workflow launcher — pinned Codex does not match the browser allow rule"
-        GOLDBAND_STATUS_EXIT_CODE=2
-        return 0
-    fi
-    echo -e "  ${GREEN}[OK]${NC} trusted Codex workflow launcher (pinned Codex + exact review/browser rules)"
+    echo -e "  ${GREEN}[OK]${NC} trusted Codex workflow launcher (pinned Codex + exact review rules)"
 }
 
 show_codex_profiles_status() {
@@ -483,6 +478,30 @@ show_workflow_status() {
     show_workflow_state_dir_status
     show_tracker_projection_status
     show_goldband_wrapper_language_status
+    show_playwright_mcp_status
+}
+
+# Missing Playwright MCP is advisory: Claude in Chrome can also serve qa/app.
+show_playwright_mcp_status() {
+    if ! resolve_codex_config_python; then
+        echo -e "  ${YELLOW}[unverifiable]${NC} Playwright MCP — 需要 Python 3.11+"
+        return 0
+    fi
+    local label config action status
+    for label in "Claude Code" "Codex"; do
+        if [ "$label" = "Codex" ]; then
+            config="$CODEX_CONFIG_FILE" action="codex-add"
+        else
+            config="$HOME/.claude.json" action="claude-has"
+        fi
+        status=0
+        playwright_mcp_helper "$action" --config "$config" >/dev/null 2>&1 || status=$?
+        case "$status" in
+            0|1) echo -e "  ${YELLOW}[未設定]${NC} $label Playwright MCP — 重跑 ./install.sh all-with-workflow 或見 mcp/README.md" ;;
+            3) echo -e "  ${GREEN}[OK]${NC} $label Playwright MCP" ;;
+            *) echo -e "  ${YELLOW}[unverifiable]${NC} $label Playwright MCP — 無法讀取 $config" ;;
+        esac
+    done
 }
 
 show_workflow_runtime_status() {

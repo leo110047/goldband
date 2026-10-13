@@ -113,11 +113,12 @@ show_help_codex_options() {
     echo "  workflow-codex 安裝 Goldband Loop 到 Codex（standard profile）"
     echo "  workflow-auto 安裝 Goldband Loop 到自動偵測到的 host（standard profile）"
     echo "  all-tools   安裝 Claude all-full + Codex full"
-    echo "  all-with-workflow 安裝 Claude + Codex 全組件，並安裝 Goldband Loop"
+    echo "  all-with-workflow 安裝 Claude + Codex 全組件、Goldband Loop，並設定 Playwright MCP"
     echo "  uninstall   移除所有安裝項目（含 profile links）"
     echo "  status      檢查安裝狀態"
     echo "  help        顯示此幫助"
-    echo "  注意: MCP server 位於 mcp/server；installer 不會預設啟用"
+    echo "  注意: goldband MCP server 位於 mcp/server；installer 不會預設啟用"
+    echo "        Playwright MCP 只由 all-with-workflow 設定；GOLDBAND_SKIP_PLAYWRIGHT_MCP=1 可跳過"
 }
 
 show_help_examples() {

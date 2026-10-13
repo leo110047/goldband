@@ -1,7 +1,19 @@
 import fs from 'node:fs';
-import os from 'node:os';
+import { createRequire } from 'node:module';
 import path from 'node:path';
+import { fromRepo } from './repo.js';
 import { jsonToolResult } from './types.js';
+
+const require = createRequire(import.meta.url);
+const { knowledgeHome, searchKnowledgeRows } = require(
+  fromRepo('goldband-loop/lib/knowledge-search.cjs'),
+) as {
+  knowledgeHome: () => string;
+  searchKnowledgeRows: (
+    rows: KnowledgeIndexRow[],
+    options: Record<string, unknown>,
+  ) => KnowledgeIndexRow[];
+};
 
 export type KnowledgeQueryInput = {
   domain?: string;
@@ -37,9 +49,13 @@ export function runKnowledgeQuery(input: KnowledgeQueryInput) {
     'index.json',
   );
   const rows = readRows(indexPath);
-  const results = filterRows(rows, input)
-    .slice(0, clampLimit(input.limit))
-    .map(resultFromRow);
+  const results = searchKnowledgeRows(rows, {
+    domain: input.domain,
+    type: input.type,
+    status: input.status,
+    query: input.keyword,
+    limit: input.limit,
+  }).map(resultFromRow);
 
   return jsonToolResult({
     indexPath,
@@ -71,8 +87,7 @@ function text(value: string | null | undefined): string {
 }
 
 function resolveKnowledgeHome(input: KnowledgeQueryInput): string {
-  if (input.knowledgeHome) return input.knowledgeHome;
-  return process.env.GOLDBAND_HOME || path.join(os.homedir(), '.goldband');
+  return input.knowledgeHome || knowledgeHome();
 }
 
 function readRows(indexPath: string): KnowledgeIndexRow[] {
@@ -82,53 +97,4 @@ function readRows(indexPath: string): KnowledgeIndexRow[] {
   } catch {
     return [];
   }
-}
-
-function filterRows(rows: KnowledgeIndexRow[], input: KnowledgeQueryInput) {
-  const status = input.status || 'active';
-  const tokens = tokenize(input.keyword || '');
-  // MCP mirrors the CLI recall contract over index.json: active by default,
-  // optional filters, then confidence/freshness ordering. Keep this in sync with
-  // goldband-loop/lib/knowledge.ts when the public query semantics change.
-  return rows
-    .filter((row) => status === 'all' || row.status === status)
-    .filter((row) => !input.domain || row.domains?.includes(input.domain))
-    .filter((row) => !input.type || row.type === input.type)
-    .filter((row) => tokens.length === 0 || matchesTokens(row, tokens))
-    .sort((a, b) => {
-      const confidenceDelta = (b.confidence || 0) - (a.confidence || 0);
-      if (confidenceDelta !== 0) return confidenceDelta;
-      return freshness(b).localeCompare(freshness(a));
-    });
-}
-
-function freshness(row: KnowledgeIndexRow): string {
-  return row.last_verified || row.updated || '';
-}
-
-function matchesTokens(row: KnowledgeIndexRow, tokens: string[]) {
-  const haystack = [
-    row.id,
-    row.title,
-    row.summary,
-    row.type,
-    row.scope,
-    ...(row.domains || []),
-  ]
-    .join(' ')
-    .toLowerCase();
-  return tokens.some((token) => haystack.includes(token));
-}
-
-function tokenize(keyword: string): string[] {
-  return keyword
-    .toLowerCase()
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter(Boolean);
-}
-
-function clampLimit(limit?: number): number {
-  if (!Number.isFinite(limit)) return 10;
-  return Math.max(1, Math.min(Number(limit), 50));
 }

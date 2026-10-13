@@ -293,8 +293,8 @@ describe("review CLI contract", () => {
 		).toThrow("--loop is disabled to prevent repeated full-diff model calls");
 	});
 
-	test("rejects independent specialist agents before launching the runtime", () => {
-		for (const mode of ["auto", "all"]) {
+	test("rejects the removed specialists flag before launching the runtime", () => {
+		for (const mode of ["off", "auto", "all"]) {
 			expect(() =>
 				buildReviewRuntimeArgs([
 					"--host",
@@ -302,11 +302,11 @@ describe("review CLI contract", () => {
 					"--specialists",
 					mode,
 				]),
-			).toThrow("independent specialist agents are disabled");
+			).toThrow("--specialists was removed");
 		}
 	});
 
-	test("rejected specialist mode starts zero Codex processes", () => {
+	test("removed specialists flag starts zero Codex processes", () => {
 		const fixture = mkdtempSync(join(tmpdir(), "goldband-review-blocked-fanout-"));
 		try {
 			const fakeBin = join(fixture, "bin");
@@ -320,7 +320,7 @@ describe("review CLI contract", () => {
 			chmodSync(fakeCodex, 0o755);
 
 			const result = spawnReviewCli(
-				["review", "code", "--host", "codex", "--specialists", "auto"],
+				["review", "code", "--host", "codex", "--specialists", "off"],
 				{
 					cwd: fixture,
 					encoding: "utf8",
@@ -332,7 +332,7 @@ describe("review CLI contract", () => {
 			);
 
 			expect(result.status).toBe(1);
-			expect(result.stderr).toContain("independent specialist agents are disabled");
+			expect(result.stderr).toContain("--specialists was removed");
 			expect(existsSync(callLog)).toBe(false);
 		} finally {
 			rmSync(fixture, { recursive: true, force: true });
