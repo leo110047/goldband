@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -290,11 +291,35 @@ function testPostToolUseStyleGateAdvisory() {
     assert.equal(output.hookSpecificOutput.hookEventName, 'PostToolUse');
     assert.match(
       output.hookSpecificOutput.additionalContext,
-      /goldband style gate advisory/,
+      /^goldband style gate advisory: \[console-log\] fixture\.ts:1: .+ These warnings are advisory here; pre-commit enforces blocking rules\.$/,
     );
-    assert.match(output.hookSpecificOutput.additionalContext, /console-log/);
   } finally {
     fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+}
+
+function testPostToolUseStyleGateLaunchFailure() {
+  const require = createRequire(import.meta.url);
+  const childProcess = require('node:child_process');
+  const originalSpawnSync = childProcess.spawnSync;
+  delete require.cache[routerPath];
+  childProcess.spawnSync = () => ({ error: new Error('spawn EACCES') });
+  try {
+    const { evaluateInput } = require(routerPath);
+    const output = evaluateInput({
+      hook_event_name: 'PostToolUse',
+      tool_name: 'apply_patch',
+      tool_input: {
+        command: '*** Begin Patch\n*** Update File: fixture.ts\n*** End Patch',
+      },
+    });
+    assert.equal(
+      output.hookSpecificOutput.additionalContext,
+      'goldband style gate advisory failed: spawn EACCES',
+    );
+  } finally {
+    childProcess.spawnSync = originalSpawnSync;
+    delete require.cache[routerPath];
   }
 }
 
@@ -439,6 +464,7 @@ testGitPatchDenied();
 testPostToolUseFailureContext();
 testRegisteredNoopHooksEmitJson();
 testPostToolUseStyleGateAdvisory();
+testPostToolUseStyleGateLaunchFailure();
 testPostToolUseStyleGateAdvisoryUsesExplicitProjectRoot();
 testPassiveLifecycleHooksAreNotRegistered();
 testMutatingMcpWarnsOnly();

@@ -183,13 +183,6 @@ function parseApplyPatchFiles(command) {
   return [...new Set(files)];
 }
 
-function formatStyleGateIssue(issue) {
-  const location = issue.file
-    ? `${issue.file}${issue.line ? `:${issue.line}` : ''}`
-    : 'repo';
-  return `[${issue.rule}] ${location}: ${issue.message}`;
-}
-
 function runStyleGateAdvisory(files) {
   const repoRoot = path.resolve(__dirname, '..', '..');
   const scriptPath = path.join(repoRoot, 'scripts', 'check-code-style.mjs');
@@ -197,7 +190,7 @@ function runStyleGateAdvisory(files) {
 
   const result = spawnSync(
     process.execPath,
-    [scriptPath, '--files', ...files, '--format', 'json'],
+    [scriptPath, '--files', ...files, '--format', 'advisory'],
     {
       cwd: process.cwd(),
       encoding: 'utf8',
@@ -214,20 +207,7 @@ function runStyleGateAdvisory(files) {
       .filter(Boolean)
       .join(' ');
   }
-  if (!result.stdout.trim()) return null;
-
-  try {
-    const parsed = JSON.parse(result.stdout);
-    const issues = [...(parsed.violations || []), ...(parsed.advisories || [])];
-    if (issues.length === 0) return null;
-    return [
-      'goldband style gate advisory:',
-      ...issues.slice(0, 8).map(formatStyleGateIssue),
-      'These warnings are advisory here; pre-commit enforces blocking rules.',
-    ].join(' ');
-  } catch {
-    return 'goldband style gate advisory returned invalid JSON.';
-  }
+  return result.stdout.trim().split('\n').join(' ') || null;
 }
 
 function evaluateStopResult(input) {

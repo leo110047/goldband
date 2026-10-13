@@ -58,7 +58,7 @@ function consumeFilesArg(parsed, argv, index) {
 
 function consumeFormatArg(parsed, argv, index) {
   const format = argv[index + 1];
-  if (format !== 'json' && format !== 'text') {
+  if (!['json', 'text', 'advisory'].includes(format)) {
     throw new UsageError(
       `unsupported --format value: ${format || '(missing)'}`,
     );
@@ -106,8 +106,9 @@ function writeError(error) {
 
 function usage() {
   return [
-    'Usage: node scripts/check-code-style.mjs [--staged] [--files <a> <b> ...] [--format json|text]',
+    'Usage: node scripts/check-code-style.mjs [--staged] [--files <a> <b> ...] [--format json|text|advisory]',
     '',
-    'Exit codes: 0 clean, 1 violations, 2 tool/config error.',
+    'advisory prints nothing when clean, otherwise a bounded hook summary.',
+    'Exit codes: 0 no violations (advisories possible), 1 violations, 2 tool/config error.',
   ].join('\n');
 }

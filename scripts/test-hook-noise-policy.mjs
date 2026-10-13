@@ -151,46 +151,89 @@ function testPromptHooksLeaveSkillRoutingToHosts() {
 
 testPromptHooksLeaveSkillRoutingToHosts();
 
-function testContextMonitorOnlyEmitsOnSeverityChanges() {
-  const { evaluatePostToolUse } = require(
-    path.join(repoDir, 'hooks/scripts/lib/hook-router/posttool-policy.js'),
-  );
-  const stateFile = path.join(tmpDir, 'context-state.json');
-  const previous = {
-    state: process.env.HOOK_ROUTER_CONTEXT_STATE_FILE,
-    warn: process.env.CONTEXT_WARN_THRESHOLD,
-    critical: process.env.CONTEXT_CRIT_THRESHOLD,
-  };
-  process.env.HOOK_ROUTER_CONTEXT_STATE_FILE = stateFile;
-  process.env.CONTEXT_WARN_THRESHOLD = '2';
-  process.env.CONTEXT_CRIT_THRESHOLD = '10';
+function filesUnder(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { recursive: true }).map(String);
+}
 
+function testRepeatedToolUseKeepsNoContextCounter() {
+  for (let index = 0; index < 8; index += 1) {
+    const result = runNode(
+      claudeRouter,
+      {
+        hook_event_name: 'PostToolUse',
+        session_id: 'noise-context-counter',
+        cwd: repoDir,
+        tool_name: 'Read',
+        tool_input: {},
+      },
+      { CONTEXT_WARN_THRESHOLD: '1', CONTEXT_CRIT_THRESHOLD: '2' },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(
+      `${result.stdout}${result.stderr}`,
+      /compact|tool calls/i,
+    );
+  }
+  assert.deepEqual(
+    filesUnder(tmpDir).filter((file) =>
+      /(^|[\\/])context-[^\\/]*\.json$/.test(file),
+    ),
+    [],
+  );
+}
+
+const posttoolPolicyPath = path.join(
+  repoDir,
+  'hooks/scripts/lib/hook-router/posttool-policy.js',
+);
+
+function testClaudeStyleAdvisoryPresentation() {
+  const projectDir = fs.mkdtempSync(path.join(tmpDir, 'style-advisory-'));
+  const originalCwd = process.cwd();
+  spawnSync('git', ['init', '--quiet'], { cwd: projectDir });
+  fs.writeFileSync(
+    path.join(projectDir, 'notes.md'),
+    '<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n',
+  );
+  process.chdir(projectDir);
   try {
-    const messages = Array.from(
-      { length: 8 },
-      () =>
-        evaluatePostToolUse({
-          hook_event_name: 'PostToolUse',
-          session_id: 'noise-context-monitor',
-          tool_name: 'Read',
-          tool_input: {},
-        }).logs,
-    ).flat();
-    assert.equal(messages.length, 1);
-    assert.match(messages[0], /WARNING: 2 tool calls/);
+    const { evaluatePostToolUse } = require(posttoolPolicyPath);
+    const { logs } = evaluatePostToolUse({
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Edit',
+      tool_input: { file_path: 'notes.md' },
+    });
+    assert.deepEqual(logs, [
+      [
+        '[Hook] WARNING: goldband style gate advisory:',
+        '[merge-conflict] notes.md:1: merge conflict marker block found',
+        'These warnings are advisory here; pre-commit enforces blocking rules.',
+      ].join('\n'),
+    ]);
   } finally {
-    if (previous.state === undefined) {
-      delete process.env.HOOK_ROUTER_CONTEXT_STATE_FILE;
-    } else {
-      process.env.HOOK_ROUTER_CONTEXT_STATE_FILE = previous.state;
-    }
-    if (previous.warn === undefined) delete process.env.CONTEXT_WARN_THRESHOLD;
-    else process.env.CONTEXT_WARN_THRESHOLD = previous.warn;
-    if (previous.critical === undefined) {
-      delete process.env.CONTEXT_CRIT_THRESHOLD;
-    } else {
-      process.env.CONTEXT_CRIT_THRESHOLD = previous.critical;
-    }
+    process.chdir(originalCwd);
+  }
+}
+
+function testClaudeStyleAdvisoryLaunchFailure() {
+  const childProcess = require('node:child_process');
+  const originalSpawnSync = childProcess.spawnSync;
+  delete require.cache[posttoolPolicyPath];
+  childProcess.spawnSync = () => ({ error: new Error('spawn EACCES') });
+  try {
+    const { evaluatePostToolUse } = require(posttoolPolicyPath);
+    const { logs } = evaluatePostToolUse({
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Write',
+      tool_input: { file_path: 'notes.md' },
+    });
+    assert.deepEqual(logs, [
+      '[Hook] WARNING: style gate advisory failed: spawn EACCES',
+    ]);
+  } finally {
+    childProcess.spawnSync = originalSpawnSync;
+    delete require.cache[posttoolPolicyPath];
   }
 }
 
@@ -208,7 +251,9 @@ function testOrdinaryStopHasNoDesktopNotification() {
 testPassiveLifecycleHooksAreNotRegistered();
 testPassiveLifecycleEvaluationIsSilent();
 testPromptHookDoesNotInjectGenericPolicy();
-testContextMonitorOnlyEmitsOnSeverityChanges();
+testRepeatedToolUseKeepsNoContextCounter();
+testClaudeStyleAdvisoryPresentation();
+testClaudeStyleAdvisoryLaunchFailure();
 testOrdinaryStopHasNoDesktopNotification();
 
 console.log(
