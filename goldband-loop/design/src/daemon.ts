@@ -7,7 +7,7 @@
  * serve.ts as the default for `$D compare --serve`; serve.ts is kept as
  * the --no-daemon legacy/test path.
  *
- * Endpoints (see plan docs/designs path for full table):
+ * Endpoints:
  *   GET  /                              index of boards
  *   GET  /health                        liveness + version (unauth)
  *   POST /api/boards                    publish a new board

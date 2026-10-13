@@ -1,6 +1,6 @@
 # TODOS
 
-Completed work is kept in [`docs/archive/TODOS_COMPLETED.md`](docs/archive/TODOS_COMPLETED.md).
+Completed work is removed from this backlog; Git history keeps it.
 
 ## design daemon: follow-ups (filed v1.45.0.0 via release review)
 

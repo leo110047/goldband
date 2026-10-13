@@ -12,8 +12,6 @@ import {
 
 const ROOT = resolve(import.meta.dir, '..');
 const INACTIVE_DOC_DIRECTORIES = new Set([
-  'archive',
-  'designs',
   'plans',
   'reports',
 ]);
@@ -207,9 +205,6 @@ describe('workflow registry', () => {
 
   test('active documentation exposes only the capability interface', () => {
     expect(existsSync(resolve(ROOT, 'docs/skills.md'))).toBe(false);
-    expect(activeDocumentationFiles('docs')).not.toContain(
-      'docs/archive/TODOS_COMPLETED.md',
-    );
 
     const activeDocs = [
       '../README.md',

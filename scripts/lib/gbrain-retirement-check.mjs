@@ -29,8 +29,6 @@ const RETIRED_REFERENCE_PATTERNS = [
 ];
 const REFERENCE_ALLOWLIST = [
   'docs/DECISIONS.md',
-  'goldband-loop/CHANGELOG.md',
-  'goldband-loop/docs/archive/',
   'goldband-loop/lib/retired-workflow-entry-names.txt',
   'goldband-loop/test/migrations-v1.27.0.0.test.ts',
   'scripts/check-goldband-loop-inventory.mjs',

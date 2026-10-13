@@ -1049,7 +1049,7 @@ create_opencode_runtime_root() {
     rm -rf "$opencode_goldband"
   fi
 
-  mkdir -p "$opencode_goldband" "$opencode_goldband/design" "$opencode_goldband/review" "$opencode_goldband/qa" "$opencode_goldband/plan-devex-review"
+  mkdir -p "$opencode_goldband" "$opencode_goldband/design" "$opencode_goldband/review"
 
   _link_or_copy "$root_skill" "$opencode_goldband/SKILL.md"
   if [ -d "$goldband_dir/bin" ]; then
@@ -1069,18 +1069,6 @@ create_opencode_runtime_root() {
       _link_or_copy "$goldband_dir/review/$f" "$opencode_goldband/review/$f"
     fi
   done
-  if [ -d "$goldband_dir/review/specialists" ]; then
-    _link_or_copy "$goldband_dir/review/specialists" "$opencode_goldband/review/specialists"
-  fi
-  if [ -d "$goldband_dir/qa/templates" ]; then
-    _link_or_copy "$goldband_dir/qa/templates" "$opencode_goldband/qa/templates"
-  fi
-  if [ -d "$goldband_dir/qa/references" ]; then
-    _link_or_copy "$goldband_dir/qa/references" "$opencode_goldband/qa/references"
-  fi
-  if [ -f "$goldband_dir/plan-devex-review/dx-hall-of-fame.md" ]; then
-    _link_or_copy "$goldband_dir/plan-devex-review/dx-hall-of-fame.md" "$opencode_goldband/plan-devex-review/dx-hall-of-fame.md"
-  fi
   if [ -f "$goldband_dir/ETHOS.md" ]; then
     _link_or_copy "$goldband_dir/ETHOS.md" "$opencode_goldband/ETHOS.md"
   fi

@@ -179,7 +179,6 @@ bash scripts/verify-decision-guidance.sh
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Goldband Loop internals and runtime structure |
 | [docs/tutorial-document-generate.md](docs/tutorial-document-generate.md) | Documentation-generation tutorial |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Runtime development workflow |
-| [CHANGELOG.md](CHANGELOG.md) | Runtime history |
 
 ## Privacy And Telemetry
 

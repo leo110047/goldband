@@ -44,8 +44,6 @@ const RETIRED_SHIP_REFERENCE_PATTERNS = [
   /TEST_FAILURE_TRIAGE/,
 ];
 const RETIRED_SHIP_REFERENCE_ALLOWLIST = [
-  'goldband-loop/CHANGELOG.md',
-  'goldband-loop/docs/designs/',
   'goldband-loop/docs/prompts/',
   'goldband-loop/test/uninstall.test.ts',
   'scripts/check-goldband-loop-inventory.mjs',
