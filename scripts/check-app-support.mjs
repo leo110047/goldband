@@ -432,8 +432,6 @@ function assertNoBoundaryWordingRegressions() {
     'README.en.md',
     'ARCHITECTURE.md',
     'docs/DECISIONS.md',
-    'docs/reports/plugin-distribution-verification.md',
-    'docs/reports/app-support-verification.md',
   ];
   const violations = [];
   for (const relativePath of filesToScan) {

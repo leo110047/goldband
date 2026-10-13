@@ -138,36 +138,3 @@ npx @modelcontextprotocol/inspector <server-command>
 The smoke test must verify that the server starts and exposes the expected tool
 list. Token-backed servers such as GitHub or Sentry require user-provided
 credentials and must not be enabled by default.
-
-## Current Smoke Test Status
-
-Verified with MCP Inspector CLI on 2026-07-04 using:
-
-```bash
-npx -y @modelcontextprotocol/inspector@0.22.0 --cli --method tools/list -- node /path/to/goldband/mcp/server/dist/index.js
-```
-
-- `goldband`: starts from `node mcp/server/dist/index.js` and exposes
-  `goldband_policy_check`, `goldband_telemetry_query`, `knowledge-query`, and
-  `goldband_health_check`.
-
-The repo smoke gate also runs `npm run smoke:mcp-server`, which starts the
-server from a separate temporary git repo cwd and calls `tools/list` plus
-`goldband_policy_check`.
-
-Verified with MCP Inspector on 2026-07-02:
-
-- `context7`: starts successfully and exposes `resolve-library-id` and
-  `query-docs`.
-- `playwright`: starts successfully and exposes browser automation tools.
-
-Verified on 2026-10-12 with `@playwright/mcp@0.0.83` through an MCP SDK stdio
-client: 32 tools listed; the QA fixtures under
-`goldband-loop/test/fixtures/qa-eval*.html` surfaced all 15 seeded bugs; and
-the template's `--allowed-origins` value allowed `localhost`/`127.0.0.1` on any
-port while blocking `https://example.com`.
-
-Not verified by default:
-
-- `github`: requires a user-provided GitHub token.
-- `sentry`: requires user-provided Sentry credentials.

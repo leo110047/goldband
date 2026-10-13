@@ -30,9 +30,7 @@ Originally listed in the plan's "TODOs surfaced for later" section:
 
 ---
 
-## Browser skills
-
-Browser-skill runtime, fixture staleness, and OS sandbox follow-ups must be implemented in browser runtime code and deterministic tests. Workflow discovery stays behind the manifest capability interface; do not inject skill lists into a universal prompt.
+## Learnings
 
 ### P2: Migrate `/learn` to SQLite
 
@@ -52,110 +50,9 @@ Browser-skill runtime, fixture staleness, and OS sandbox follow-ups must be impl
 
 ---
 
-### P3: Replay/record demonstrated flows to domain-skills
-
-**What:** Watch a human drive a site once (record DOM events + screenshots + nav), generalize to a domain-skill. "Teach by showing." Different research dream than v1.8.0.0's per-site notes.
-
-**Why:** The highest-quality skill content is one a human demonstrated, not one the agent figured out from scratch. Pairs with skillpack publishing — recorded flows are the most valuable packs.
-
-**Pros:** Skill quality jumps. Some sites are too complex for an agent to figure out alone (multi-step OAuth, captcha-gated forms).
-
-**Cons:** Record fidelity vs. selector stability over time. DOM changes break recordings. Real research needed.
-
-**Context:** Browser-use has experimented with this. Playwright has a recorder. Codeception/Cypress recorders exist. None of them do the "generalize the recording into a markdown note" step.
-
-**Effort:** L (human: ~2-3 weeks / CC: ~2-3 days)
-**Priority:** P3
-**Depends on:** Probably its own `/office-hours` session before committing eng time.
-
----
-
 ## Personalization follow-up
 
 Any future personalization must be an explicit, inspectable runtime or user-config feature. Do not inject psychographic adaptation, blind-spot coaching, or pacing policy into every workflow prompt.
-
-## Browse
-
-## Browse
-
-### Video recording
-
-**What:** Record browser interactions as video (start/stop controls).
-
-**Why:** Video evidence in QA reports and PR bodies. Currently deferred because `recreateContext()` destroys page state.
-
-**Context:** Needs sessions for clean context lifecycle. Playwright supports video recording per context. Also needs WebM → GIF conversion for PR embedding.
-
-**Effort:** M
-**Priority:** P3
-**Depends on:** Sessions
-
-### Auth vault
-
-**What:** Encrypted credential storage, referenced by name. LLM never sees passwords.
-
-**Why:** Security — currently auth credentials flow through the LLM context. Vault keeps secrets out of the AI's view.
-
-**Effort:** L
-**Priority:** P3
-**Depends on:** Sessions, state persistence
-
-### Semantic locators
-
-**What:** `find role/label/text/placeholder/testid` with attached actions.
-
-**Why:** More resilient element selection than CSS selectors or ref numbers.
-
-**Effort:** M
-**Priority:** P4
-
-### Device emulation presets
-
-**What:** `set device "iPhone 16 Pro"` for mobile/tablet testing.
-
-**Why:** Responsive layout testing without manual viewport resizing.
-
-**Effort:** S
-**Priority:** P4
-
-### Network mocking/routing
-
-**What:** Intercept, block, and mock network requests.
-
-**Why:** Test error states, loading states, and offline behavior.
-
-**Effort:** M
-**Priority:** P4
-
-### Download handling
-
-**What:** Click-to-download with path control.
-
-**Why:** Test file download flows end-to-end.
-
-**Effort:** S
-**Priority:** P4
-
-### Content safety
-
-**What:** `--max-output` truncation, `--allowed-domains` filtering.
-
-**Why:** Prevent context window overflow and restrict navigation to safe domains.
-
-**Effort:** S
-**Priority:** P4
-
-### Multi-agent tab isolation
-
-**What:** Two Claude sessions connect to the same browser, each operating on different tabs. No cross-contamination.
-
-**Why:** Enables parallel /qa + /design-review on different tabs in the same browser.
-
-**Context:** Requires tab ownership model for concurrent headed connections. Playwright may not cleanly support two persistent contexts. Needs investigation.
-
-**Effort:** L (human: ~2 weeks / CC: ~2 hours)
-**Priority:** P3
-**Depends on:** Headed mode (shipped)
 
 ## Release
 

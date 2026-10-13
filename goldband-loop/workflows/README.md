@@ -214,4 +214,4 @@ bun run typecheck
 bun run test:workflows
 ```
 
-See `COVERAGE.md` for typed, compatibility, experimental, and owner status.
+See `../../docs/generated/capabilities.md` for typed, compatibility, experimental, and owner status.

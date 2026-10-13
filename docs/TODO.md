@@ -42,7 +42,7 @@ compatibility、0 個 registered-only。
 
 ### 背景
 
-`goldband-loop/workflows/COVERAGE.md` 是 runtime 覆蓋清單，不是一般 TODO 檔。
+`docs/generated/capabilities.md` 是 runtime 覆蓋清單，不是一般 TODO 檔。
 每個 runnable action 現在必須在 manifest 宣告 runtime owner；experimental
 action 不得宣告 owner，也不會出現在 router 或 activation hints。
 
@@ -83,8 +83,6 @@ action 不得宣告 owner，也不會出現在 router 或 activation hints。
 - [x] 每個 high-risk action 都有 primary gate；nested high-risk mode 也有獨立
   operation gate，缺 gate、owner mismatch、declared contract 與 verifier drift，或
   提早接 runtime 都會驗證失敗。
-- [x] `goldband-loop/workflows/COVERAGE.md` 由 manifest-generated capability report
-  投影，不維護第二份狀態。
 
 ## P1 - 補完 agent observability 消費端與 session trace
 
@@ -186,3 +184,13 @@ agent session trace。它不能事後完整回放一輪對話中 agent 讀了哪
 - 不預設上傳 telemetry 到第三方服務。
 - 不把模型 reasoning 當成 goldband 一定可取得的資料；host 沒提供就標記 unavailable。
 - 不把 inferred workflow signal 當成 confirmed workflow completion。
+
+## P2 - 全 codebase 審查未覆蓋範圍
+
+任務定義見 `docs/plans/codebase-behavior-and-deep-modules.md`。下列區域尚未逐檔閱讀 source 與測試：
+
+- `goldband-loop/scripts/` 的開發與評估工具：`question-registry.ts`、`task-emission-schema.ts`、`output-throughput-comparison.ts`、`eval-*`、`psychographic-signals.ts`、`archetypes.ts` 等。
+- `goldband-loop/bin/` 中除 `goldband.ts`、`goldband-knowledge.ts`、`goldband-analytics`、`goldband-telemetry-log` 之外的工具：`goldband-global-discover.ts`、`goldband-developer-profile`、`goldband-brain-sync`、`goldband-next-version` 等。
+- `goldband-loop/design/src` 中 daemon 以外的模組：`compare.ts`、`variants.ts`、`cli.ts`、`daemon-client.ts` 等。
+- `goldband-loop/test/helpers/`（`eval-store.ts`、`session-runner.ts`），以及 root `scripts/check-*.mjs`、`scripts/test-*.mjs` 的內部結構。
+- `app-adapters/`、`sandbox/`、`codex/local/`、`codex/profiles/`。
