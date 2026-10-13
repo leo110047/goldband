@@ -445,7 +445,7 @@
       "actions": [
         { "id": "save", "description": "Save current working context.", "runtime": "typed", "owner": "context-checkpoint-store", "risk": "low" },
         { "id": "restore", "description": "Restore saved working context.", "runtime": "typed", "owner": "context-checkpoint-store", "risk": "low", "promptContract": { "hardBoundaries": ["Do not modify the project while restoring context."] } },
-        { "id": "retro", "description": "Summarize recent work and lessons.", "runtime": "compatibility", "owner": "prompt-contract-dispatch", "risk": "low" }
+        { "id": "retro", "description": "Summarize recent work and lessons.", "runtime": "compatibility", "owner": "prompt-contract-dispatch", "risk": "low", "promptContract": { "relevantContext": ["Trace the session or history records the user names. Before proposing changes, check which existing checks, tests, and wiring already cover the issue."], "hardBoundaries": ["Separate observations from inferences. Without history evidence, state that the cause is unknown instead of inventing one. End without new rules when no proposal is worth adopting."], "verification": ["Fix mechanical problems in an existing check, test, or wiring first; address design problems through ownership boundaries or review criteria. Cite the evidence for each proposal."] } }
       ]
     },
     {
