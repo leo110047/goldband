@@ -2765,7 +2765,7 @@ prompt-injection classifier) is removed. The `browser/session` action and its
 `browser/cookies` safety gate are retired; the Codex launcher no longer stages a
 browser client or auto-admits browser commands. Browser work, including real
 `qa/app` QA, uses the active host's browser tool under `manuals/browser.md`.
-`mcp/` templates offer an optional Playwright MCP entry pinned to
+`mcp/` templates define a Playwright MCP entry pinned to
 `@playwright/mcp@0.0.83` with `--isolated` and a localhost-only
 `--allowed-origins` default. `make-pdf` keeps its feature and now drives
 Chromium directly through Playwright (`make-pdf/src/pdfRenderer.ts`).
@@ -2788,3 +2788,12 @@ boundary. On Windows `make-pdf` runs the Chromium job in a Node child process,
 because Bun 1.3 there cannot launch Chromium (oven-sh/bun#4253) and cannot use
 `chromium.connect` on any platform; the Windows CI job renders a real PDF to
 prove that path.
+
+`./install.sh all-with-workflow` adds that entry to Claude Code (`claude mcp add
+--scope user`) and Codex (an appended `[mcp_servers.playwright]` table), because
+`qa/app` cannot exercise a page without a browser tool and the Chrome extension
+is not always connected. It reads the template, never modifies an existing
+`playwright` entry, and honors `GOLDBAND_SKIP_PLAYWRIGHT_MCP=1`. Only that
+explicit target adds it; `auto-refresh` replays component targets, so a user
+who removes the entry keeps it removed. `codex mcp add` was rejected because it
+re-renders the whole user config.

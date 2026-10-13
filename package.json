@@ -24,7 +24,7 @@
     "test:eval-budget-cap": "node scripts/test-eval-budget-cap.mjs",
     "test:style-gate": "node scripts/test-code-style-gate.mjs && node scripts/test-style-gate-install.mjs && node scripts/test-goldband-loop-source-gates.mjs",
     "test:auto-update": "node scripts/test-auto-update.mjs",
-    "test:config-preservation": "node scripts/test-config-preservation.mjs && node scripts/test-config-lifecycle.mjs",
+    "test:config-preservation": "node scripts/test-config-preservation.mjs && node scripts/test-config-lifecycle.mjs && node scripts/test-playwright-mcp-install.mjs",
     "test:launchers": "node scripts/test-shell-launchers.mjs",
     "test:project-style-gate": "node scripts/test-goldband-project-style-gate.mjs",
     "test:sandbox-image-lifecycle": "node scripts/test-sandbox-image-lifecycle.mjs",

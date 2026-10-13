@@ -19,7 +19,7 @@ Review 失敗時，Claude／Codex hook 會提示讀取既有啟動契約；環�
 - 準備 Git、Node.js，以及要使用的 Claude Code 或 Codex CLI。
 - 使用 installer 安裝 Claude 設定另需 `jq`；Codex 設定安裝與檢查需要 Python **3.11 以上**。
 - 使用完整 Git checkout；請勿只下載 `install.sh`。
-- Goldband Loop 另需 Bun **1.3.11 以上**。`make-pdf` 需要 Playwright Chromium，安裝器會處理其安裝與驗證。瀏覽器 QA 使用 Claude Code／Codex 自己的瀏覽器工具，或選用的 Playwright MCP（見 [mcp/README.md](mcp/README.md)）。
+- Goldband Loop 另需 Bun **1.3.11 以上**。`make-pdf` 需要 Playwright Chromium，安裝器會處理其安裝與驗證。瀏覽器 QA 使用 Claude Code／Codex 自己的瀏覽器工具；`all-with-workflow` 會替兩邊設定 Playwright MCP，已有設定則保留，可用 `GOLDBAND_SKIP_PLAYWRIGHT_MCP=1` 跳過（見 [mcp/README.md](mcp/README.md)）。
 - macOS／Linux 使用 Bash；Windows 請用 Git Bash 或 WSL，沒有原生 PowerShell 安裝器。各工作流程的平台限制見下方說明。
 
 Installer 會修改家目錄內的工具設定、hooks 與 skills。Claude plugin 與 installer 的 Claude 核心設定請擇一安裝，避免重複載入。

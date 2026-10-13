@@ -23,7 +23,8 @@ The workflow installer installs and verifies Playwright Chromium, which
 `make-pdf` uses for rendering. For an offline or CI setup that does not need
 PDF output, use `GOLDBAND_SKIP_PLAYWRIGHT=1` with your chosen install command.
 Browser QA does not depend on this: it uses the host's browser tool or the
-optional Playwright MCP server described in [mcp/README.md](mcp/README.md).
+Playwright MCP server that `all-with-workflow` adds to Claude Code and Codex
+unless `GOLDBAND_SKIP_PLAYWRIGHT_MCP=1` is set (see [mcp/README.md](mcp/README.md)).
 
 After updating, rerun your original installation command and `./install.sh status`.
 Status checks the installed source inputs, artifact integrity, and dispatch

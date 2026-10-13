@@ -64,11 +64,20 @@ do afterwards: native permissions, auto-mode review, sandboxing, and the
 approval rules in `goldband-loop/manuals/browser.md`. For unfamiliar external
 sites, prefer Claude in Chrome, which has its own prompt-injection safeguards.
 
-To enable it, copy the `playwright` entry into your host config and set it to
-enabled, or add it directly:
+`./install.sh all-with-workflow` adds this entry to both hosts: Claude Code
+through `claude mcp add --scope user`, and Codex by appending an
+`[mcp_servers.playwright]` table to `~/.codex/config.toml` (a backup is kept).
+The installer reads the command from `claude.mcp.json.template`, leaves any
+existing `playwright` entry untouched, and wraps `npx` in `cmd /c` on Windows.
+Set `GOLDBAND_SKIP_PLAYWRIGHT_MCP=1` to skip it; `./install.sh status` reports
+whether each host has it. Other install targets and `auto-refresh` never add
+it, so a removed entry stays removed. The first use downloads the package from
+npm through `npx`.
+
+To add it by hand instead:
 
 ```bash
-claude mcp add playwright -- npx -y @playwright/mcp@0.0.83 --isolated \
+claude mcp add --scope user playwright -- npx -y @playwright/mcp@0.0.83 --isolated \
   "--allowed-origins=http://localhost:*;http://127.0.0.1:*"
 ```
 

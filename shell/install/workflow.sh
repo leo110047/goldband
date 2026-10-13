@@ -284,3 +284,76 @@ run_workflow_setup() {
     fi
     return "$setup_status"
 }
+
+# Browser QA needs a host browser tool; mcp/claude.mcp.json.template owns the
+# Playwright MCP command. Existing `playwright` entries are left untouched.
+playwright_mcp_helper() {
+    local action="$1"
+    shift
+    "${CODEX_CONFIG_PYTHON[@]}" "$REPO_DIR/shell/install/mcp-config.py" "$action" \
+        --template "$REPO_DIR/mcp/claude.mcp.json.template" --name playwright \
+        ${PLAYWRIGHT_MCP_WINDOWS:+--windows} "$@"
+}
+
+install_playwright_mcp() {
+    echo -e "${GREEN}設定 Playwright MCP（瀏覽器 QA）...${NC}"
+    if [ "${GOLDBAND_SKIP_PLAYWRIGHT_MCP:-0}" = "1" ]; then
+        echo "  [跳過] Playwright MCP — GOLDBAND_SKIP_PLAYWRIGHT_MCP=1"
+        return 0
+    fi
+    if ! resolve_codex_config_python; then
+        echo -e "  ${YELLOW}[跳過] Playwright MCP — 需要 Python 3.11+；手動設定見 mcp/README.md${NC}"
+        return 0
+    fi
+    PLAYWRIGHT_MCP_WINDOWS=""
+    if is_windows_host; then
+        PLAYWRIGHT_MCP_WINDOWS=1
+    fi
+    install_playwright_mcp_claude
+    install_playwright_mcp_codex
+}
+
+install_playwright_mcp_claude() {
+    local label="Claude Code Playwright MCP"
+    if ! command -v claude >/dev/null 2>&1; then
+        echo "  [跳過] $label — 找不到 claude CLI"
+        return 0
+    fi
+    local status=0
+    playwright_mcp_helper claude-has --config "$HOME/.claude.json" || status=$?
+    if [ "$status" -eq 3 ]; then
+        echo -e "  ${GREEN}[保留]${NC} $label — 已有 playwright 設定"
+        return 0
+    elif [ "$status" -ne 1 ]; then
+        echo -e "  ${YELLOW}[跳過] $label — 無法讀取 ~/.claude.json${NC}"
+        return 0
+    fi
+    local argv=() arg
+    while IFS= read -r -d '' arg; do
+        argv+=("$arg")
+    done < <(playwright_mcp_helper argv)
+    if [ "${#argv[@]}" -gt 0 ] &&
+        (cd "$HOME" && claude mcp add --scope user playwright -- "${argv[@]}") >/dev/null 2>&1; then
+        echo -e "  ${GREEN}[設定]${NC} ${label}（user scope）"
+    else
+        echo -e "  ${YELLOW}[失敗] $label — 請依 mcp/README.md 手動設定${NC}"
+    fi
+}
+
+install_playwright_mcp_codex() {
+    local label="Codex Playwright MCP"
+    local tmp status=0
+    mkdir -p "$(dirname "$CODEX_CONFIG_FILE")" || return 1
+    tmp="$(mktemp "${CODEX_CONFIG_FILE}.tmp.XXXXXX")" || return 1
+    playwright_mcp_helper codex-add --config "$CODEX_CONFIG_FILE" > "$tmp" || status=$?
+    if [ "$status" -eq 0 ] && replace_host_config "$CODEX_CONFIG_FILE" "$tmp"; then
+        echo -e "  ${GREEN}[設定]${NC} $label"
+        return 0
+    fi
+    rm -f "$tmp"
+    if [ "$status" -eq 3 ]; then
+        echo -e "  ${GREEN}[保留]${NC} $label — 已有 playwright 設定"
+    else
+        echo -e "  ${YELLOW}[失敗] $label — 請依 mcp/README.md 手動設定${NC}"
+    fi
+}
