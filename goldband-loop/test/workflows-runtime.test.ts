@@ -50,7 +50,7 @@ import {
   runProcess,
 } from '../workflows/host-adapter';
 import {
-  aggregateReviewFindings,
+  organizeReviewFindings,
 } from '../workflows/review-engine';
 import {
   MAX_REVIEW_RULES_BYTES,
@@ -1043,20 +1043,22 @@ describe('workflow runtime', () => {
 
   test('review blocker key ignores summary wording changes', () => {
     const workflow = getWorkflow('review/code');
-    const previousSignal = reviewSignalFromOutput([{
+    const previousSignal = reviewSignalFromOutput({ findings: [{
+      kind: 'defect',
       file: 'src/example.ts',
       line: 2,
       severity: 'high',
       summary: 'First wording for the defect.',
       evidence: '`+ riskyChange();` is still present.',
-    }], workflowContext(workflow), 'verify-findings');
-    const currentSignal = reviewSignalFromOutput([{
+    }], diagnostics: [], omittedImprovementCount: 0 }, workflowContext(workflow), 'verify-findings');
+    const currentSignal = reviewSignalFromOutput({ findings: [{
+      kind: 'defect',
       file: 'src/example.ts',
       line: 2,
       severity: 'high',
       summary: 'Different wording for the same defect.',
       evidence: '  `+ riskyChange();`   is still present. ',
-    }], workflowContext(workflow), 'verify-findings');
+    }], diagnostics: [], omittedImprovementCount: 0 }, workflowContext(workflow), 'verify-findings');
 
     expect(previousSignal?.blockerKey).not.toContain('First wording');
     expect(previousSignal?.blockerKey).toBe(currentSignal?.blockerKey);
@@ -1142,28 +1144,18 @@ describe('workflow runtime', () => {
     expect(telemetry.rulesCount).toBeGreaterThan(0);
     expect(telemetry.rulesBytes).toBeGreaterThan(0);
     expect(telemetry.promptBytes).toBeGreaterThan(telemetry.rulesBytes);
-    expect(telemetry.selectedSpecialists).toEqual([]);
+    expect(telemetry).not.toHaveProperty('selectedSpecialists');
     expect(telemetry.hostTimeoutMs).toBe(12 * 60 * 1000);
     expect(telemetry.passTimeoutMs).toBe(12 * 60 * 1000);
-    expect(telemetry.specialistMode).toBe('off');
+    expect(telemetry).not.toHaveProperty('specialistMode');
     expect(JSON.stringify(telemetry)).not.toContain('Architecture and Integration Boundaries');
   });
 
-  test('review timeout policy permits only the single-reviewer mode', () => {
-    expect(resolveReviewTimeoutPolicy({ specialists: 'off' })).toEqual({
-      specialistMode: 'off',
-      hostTimeoutMs: DEFAULT_REVIEW_HOST_TIMEOUT_MS,
-      passTimeoutMs: 12 * 60 * 1000,
-    });
+  test('review timeout policy defaults to the single-reviewer budget', () => {
     expect(resolveReviewTimeoutPolicy({})).toEqual({
-      specialistMode: 'off',
       hostTimeoutMs: DEFAULT_REVIEW_HOST_TIMEOUT_MS,
       passTimeoutMs: 12 * 60 * 1000,
     });
-    expect(() => resolveReviewTimeoutPolicy({ specialists: 'auto' }))
-      .toThrow('independent specialist agents are disabled');
-    expect(() => resolveReviewTimeoutPolicy({ specialists: 'all' }))
-      .toThrow('independent specialist agents are disabled');
   });
 
   test('review timeout overrides fail closed when invalid or internally inconsistent', () => {
@@ -1187,10 +1179,10 @@ describe('workflow runtime', () => {
     expect(budget.nextHostTimeoutMs()).toBe(2 * 60 * 1000);
     now = 12 * 60 * 1000;
     expect(() => budget.nextHostTimeoutMs()).toThrow(
-      'review/code off pass timed out after 720000ms',
+      'review/code pass timed out after 720000ms',
     );
     const inherited = createReviewTimeBudget(
-      { specialists: 'off' },
+      {},
       () => 90_000,
       0,
     );
@@ -1202,7 +1194,7 @@ describe('workflow runtime', () => {
     let wallClockNow = 10_000_000;
     Date.now = () => wallClockNow;
     try {
-      const budget = createReviewTimeBudget({ specialists: 'off' });
+      const budget = createReviewTimeBudget({});
       const beforeRollback = budget.remainingPassTimeoutMs();
       wallClockNow -= 60 * 60 * 1000;
       const afterRollback = budget.remainingPassTimeoutMs();
@@ -1268,9 +1260,9 @@ describe('workflow runtime', () => {
     expect(badHost.status).toBe(2);
     expect(badHost.stderr).toContain('--mode real requires --host claude or --host codex');
 
-    const badSpecialists = runCli(['review/code', '--specialists', 'banana']);
-    expect(badSpecialists.status).toBe(2);
-    expect(badSpecialists.stderr).toContain('invalid --specialists: banana');
+    const removedSpecialists = runCli(['review/code', '--specialists', 'banana']);
+    expect(removedSpecialists.status).toBe(2);
+    expect(removedSpecialists.stderr).toContain('unknown argument: --specialists');
 
     const partialTimeout = runCli([
       'review/code',
@@ -1643,7 +1635,7 @@ describe('workflow runtime', () => {
       const output = await reviewSteps[0]!.run({
         ...workflowContext(), cwd: repo,
         options: { worktree: true, includeUntracked: true },
-      }) as { diff: string };
+      }) as { diff: string; changedFiles: string[] };
       const expectedTracked = spawnSync('git', ['diff', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout;
       const state = { includedBytes: 0 };
       const expectedUntracked = ['one.txt', 'three.txt', 'two.txt'].map((name) =>
@@ -1653,7 +1645,7 @@ describe('workflow runtime', () => {
       for (const name of ['tracked', 'one.txt', 'two.txt', 'three.txt']) {
         expect(output.diff).toContain(`+${name} tail`);
       }
-      expect(buildReviewPrompt({ ...workflowContext(), cwd: repo }, output.diff))
+      expect(buildReviewPrompt({ ...workflowContext(), cwd: repo }, output))
         .toContain(`DIFF_START\n${output.diff}\nDIFF_END`);
     } finally {
       rmSync(repo, { recursive: true, force: true });
@@ -1667,9 +1659,9 @@ describe('workflow runtime', () => {
     expect(Buffer.byteLength(diff)).toBe(MAX_REVIEW_DIFF_BYTES);
     writeFileSync(file, diff);
     const ctx = { ...workflowContext(), options: { diffFile: file } };
-    const output = await reviewSteps[0]!.run(ctx) as { diff: string };
+    const output = await reviewSteps[0]!.run(ctx) as { diff: string; changedFiles: string[] };
     expect(output.diff).toBe(diff);
-    expect(buildReviewPrompt(ctx, output.diff)).toContain(`DIFF_START\n${diff}\nDIFF_END`);
+    expect(buildReviewPrompt(ctx, output)).toContain(`DIFF_START\n${diff}\nDIFF_END`);
     writeFileSync(file, `${diff}x`);
     expect(() => reviewSteps[0]!.run(ctx)).toThrow('byte limit');
   });
@@ -1827,11 +1819,10 @@ describe('workflow runtime', () => {
         artifacts: [],
         options: {
           worktree: true,
-          specialists: 'off',
           reviewHostTimeoutMs: 60_000,
           reviewPassTimeoutMs: 60_000,
         },
-      })).toThrow('review/code off pass timed out after 60000ms');
+      })).toThrow('review/code pass timed out after 60000ms');
     } finally {
       process.env.PATH = previousPath;
       rmSync(fakeBin, { recursive: true, force: true });
@@ -1900,7 +1891,8 @@ describe('workflow runtime', () => {
 
   test('review drops unsupported speculation without depending on execution evidence', () => {
     const verify = reviewSteps.find(step => step.name === 'verify-findings')!;
-    expect(verify.run({ ...workflowContext(), input: [{ file: 'src/example.ts', severity: 'high', summary: 'Possibly serious issue.' }] })).toEqual([]);
+    expect(verify.run({ ...workflowContext(), input: [{ kind: 'defect', file: 'src/example.ts', severity: 'high', summary: 'Possibly serious issue.' }] }))
+      .toEqual({ findings: [], diagnostics: [], omittedImprovementCount: 0 });
   });
 
   test('core review prompt contains judgment inputs without runtime-owned control prose', () => {
@@ -1915,7 +1907,7 @@ describe('workflow runtime', () => {
       'diff --git a/scripts/install-auth.ts b/scripts/install-auth.ts',
       '+provider permission installer change',
     ].join('\n');
-    const core = buildReviewPrompt(ctx, diff);
+    const core = buildReviewPrompt(ctx, { diff, changedFiles: ['scripts/install-auth.ts'] });
     expect(core).toContain('# Shared Review Rubric');
     expect(core).toContain('# Semantic Review Checklist');
     expect(core).toContain('RULE_ID: security');
@@ -1930,9 +1922,8 @@ describe('workflow runtime', () => {
     expect(core).not.toContain('Never invoke Goldband');
     expect(core).not.toContain('Return only JSON');
 
-    const judgmentOnly = buildReviewPrompt(ctx, '', {
-      rules: { ...coreReviewRules(PROJECT_ROOT, ''), text: '' },
-    });
+    const judgmentOnly = buildReviewPrompt(ctx, { diff: '', changedFiles: [] },
+      { ...coreReviewRules(PROJECT_ROOT, '', []), text: '' });
     expect(Buffer.byteLength(judgmentOnly)).toBeLessThanOrEqual(8 * 1024);
     expect(Buffer.byteLength(core) - Buffer.byteLength(diff))
       .toBeLessThanOrEqual(MAX_REVIEW_PROMPT_OVERHEAD_BYTES);
@@ -1943,7 +1934,7 @@ describe('workflow runtime', () => {
       ...workflowContext(),
       options: { mode: 'real' as const, host: 'codex' as const },
     };
-    const prompt = buildReviewPrompt(ctx, 'diff --git a/a.ts b/a.ts');
+    const prompt = buildReviewPrompt(ctx, { diff: 'diff --git a/a.ts b/a.ts', changedFiles: ['a.ts'] });
     expect(prompt).not.toContain('GOLDBAND_RUNTIME_TASK=review/code');
     expect(prompt).not.toContain('$goldband review code');
     expect(prompt).not.toContain('GOLDBAND_TYPED_RUNTIME_ACTIVE');
@@ -1968,7 +1959,7 @@ describe('workflow runtime', () => {
   });
 
   test('review Rules payload budget uses measured headroom and fails closed', () => {
-    const core = coreReviewRules(PROJECT_ROOT, 'provider installer change');
+    const core = coreReviewRules(PROJECT_ROOT, 'provider installer change', []);
     const coreBytes = Buffer.byteLength(core.text);
     expect(coreBytes).toBeLessThan(MAX_REVIEW_RULES_BYTES);
     expect(MAX_REVIEW_RULES_BYTES).toBe(16 * 1024);
@@ -2001,14 +1992,12 @@ describe('workflow runtime', () => {
       coreRulesText: core.text,
       diff: '',
     })).toMatchObject({
-      selectedSpecialists: [],
       aggregateRulesBytes: coreBytes,
     });
 
     const pathRouted = coreReviewRules(
       PROJECT_ROOT,
       'diff --git a/goldband-loop/example.ts b/goldband-loop/example.ts\n+approval session deploy',
-      undefined,
       ['goldband-loop/example.ts'],
     );
     expect(pathRouted.bundle.ruleIds).toContain('loop-engineering');
@@ -2017,19 +2006,10 @@ describe('workflow runtime', () => {
     expect(pathRouted.bundle.ruleIds).not.toContain('git-workflow');
   });
 
-  test('review/code rejects independent specialist modes before collecting the diff', async () => {
-    await expect(runWorkflow(getWorkflow('review/code'), {
-      mode: 'mock',
-      cwd: ROOT,
-      goldbandHome: tmpHome,
-      diffFile: 'test/fixtures/workflows/review.diff',
-      specialists: 'auto',
-    })).rejects.toThrow('independent specialist agents are disabled');
-  });
-
-  test('review aggregation dedupes, merges specialists, downgrades unsupported blockers, and sorts deterministically', () => {
-    const result = aggregateReviewFindings([
+  test('finding operation merges duplicate defects, drops unsupported defects, and sorts deterministically', () => {
+    const result = organizeReviewFindings([
       {
+        kind: 'defect',
         file: 'b.ts',
         line: 3,
         severity: 'high',
@@ -2040,24 +2020,24 @@ describe('workflow runtime', () => {
         recommendation: 'Add a regression test.',
         suggestedVerification: 'Run bun test b.test.ts',
         blocking: true,
-        specialist: 'testing',
       },
       {
+        kind: 'defect',
         file: 'b.ts',
         line: 3,
         severity: 'medium',
         category: 'testing',
         summary: 'Test gap.',
         failureScenario: 'Old behavior can return the wrong status.',
-        evidence: 'longer and more specific diff evidence from second specialist',
+        evidence: 'longer and more specific diff evidence from the second report',
         recommendation: 'Add focused coverage.',
         suggestedVerification: 'Run bun test b.test.ts',
         blocking: false,
-        specialist: 'correctness-contract',
         ruleId: 'claim-verification',
         policySource: 'rules/claim-verification.md',
       },
       {
+        kind: 'defect',
         file: 'a.ts',
         line: 1,
         severity: 'critical',
@@ -2067,33 +2047,86 @@ describe('workflow runtime', () => {
         recommendation: 'Verify auth guard.',
         suggestedVerification: 'Run auth regression test.',
         blocking: true,
-        specialist: 'security',
       },
       {
+        kind: 'defect',
         file: 'c.ts',
         line: 4,
         severity: 'medium',
         category: 'correctness-contract',
-        summary: 'Candidate violates the bound ticket contract.',
+        summary: 'Candidate violates the requested contract.',
         failureScenario: 'The requested output is absent from the candidate.',
         evidence: 'acceptance criterion is not implemented',
+        reproductionStep: 'Request the output.',
         blocking: true,
       },
     ]);
 
-    expect(result.map((finding) => `${finding.severity}:${finding.file}:${finding.category}`)).toEqual([
+    expect(result.findings.map((finding) => `${finding.severity}:${finding.file}:${finding.category}`)).toEqual([
       'high:b.ts:testing',
       'medium:c.ts:correctness-contract',
-      'info:a.ts:security',
     ]);
-    expect(result[0].contributingSpecialists).toEqual(['correctness-contract', 'testing']);
-    expect(result[0].evidence).toBe('longer and more specific diff evidence from second specialist');
-    expect(result[0].ruleId).toBe('claim-verification');
-    expect(result[0].policySource).toBe('rules/claim-verification.md');
-    expect(result[1].blocking).toBe(true);
-    expect(result[2].evidence).toBeUndefined();
-    expect(result[2].blocking).toBe(false);
-    expect(result[2].summary).toContain('[unverified critical]');
+    expect(result.findings[0].evidence).toBe('longer and more specific diff evidence from the second report');
+    expect(result.findings[0].ruleId).toBe('claim-verification');
+    expect(result.findings[0].policySource).toBe('rules/claim-verification.md');
+    expect(result.findings[0].blocking).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.omittedImprovementCount).toBe(0);
+  });
+
+  test('finding operation returns an empty set for no findings', () => {
+    expect(organizeReviewFindings([])).toEqual({ findings: [], diagnostics: [], omittedImprovementCount: 0 });
+  });
+
+  test('finding operation keeps improvements non-blocking, separate from defects, and capped at three', () => {
+    const defect = {
+      kind: 'defect' as const, file: 'a.ts', line: 1, severity: 'low' as const, summary: 'Shared summary.',
+      evidence: 'a.ts reads stale state', failureScenario: 'A stale read returns old data.',
+      suggestedVerification: 'Read after write.',
+    };
+    const improvement = (file: string, severity: 'medium' | 'low' | 'info', summary = 'Shared summary.') => ({
+      kind: 'improvement' as const, file, line: 1, severity, summary,
+      evidence: `${file} repeats the parser`, recommendation: 'Reuse the collected paths.', blocking: true,
+    });
+    const result = organizeReviewFindings([
+      improvement('e.ts', 'info'),
+      improvement('a.ts', 'low'),
+      improvement('d.ts', 'medium'),
+      improvement('d.ts', 'low'),
+      improvement('c.ts', 'low'),
+      improvement('b.ts', 'medium'),
+      defect,
+    ]);
+
+    expect(result.findings.map((finding) => `${finding.kind}:${finding.severity}:${finding.file}`)).toEqual([
+      'defect:low:a.ts',
+      'improvement:medium:b.ts',
+      'improvement:medium:d.ts',
+      'improvement:low:a.ts',
+    ]);
+    expect(result.findings.filter((finding) => finding.kind === 'improvement')
+      .every((finding) => finding.blocking === false)).toBe(true);
+    expect(result.omittedImprovementCount).toBe(2);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test('finding operation discards only invalid improvements and reports why', () => {
+    const result = organizeReviewFindings([
+      { kind: 'improvement', file: 'a.ts', line: 2, severity: 'high', summary: 'Inflated improvement.',
+        evidence: 'a.ts duplicates parsing', recommendation: 'Reuse the parser.' },
+      { kind: 'improvement', file: 'b.ts', severity: 'low', summary: 'Unsupported improvement.' },
+      { kind: 'improvement', file: 'c.ts', severity: 'low', summary: 'Valid improvement.',
+        evidence: 'c.ts duplicates parsing', recommendation: 'Reuse the parser.' },
+    ]);
+
+    expect(result.findings.map((finding) => finding.summary)).toEqual(['Valid improvement.']);
+    expect(result.diagnostics).toEqual([
+      { file: 'a.ts', line: 2, severity: 'high', summary: 'Inflated improvement.',
+        reason: 'improvement severity cannot be high' },
+      { file: 'b.ts', severity: 'low', summary: 'Unsupported improvement.',
+        reason: 'improvement evidence is missing; improvement recommendation is missing' },
+    ]);
+    expect(result.omittedImprovementCount).toBe(0);
   });
 
   test('Codex JSON adapter args enforce read-only sandbox and output schema', () => {
@@ -2756,8 +2789,9 @@ describe('workflow runtime', () => {
     }
   });
 
-  test('review findings schema rejects invalid optional field types', () => {
+  test('review findings schema rejects invalid kinds and optional field types', () => {
     expect(() => findingsSchema.validate([{
+      kind: 'defect',
       file: 'src/example.ts',
       severity: 'medium',
       summary: 'Bad blocking type.',
@@ -2766,9 +2800,14 @@ describe('workflow runtime', () => {
     expect(() => findingsSchema.validate([{
       file: 'src/example.ts',
       severity: 'medium',
-      summary: 'Bad specialists type.',
-      contributingSpecialists: ['testing', 123],
-    }])).toThrow('optional field must be string array');
+      summary: 'Missing kind.',
+    }])).toThrow('finding.kind must be a non-empty string');
+    expect(() => findingsSchema.validate([{
+      kind: 'suggestion',
+      file: 'src/example.ts',
+      severity: 'medium',
+      summary: 'Unknown kind.',
+    }])).toThrow('invalid finding kind: suggestion');
   });
 
   test('workflow evidence state root follows goldband path precedence', () => {

@@ -22,7 +22,7 @@
     "bin/goldband.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
         49,
-        42,
+        36,
         30,
         25,
         23,
@@ -30,7 +30,6 @@
         15
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
-        55,
         53,
         51
       ]
@@ -321,7 +320,6 @@
     },
     "workflows/review.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        16,
         16
       ],
       "lint/complexity/useMaxParams": [
@@ -333,8 +331,8 @@
     },
     "workflows/run.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        34,
-        25
+        32,
+        23
       ]
     },
     "workflows/runtime.ts": {

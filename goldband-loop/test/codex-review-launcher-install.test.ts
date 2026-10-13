@@ -31,7 +31,7 @@ describe("trusted workflow launcher", () => {
         '  for i in {1..200}; do [ -f "$GOLDBAND_TEST_RELEASE" ] && break; sleep 0.05; done',
         '  test -f "$GOLDBAND_TEST_RELEASE"',
         'fi',
-        'printf \'%s\\n\' \'{"findings":[{"file":"file.txt","line":1,"severity":"high","summary":"fixture concern","evidence":"observed code","failureScenario":"input triggers incorrect result","suggestedVerification":"exercise input","classification":"verified-failure","evidenceIds":["spoofed"]}]}\' > "$output"',
+        'printf \'%s\\n\' \'{"findings":[{"kind":"defect","file":"file.txt","line":1,"severity":"high","summary":"fixture concern","evidence":"observed code","failureScenario":"input triggers incorrect result","suggestedVerification":"exercise input","classification":"verified-failure","evidenceIds":["spoofed"]}]}\' > "$output"',
       ].join("\n"));
       chmodSync(fakeCodex, 0o755);
       const runtimeRoot = join(fixture, "runtime");

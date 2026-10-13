@@ -19,14 +19,10 @@ type ReviewScopeOptions = {
 };
 
 type ReviewExecutionOptions = ReviewScopeOptions & {
-	specialists?: "off" | "auto" | "all";
 	reviewClaudeMaxBudgetUsd?: number;
 	workId?: string;
 	ticketId?: string;
 };
-
-export const INDEPENDENT_REVIEWER_ERROR =
-	"review/code uses exactly one core reviewer; independent specialist agents are disabled";
 
 export function assertReviewNotNested(
 	env: NodeJS.ProcessEnv = process.env,
@@ -69,8 +65,5 @@ export function assertValidReviewExecutionOptions(
 		throw new Error("review/code no longer manages Work Map tickets; use an explicit diff scope");
 	}
 	assertValidReviewScopeOptions(options);
-	if (options.specialists && options.specialists !== "off") {
-		throw new Error(`${INDEPENDENT_REVIEWER_ERROR}; remove --specialists`);
-	}
 	assertValidClaudeReviewMaxBudgetUsd(options.reviewClaudeMaxBudgetUsd);
 }

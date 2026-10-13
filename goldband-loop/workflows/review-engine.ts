@@ -1,48 +1,94 @@
-import type { ReviewFinding } from './types';
+import type {
+  ReviewFinding,
+  ReviewFindingDiagnostic,
+  ReviewFindingSet,
+} from "./types";
 
-const REVIEW_SEVERITIES: ReviewFinding['severity'][] = [
-  'critical',
-  'high',
-  'medium',
-  'low',
-  'info',
+const REVIEW_SEVERITIES: ReviewFinding["severity"][] = [
+  "critical",
+  "high",
+  "medium",
+  "low",
+  "info",
 ];
+const FINDING_KINDS: ReviewFinding["kind"][] = ["defect", "improvement"];
+export const MAX_REVIEW_IMPROVEMENTS = 3;
 
-export function aggregateReviewFindings(findings: ReviewFinding[]): ReviewFinding[] {
+export function organizeReviewFindings(
+  findings: ReviewFinding[],
+): ReviewFindingSet {
+  const diagnostics: ReviewFindingDiagnostic[] = [];
   const byKey = new Map<string, ReviewFinding>();
-  for (const finding of findings.map(normalizeReviewFinding)) {
-    const key = stableFindingKey(finding);
+  for (const finding of findings) {
+    const valid =
+      finding.kind === "improvement"
+        ? validImprovement(finding, diagnostics)
+        : validDefect(finding);
+    if (!valid) continue;
+    const key = stableFindingKey(valid);
     const existing = byKey.get(key);
-    byKey.set(key, existing ? mergeFindings(existing, finding) : finding);
+    byKey.set(key, existing ? mergeFindings(existing, valid) : valid);
   }
-  return [...byKey.values()].sort(compareFindings);
-}
-
-function normalizeReviewFinding(finding: ReviewFinding): ReviewFinding {
-  const severity = normalizeSeverity(finding.severity);
-  const needsEvidenceDowngrade = (severity === 'critical' || severity === 'high') && !finding.evidence;
-  const nextSeverity = needsEvidenceDowngrade ? 'info' : severity;
+  const sorted = [...byKey.values()].sort(compareFindings);
+  const defects = sorted.filter((finding) => finding.kind === "defect");
+  const improvements = sorted.filter(
+    (finding) => finding.kind === "improvement",
+  );
   return {
-    ...finding,
-    severity: nextSeverity,
-    summary: needsEvidenceDowngrade
-      ? `[unverified ${severity}] ${finding.summary}`
-      : finding.summary,
-    evidence: finding.evidence,
-    blocking: Boolean(finding.blocking && !needsEvidenceDowngrade),
-    contributingSpecialists: normalizeSpecialistList([
-      ...(finding.contributingSpecialists ?? []),
-      ...(finding.specialist ? [finding.specialist] : []),
-    ]),
+    findings: [...defects, ...improvements.slice(0, MAX_REVIEW_IMPROVEMENTS)],
+    diagnostics,
+    omittedImprovementCount: Math.max(
+      0,
+      improvements.length - MAX_REVIEW_IMPROVEMENTS,
+    ),
   };
 }
 
-export function unwrapFindings(parsed: unknown): ReviewFinding[] {
-  if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { findings?: unknown }).findings)) {
-    return (parsed as { findings: ReviewFinding[] }).findings;
+export function unwrapFindings(parsed: unknown): unknown[] {
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    Array.isArray((parsed as { findings?: unknown }).findings)
+  ) {
+    return (parsed as { findings: unknown[] }).findings;
   }
-  if (Array.isArray(parsed)) return parsed as ReviewFinding[];
-  throw new Error('review output must be an array or { findings: [...] }');
+  if (Array.isArray(parsed)) return parsed;
+  throw new Error("review output must be an array or { findings: [...] }");
+}
+
+function validDefect(finding: ReviewFinding): ReviewFinding | undefined {
+  const supported =
+    finding.line &&
+    finding.evidence &&
+    finding.failureScenario &&
+    (finding.reproductionStep || finding.suggestedVerification);
+  return supported
+    ? { ...finding, blocking: Boolean(finding.blocking) }
+    : undefined;
+}
+
+function validImprovement(
+  finding: ReviewFinding,
+  diagnostics: ReviewFindingDiagnostic[],
+): ReviewFinding | undefined {
+  const reasons = [
+    ...(finding.severity === "critical" || finding.severity === "high"
+      ? [`improvement severity cannot be ${finding.severity}`]
+      : []),
+    ...(finding.evidence ? [] : ["improvement evidence is missing"]),
+    ...(finding.recommendation
+      ? []
+      : ["improvement recommendation is missing"]),
+  ];
+  if (reasons.length === 0) return { ...finding, blocking: false };
+  diagnostics.push({
+    file: finding.file,
+    ...(finding.line ? { line: finding.line } : {}),
+    severity: finding.severity,
+    summary: finding.summary,
+    reason: reasons.join("; "),
+  });
+  return undefined;
 }
 
 function mergeFindings(a: ReviewFinding, b: ReviewFinding): ReviewFinding {
@@ -51,65 +97,53 @@ function mergeFindings(a: ReviewFinding, b: ReviewFinding): ReviewFinding {
     severity: higherSeverity(a.severity, b.severity),
     evidence: mostSpecific(a.evidence, b.evidence),
     recommendation: mostSpecific(a.recommendation, b.recommendation),
-    suggestedVerification: mostSpecific(a.suggestedVerification, b.suggestedVerification),
+    suggestedVerification: mostSpecific(
+      a.suggestedVerification,
+      b.suggestedVerification,
+    ),
     ruleId: mostSpecific(a.ruleId, b.ruleId),
     policySource: mostSpecific(a.policySource, b.policySource),
     blocking: Boolean(a.blocking || b.blocking),
-    contributingSpecialists: normalizeSpecialistList([
-      ...(a.contributingSpecialists ?? []),
-      ...(b.contributingSpecialists ?? []),
-      ...(a.specialist ? [a.specialist] : []),
-      ...(b.specialist ? [b.specialist] : []),
-    ]),
   };
 }
 
 function stableFindingKey(finding: ReviewFinding): string {
-  if (finding.category === 'specialist-skipped') {
-    return [
-      finding.file,
-      finding.category,
-      finding.specialist ?? '',
-      normalizeKeyText(finding.summary),
-    ].join('\0');
-  }
-
   return [
+    finding.kind,
     finding.file,
-    finding.line ?? '',
-    finding.category ?? '',
+    finding.line ?? "",
+    finding.category ?? "",
     normalizeKeyText(finding.failureScenario ?? finding.summary),
-  ].join('\0');
+  ].join("\0");
 }
 
 function compareFindings(a: ReviewFinding, b: ReviewFinding): number {
   return (
-    REVIEW_SEVERITIES.indexOf(a.severity) - REVIEW_SEVERITIES.indexOf(b.severity) ||
+    FINDING_KINDS.indexOf(a.kind) - FINDING_KINDS.indexOf(b.kind) ||
+    REVIEW_SEVERITIES.indexOf(a.severity) -
+      REVIEW_SEVERITIES.indexOf(b.severity) ||
     a.file.localeCompare(b.file) ||
     (a.line ?? 0) - (b.line ?? 0) ||
-    (a.category ?? '').localeCompare(b.category ?? '')
+    (a.category ?? "").localeCompare(b.category ?? "")
   );
 }
 
-function higherSeverity(a: ReviewFinding['severity'], b: ReviewFinding['severity']): ReviewFinding['severity'] {
+function higherSeverity(
+  a: ReviewFinding["severity"],
+  b: ReviewFinding["severity"],
+): ReviewFinding["severity"] {
   return REVIEW_SEVERITIES.indexOf(a) <= REVIEW_SEVERITIES.indexOf(b) ? a : b;
 }
 
-function normalizeSeverity(severity: ReviewFinding['severity']): ReviewFinding['severity'] {
-  return REVIEW_SEVERITIES.includes(severity) ? severity : 'info';
-}
-
-function mostSpecific(a: string | undefined, b: string | undefined): string | undefined {
+function mostSpecific(
+  a: string | undefined,
+  b: string | undefined,
+): string | undefined {
   if (!a) return b;
   if (!b) return a;
   return b.length > a.length ? b : a;
 }
 
-function normalizeSpecialistList(values: string[]): string[] | undefined {
-  const list = [...new Set(values.filter(Boolean))].sort();
-  return list.length > 0 ? list : undefined;
-}
-
 function normalizeKeyText(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
 }

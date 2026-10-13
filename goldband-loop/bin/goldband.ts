@@ -41,7 +41,6 @@ import {
 import {
 	assertReviewNotNested,
 	assertValidReviewScopeFlags,
-	INDEPENDENT_REVIEWER_ERROR,
 	REVIEW_ACTIVE_ENV,
 	REVIEW_SCOPE_FLAGS,
 	type ReviewScopeFlag,
@@ -247,13 +246,7 @@ function parseReviewRuntimeArgs(args: string[]): string[] {
 			);
 		}
 		if (arg === "--specialists") {
-			const value = args[index + 1];
-			if (!value) throw new Error("--specialists requires a value");
-			if (value !== "off") {
-				throw new Error(`${INDEPENDENT_REVIEWER_ERROR}; remove --specialists`);
-			}
-			index += 1;
-			continue;
+			throw new Error("--specialists was removed; review code always uses exactly one core reviewer");
 		}
 		if (arg === "--review-claude-max-budget-usd") {
 			const value = args[index + 1];

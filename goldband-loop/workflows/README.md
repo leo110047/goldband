@@ -67,7 +67,7 @@ an additional caller-supplied host. Each invocation is an independent semantic
 pass: it never resolves a review contract, resumes a lineage, authorizes closure,
 or advances a Work Map ticket. Repeat the same command after repairs.
 
-The launcher rejects specialist fan-out and `--loop`, and marks the child as an
+The launcher rejects the removed `--specialists` flag and `--loop`, and marks the child as an
 active review to prevent recursion. Read-only tools, approval policy, output
 schema, and timeout remain adapter-owned. Launcher or runtime failures are
 reported explicitly and do not prevent a later retry. Project verification is
@@ -95,14 +95,14 @@ outside the parent command sandbox without a prompt, so nested `codex exec` can
 initialize Codex state and app-server resources. The non-interactive child
 reviewer remains `read-only` with approval set to `never`.
 Every `review/code` run launches exactly one core reviewer. The public launcher
-does not expose specialist fan-out, the shared runtime contract rejects
-`--specialists auto|all` before host launch, and the production review owner has
-no parallel specialist dispatch path. `--specialists off` is accepted only as a
-backwards-compatible no-op by the internal CLI.
+rejects `--specialists` (including the former `off` no-op) before starting a
+child process, the internal CLI treats it as an unknown argument, and the
+production review owner has no parallel dispatch path.
 
 Before host dispatch, `review/code` collects changed paths with the diff; Git
 scopes use NUL-delimited path output, while a supplied patch derives paths from
-its file headers.
+its file headers. Rule selection, prompt assembly, and the post-review freshness
+check consume these collected paths; no consumer re-parses the diff for paths.
 When two or more paths changed, the runtime builds a bounded repository-local
 dependency view from Git-tracked source files and the reviewed untracked paths.
 It follows common static import/source forms, walks reverse dependencies to
@@ -155,8 +155,8 @@ operating system's `ARG_MAX` limit.
 The single real host call and complete `run-review` pass each have a
 twelve-minute default timeout. The timeout flags override one pass, must remain
 between 60 and 1800 seconds, and the host timeout cannot exceed the pass
-timeout. Evidence telemetry records the fixed `off` compatibility mode and both
-timeout budgets so latency can be tuned from real runs.
+timeout. Evidence telemetry records both timeout budgets so latency can be tuned
+from real runs.
 Pass elapsed time uses a monotonic clock; wall-clock changes affect evidence
 timestamps but cannot extend the configured deadline.
 
@@ -191,8 +191,12 @@ ${GOLDBAND_HOME:-$HOME/.goldband}/workflow-runs/artifacts/
 
 Untracked diff materialization is a trust boundary. The runtime skips binary,
 oversized, non-UTF-8, or secret-like content and records a no-content marker.
-Unsupported high-severity findings are downgraded instead of presented as
-verified blockers.
+Findings carry `kind: "defect" | "improvement"`. Defects without a line,
+evidence, failure scenario, and verification are dropped. Improvements need
+evidence and a recommendation, cannot be `high` or `critical`, are never
+blocking, and are capped at three after deduplication; the report states how
+many valid improvements were not shown and lists discarded improvements with
+their reason. Only defects feed the review signal.
 
 Review prompts keep the complete scoped diff, capped at 256 KiB so oversized
 changes fail explicitly instead of consuming unbounded quota. Runtime-selected

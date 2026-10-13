@@ -36,7 +36,7 @@ const workflow = () => getWorkflow('review/code');
 function artifact(result: Awaited<ReturnType<typeof runWorkflow>>) {
   return JSON.parse(readFileSync(result.artifacts.find(file => file.endsWith('-review.json'))!, 'utf8'));
 }
-const finding = { file: 'subject.ts', line: 1, severity: 'high', summary: 'unsafe path',
+const finding = { kind: 'defect', file: 'subject.ts', line: 1, severity: 'high', summary: 'unsafe path',
   failureScenario: 'unsafe call returns incorrect data for a valid request',
   suggestedVerification: 'exercise that request', evidence: 'subject.ts calls unsafe()' };
 
@@ -66,6 +66,21 @@ test('default review needs no manifest or authority and cannot emit execution ev
   expect(prompt).not.toContain('TYPED_EVIDENCE_SUMMARY_START');
 });
 
+test('rule selection uses the collected path of a Git-quoted file name', async () => {
+  const options = fixture();
+  options.git('config', 'core.quotePath', 'true');
+  mkdirSync(join(options.cwd, 'goldband-loop'));
+  writeFileSync(join(options.cwd, 'goldband-loop', 'café.ts'), 'safe();\n');
+  options.git('add', '.'); options.git('commit', '-qm', 'quoted path');
+  writeFileSync(join(options.cwd, 'goldband-loop', 'café.ts'), 'unsafe();\n');
+  const mock = host();
+  const result = await runWorkflow(workflow(), options);
+  const prompt = mock.mock.calls[0]![0] as string;
+  expect(prompt).toContain('"a/goldband-loop/caf\\303\\251.ts"');
+  expect(artifact(result).changedFiles).toContain('goldband-loop/café.ts');
+  expect(prompt).toContain('RULE_ID: loop-engineering');
+});
+
 test('a failed host call can be retried on the same candidate and successful reviews can repeat', async () => {
   const options = fixture(); const mock = host();
   mock.mockRejectedValueOnce(new Error('host unavailable'));
@@ -92,6 +107,67 @@ test('findings need source evidence, a concrete failure path and suggested verif
     { ...finding, summary: 'no trigger', failureScenario: undefined }]);
   const result = await runWorkflow(workflow(), options);
   expect(artifact(result).findings.map((x: any) => x.summary)).toEqual(['unsafe path']);
+});
+
+const improvement = { kind: 'improvement', file: 'subject.ts', line: 1, severity: 'low',
+  summary: 'scope parsing is duplicated', evidence: 'subject.ts re-parses the collected diff',
+  recommendation: 'pass the collected paths to the consumer',
+  suggestedVerification: 'route a Git-quoted path through review' };
+
+test('mixed findings keep valid defects and improvements, report discarded improvements, and keep the defect signal', async () => {
+  const options = fixture();
+  host([finding, improvement,
+    { ...improvement, summary: 'missing support', evidence: null, recommendation: null },
+    { ...improvement, summary: 'inflated high', severity: 'high' },
+    { ...improvement, summary: 'inflated critical', severity: 'critical' }]);
+  const result = await runWorkflow(workflow(), options);
+  const value = artifact(result);
+  expect(value.findings.map((x: any) => `${x.kind}:${x.summary}:${x.blocking}`))
+    .toEqual(['defect:unsafe path:false', 'improvement:scope parsing is duplicated:false']);
+  expect(value.diagnostics.map((x: any) => x.summary)).toEqual(['missing support', 'inflated high', 'inflated critical']);
+  expect(result.signalSnapshot).toMatchObject({ kind: 'review-findings', findingCount: 1,
+    severityCounts: { critical: 0, high: 1, medium: 0, low: 0, info: 0 } });
+  const report = String(result.output);
+  expect(report.indexOf('unsafe path')).toBeLessThan(report.indexOf('## Design improvements'));
+  expect(report).toContain([
+    '  Recommendation: pass the collected paths to the consumer',
+    '  Suggested verification (not executed): route a Git-quoted path through review',
+  ].join('\n'));
+  expect(report).toContain('## Discarded findings');
+  expect(report).toContain('[low] missing support — subject.ts:1: improvement evidence is missing; improvement recommendation is missing');
+  expect(report).toContain('[critical] inflated critical — subject.ts:1: improvement severity cannot be critical');
+});
+
+test('improvements beyond the limit are counted once and never truncate defects', async () => {
+  const options = fixture();
+  const defects = [1, 2, 3, 4].map(line => ({ ...finding, line, summary: `defect ${line}` }));
+  const improvements = [1, 2, 3, 4, 5].map(line => ({ ...improvement, line, summary: `improvement ${line}` }));
+  host([...defects, ...improvements, { ...improvements[4], evidence: 'duplicate of the fifth improvement' }]);
+  const result = await runWorkflow(workflow(), options);
+  const value = artifact(result);
+  expect(value.findings.filter((x: any) => x.kind === 'defect')).toHaveLength(4);
+  expect(value.findings.filter((x: any) => x.kind === 'improvement').map((x: any) => x.line)).toEqual([1, 2, 3]);
+  expect(value.omittedImprovementCount).toBe(2);
+  expect(result.signalSnapshot).toMatchObject({ findingCount: 4 });
+  expect(String(result.output)).toContain('2 more valid improvement(s) not shown (limit 3).');
+});
+
+test.each([
+  [{ findings: [{ ...improvement, kind: 'suggestion' }] }, 'invalid finding kind: suggestion'],
+  [{ findings: [{ ...improvement, line: 'one' }] }, 'finding.line must be a positive integer'],
+  [{ results: [] }, 'review output must be an array or { findings: [...] }'],
+])('core finding contract errors still fail the review', async (parsed, message) => {
+  const options = fixture();
+  host().mockResolvedValueOnce({ parsed, text: JSON.stringify(parsed) });
+  await expect(runWorkflow(workflow(), options)).rejects.toThrow(message);
+});
+
+test('the host wire schema requires a finding kind', async () => {
+  const options = fixture(); const mock = host();
+  await runWorkflow(workflow(), options);
+  const schema = mock.mock.calls[0]![1] as any;
+  expect(schema.properties.findings.items.properties.kind).toEqual({ enum: ['defect', 'improvement'] });
+  expect(schema.properties.findings.items.required).toContain('kind');
 });
 
 test('an empty diff makes no host call and does not claim execution success', async () => {

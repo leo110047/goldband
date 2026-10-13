@@ -56,6 +56,8 @@ at grep output.
 - Report concrete verification gaps even without a demonstrated product defect;
   identify the requirement or risk, inadequate evidence, and needed check.
 - Partial implementations where finishing the explicit contract is modest.
+- Tests must assert observable behavior, survive refactors, and not mock the
+  path under test; name gaps in existing checks or their wiring.
 
 ### Architecture And Maintainability
 

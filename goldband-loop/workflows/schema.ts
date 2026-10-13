@@ -2,10 +2,13 @@ import type {
   QaCheck,
   QaCheckResult,
   ReviewFinding,
+  ReviewFindingDiagnostic,
+  ReviewFindingSet,
   SchemaValidator,
 } from './types';
 
 const severities = new Set(['critical', 'high', 'medium', 'low', 'info']);
+const findingKinds = new Set(['defect', 'improvement']);
 
 export const objectSchema: SchemaValidator<Record<string, unknown>> = {
   name: 'object',
@@ -33,6 +36,26 @@ export const findingsSchema: SchemaValidator<ReviewFinding[]> = {
   },
 };
 
+export const reviewFindingSetSchema: SchemaValidator<ReviewFindingSet> = {
+  name: 'review-finding-set',
+  validate(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('expected review finding set object');
+    }
+    const item = value as Record<string, unknown>;
+    if (!Array.isArray(item.diagnostics)) throw new Error('expected finding diagnostics array');
+    const omitted = item.omittedImprovementCount;
+    if (typeof omitted !== 'number' || !Number.isInteger(omitted) || omitted < 0) {
+      throw new Error('omittedImprovementCount must be a non-negative integer');
+    }
+    return {
+      findings: findingsSchema.validate(item.findings),
+      diagnostics: item.diagnostics.map(validateFindingDiagnostic),
+      omittedImprovementCount: omitted,
+    };
+  },
+};
+
 export const qaChecksSchema: SchemaValidator<QaCheck[]> = {
   name: 'qa-checks',
   validate(value) {
@@ -49,37 +72,22 @@ export const qaCheckResultsSchema: SchemaValidator<QaCheckResult[]> = {
   },
 };
 
-export function normalizeFindings(findings: ReviewFinding[]): ReviewFinding[] {
-  const seen = new Set<string>();
-  const out: ReviewFinding[] = [];
-  for (const finding of findings) {
-    const key = [
-      finding.file,
-      finding.line ?? '',
-      finding.severity,
-      finding.summary,
-    ].join('\0');
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(finding);
-  }
-  return out;
-}
-
 function validateFinding(value: unknown): ReviewFinding {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('finding must be an object');
   }
   const item = value as Record<string, unknown>;
+  const kind = requiredString(item.kind, 'kind');
+  if (!findingKinds.has(kind)) throw new Error(`invalid finding kind: ${kind}`);
   const file = requiredString(item.file, 'file');
-  const severity = requiredString(item.severity, 'severity');
-  if (!severities.has(severity)) throw new Error(`invalid severity: ${severity}`);
+  const severity = requiredSeverity(item.severity);
   const summary = requiredString(item.summary, 'summary');
   return {
     id: optionalString(item.id),
+    kind: kind as ReviewFinding['kind'],
     file,
     line: optionalLine(item.line),
-    severity: severity as ReviewFinding['severity'],
+    severity,
     summary,
     evidence: optionalString(item.evidence),
     recommendation: optionalString(item.recommendation),
@@ -89,10 +97,28 @@ function validateFinding(value: unknown): ReviewFinding {
     failureScenario: optionalString(item.failureScenario),
     suggestedVerification: optionalString(item.suggestedVerification),
     blocking: optionalBoolean(item.blocking),
-    specialist: optionalString(item.specialist),
-    contributingSpecialists: optionalStringArray(item.contributingSpecialists),
     reproductionStep: optionalString(item.reproductionStep),
   };
+}
+
+function validateFindingDiagnostic(value: unknown): ReviewFindingDiagnostic {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('finding diagnostic must be an object');
+  }
+  const item = value as Record<string, unknown>;
+  return {
+    file: requiredString(item.file, 'file', 'finding diagnostic'),
+    line: optionalLine(item.line),
+    severity: requiredSeverity(item.severity),
+    summary: requiredString(item.summary, 'summary', 'finding diagnostic'),
+    reason: requiredString(item.reason, 'reason', 'finding diagnostic'),
+  };
+}
+
+function requiredSeverity(value: unknown): ReviewFinding['severity'] {
+  const severity = requiredString(value, 'severity');
+  if (!severities.has(severity)) throw new Error(`invalid severity: ${severity}`);
+  return severity as ReviewFinding['severity'];
 }
 
 function validateQaCheck(value: unknown): QaCheck {
@@ -144,14 +170,4 @@ function optionalBoolean(value: unknown): boolean | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== 'boolean') throw new Error('optional field must be boolean');
   return value;
-}
-
-function optionalStringArray(value: unknown): string[] | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (!Array.isArray(value)) throw new Error('optional field must be string array');
-  const strings = value.map((item) => {
-    if (typeof item !== 'string') throw new Error('optional field must be string array');
-    return item.trim();
-  }).filter(Boolean);
-  return strings.length > 0 ? strings : undefined;
 }

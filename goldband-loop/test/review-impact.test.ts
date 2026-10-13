@@ -29,7 +29,7 @@ describe('review impact graph', () => {
       const result = collectReviewImpactContext(
         workflowContext(repo, goldbandHome, 'single-file'),
         { source: 'fixture', diff: '+single file', changedFiles: ['src/only.ts'] },
-        createReviewTimeBudget({ specialists: 'off' }),
+        createReviewTimeBudget({}),
       );
 
       expect(result.impact).toMatchObject({

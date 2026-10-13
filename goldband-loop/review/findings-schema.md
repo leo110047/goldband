@@ -4,10 +4,11 @@ Independent `review/code` output use this shape:
 
 ```json
 {
+  "kind": "defect|improvement",
   "file": "path/to/file.ts",
   "line": 42,
   "severity": "critical|high|medium|low|info",
-  "category": "correctness-contract|testing|security|performance|migration-data|api-host-parity|maintainability|ux-design|specialist-runtime|specialist-skipped|host-capability",
+  "category": "correctness-contract|testing|security|performance|migration-data|api-host-parity|maintainability|ux-design|host-capability",
   "ruleId": "architecture-boundaries",
   "policySource": "rules/architecture-boundaries.md",
   "summary": "One-sentence problem.",
@@ -15,9 +16,7 @@ Independent `review/code` output use this shape:
   "evidence": "Specific diff/code/test/config evidence.",
   "recommendation": "What should change. Text only; no fixes are applied.",
   "suggestedVerification": "Command, test, readback, or manual check that proves the fix.",
-  "blocking": true,
-  "specialist": "testing",
-  "contributingSpecialists": ["testing", "correctness-contract"]
+  "blocking": true
 }
 ```
 
@@ -25,11 +24,18 @@ Validity rules:
 
 - Use `null` for optional fields that do not apply when a JSON schema requires
   the key.
-- Require an exact `file` and `line`, concrete `evidence`, and a `failureScenario`.
+- A `defect` requires an exact `file` and `line`, concrete `evidence`, a
+  `failureScenario`, and `suggestedVerification` or `reproductionStep`.
   Apply `shared-rubric.md` to distinguish product defects from verification gaps;
   an undetected contract violation is not an observed product failure.
-- `recommendation`, `suggestedVerification`, policy, and specialist fields are
-  metadata. They cannot substitute for the validity requirements above.
+- An `improvement` requires non-empty `evidence` and `recommendation` (no
+  `failureScenario` needed) and severity `medium`, `low`, or `info`. The runtime forces
+  `blocking` to `false`, keeps at most three after deduplication, reports how
+  many valid improvements were omitted, and lists invalid improvements with the
+  reason they were discarded. It never reclassifies kind or severity.
+- Only defects count toward the review signal.
+- `recommendation`, `suggestedVerification`, and policy fields are metadata for
+  defects. They cannot substitute for the validity requirements above.
 - Human-readable reports must preserve `evidence` and
   `suggestedVerification` when those fields are present in the validated
   finding.
