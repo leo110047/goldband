@@ -363,6 +363,58 @@ function testProfileUninstall() {
   );
 }
 
+// codex/local holds user-owned approvals that uninstall keeps.
+function isOwnedRepoLink(file) {
+  const target = path.resolve(path.dirname(file), fs.readlinkSync(file));
+  const userOverlay = path.join(process.cwd(), 'codex', 'local', path.sep);
+  return (
+    target.startsWith(`${process.cwd()}${path.sep}`) &&
+    !target.startsWith(userOverlay)
+  );
+}
+
+function repoLinks(directory) {
+  const links = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const full = path.join(directory, entry.name);
+    if (entry.isSymbolicLink()) {
+      if (isOwnedRepoLink(full)) links.push(full);
+    } else if (entry.isDirectory()) {
+      links.push(...repoLinks(full));
+    }
+  }
+  return links;
+}
+
+function testInstallUninstallRoundTrip() {
+  const context = fixture('install-uninstall-roundtrip');
+  install(context, 'all-tools');
+  assertBundleInstalled(context);
+  assert.ok(repoLinks(context.home).length > 0, 'all-tools links repo assets');
+  install(context, 'uninstall');
+  assert.deepEqual(repoLinks(context.home), []);
+  for (const file of [
+    '.codex/AGENTS.md',
+    '.codex/hooks.json',
+    '.codex/hooks',
+    '.codex/rules/goldband.rules',
+    '.codex/review-runtime/rules-resolver.js',
+    '.claude/hooks/scripts',
+    '.claude/commands',
+    '.claude/rules',
+    '.claude/goldband-rules',
+  ]) {
+    assert.equal(
+      fs.existsSync(path.join(context.home, file)),
+      false,
+      `${file} remains after uninstall`,
+    );
+  }
+  console.log(
+    '[OK] Uninstall removes every component that all-tools installed',
+  );
+}
+
 function testBoundedBackups(host) {
   const context = fixture(`backups-${host}`);
   copyInstaller(context);
@@ -435,6 +487,7 @@ try {
   testUninstallSettingsFailure(false);
   testUninstallSettingsFailure(true);
   testProfileUninstall();
+  testInstallUninstallRoundTrip();
   testBoundedBackups('codex');
   testBoundedBackups('claude');
   testClaudeInvalidAndNoop();
