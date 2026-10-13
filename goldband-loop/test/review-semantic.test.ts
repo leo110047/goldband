@@ -62,6 +62,8 @@ test('default review needs no manifest or authority and cannot emit execution ev
   const prompt = mock.mock.calls[0]![0] as string;
   expect(prompt).toContain('+unsafe();');
   expect(prompt).toContain('producers and consumers');
+  expect(prompt).toContain('Report every valid finding');
+  expect(prompt).toContain('Report each instance of a recurring failure as its own finding');
   expect(prompt).not.toContain('BEHAVIOR_MATRIX_START');
   expect(prompt).not.toContain('TYPED_EVIDENCE_SUMMARY_START');
 });

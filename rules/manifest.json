@@ -67,7 +67,7 @@
         "baseline"
       ],
       "reviewCriteria": [
-        "Fix the failure class at its owning layer rather than suppressing one symptom.",
+        "Fix the failure class at its owning layer rather than suppressing one symptom; the fix covers every instance of the reported failure class within the change scope and reports instances outside it.",
         "Prefer reuse, then deletion, then addition; new abstraction needs a real ownership boundary or stable domain concept.",
         "Reject unrelated refactors, speculative flags, duplicated truth, and gate bypasses.",
         "Choose the smallest sufficient solution; a heavier permanent mechanism needs current evidence naming what the smaller option cannot cover and its ongoing cost."

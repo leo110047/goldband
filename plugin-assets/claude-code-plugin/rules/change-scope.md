@@ -53,6 +53,9 @@ enforcement and backstop.
   the requirement is one isolated instance or a recurring class. Name the
   authoritative owner, the expected change it must survive, and whether the
   proposal would create a second source of truth.
+- A failure class is every location with the same root cause or violated
+  contract; a review finding reports one instance of it. Fix every instance of
+  the class within the change scope, and report instances outside it.
 - Do not introduce an abstraction, option, or indirection only for hypothetical
   future users. A single current call site is justified when it creates a real
   ownership boundary, external adapter, test seam, or stable domain concept;
