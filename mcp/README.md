@@ -43,6 +43,35 @@ server, copy the `goldband` entry from the relevant template into your host MCP
 config, replace `/path/to/goldband` with this checkout path, and set the entry
 to enabled.
 
+## Playwright MCP for Browser QA
+
+Goldband no longer ships its own browser. For `qa/app` and other browser work,
+use the host's browser tool: Claude in Chrome, Codex's built-in browser, or the
+`playwright` entry in the templates. The template pins `@playwright/mcp@0.0.83`
+and adds two defaults:
+
+- `--isolated` keeps the browser profile in memory, so the agent never reuses
+  your real sign-ins and nothing persists between sessions.
+- `--allowed-origins=http://localhost:*;http://127.0.0.1:*` limits navigation to
+  local development servers. Add your staging origin (for example
+  `;https://staging.example.com`) when you need it. Playwright documents this
+  option as not a security boundary (it does not cover redirects), so treat it
+  as protection against accidental browsing, not enforcement.
+
+Page content returned by Playwright MCP is not wrapped or scanned for prompt
+injection. The protection against injected instructions is what the agent may
+do afterwards: native permissions, auto-mode review, sandboxing, and the
+approval rules in `goldband-loop/manuals/browser.md`. For unfamiliar external
+sites, prefer Claude in Chrome, which has its own prompt-injection safeguards.
+
+To enable it, copy the `playwright` entry into your host config and set it to
+enabled, or add it directly:
+
+```bash
+claude mcp add playwright -- npx -y @playwright/mcp@0.0.83 --isolated \
+  "--allowed-origins=http://localhost:*;http://127.0.0.1:*"
+```
+
 ## Token-Backed Setup Flow
 
 Token-backed servers are still opt-in. Do not commit credentials.
@@ -103,6 +132,12 @@ Verified with MCP Inspector on 2026-07-02:
 - `context7`: starts successfully and exposes `resolve-library-id` and
   `query-docs`.
 - `playwright`: starts successfully and exposes browser automation tools.
+
+Verified on 2026-10-12 with `@playwright/mcp@0.0.83` through an MCP SDK stdio
+client: 32 tools listed; the QA fixtures under
+`goldband-loop/test/fixtures/qa-eval*.html` surfaced all 15 seeded bugs; and
+the template's `--allowed-origins` value allowed `localhost`/`127.0.0.1` on any
+port while blocking `https://example.com`.
 
 Not verified by default:
 

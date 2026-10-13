@@ -28,7 +28,12 @@
     },
     "playwright": {
       "command": "npx",
-      "args": ["-y", "@playwright/mcp"],
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.83",
+        "--isolated",
+        "--allowed-origins=http://localhost:*;http://127.0.0.1:*"
+      ],
       "disabled": true
     }
   }
