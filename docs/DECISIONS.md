@@ -2800,4 +2800,18 @@ re-renders the whole user config. The template also sets `--output-dir` to a
 `/path/to/goldband-home` placeholder that the installer resolves to an
 absolute `$GOLDBAND_HOME/playwright-mcp`: without it Playwright MCP writes a
 `.playwright-mcp/` directory into the project, and the option does not expand
-`~`.
+`~`. `--output-max-size=5242880` uses Playwright MCP's own eviction instead of
+a goldband cleanup job. It is a threshold, not a hard cap: after each tool
+response, `_enforceOutputBudget` in 0.0.83 deletes the oldest earlier files
+until the directory is under 5 MB and never deletes that response's own files.
+Recent snapshots persist until evicted, so the README tells users to delete the
+directory after testing sensitive data. `--snapshot-mode none` was rejected
+because the agent needs page snapshots to do QA.
+
+The accepted trade-off is that a long session can evict a screenshot or
+snapshot an earlier response returned, so the agent may find that path gone and
+must capture it again. On the QA fixtures a PNG screenshot measured 19-44 KB and
+a page snapshot about 4 KB, so 5 MB holds well over a hundred captures there;
+image-heavy pages, estimated (not measured) at a few hundred KB per screenshot,
+still leave room for roughly ten to twenty. No full `qa/app` session has been
+measured against the threshold.

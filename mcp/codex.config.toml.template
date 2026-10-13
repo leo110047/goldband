@@ -32,5 +32,6 @@ args = [
   "--isolated",
   "--allowed-origins=http://localhost:*;http://127.0.0.1:*",
   "--output-dir=/path/to/goldband-home/playwright-mcp",
+  "--output-max-size=5242880",
 ]
 enabled = false

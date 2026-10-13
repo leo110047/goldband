@@ -13,7 +13,8 @@ import {
 } from './lib/config-install-fixture.mjs';
 
 // The template's output-dir placeholder resolves under the user's GOLDBAND_HOME,
-// so Playwright MCP never writes snapshots into the project directory.
+// so Playwright MCP never writes snapshots into the project directory, and the
+// size cap evicts old snapshots instead of letting them accumulate.
 function templateArgs(context) {
   return [
     '-y',
@@ -21,6 +22,7 @@ function templateArgs(context) {
     '--isolated',
     '--allowed-origins=http://localhost:*;http://127.0.0.1:*',
     `--output-dir=${context.env.GOLDBAND_HOME}/playwright-mcp`,
+    '--output-max-size=5242880',
   ];
 }
 

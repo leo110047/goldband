@@ -48,7 +48,7 @@ to enabled.
 Goldband no longer ships its own browser. For `qa/app` and other browser work,
 use the host's browser tool: Claude in Chrome, Codex's built-in browser, or the
 `playwright` entry in the templates. The template pins `@playwright/mcp@0.0.83`
-and adds three defaults:
+and adds four defaults:
 
 - `--isolated` keeps the browser profile in memory, so the agent never reuses
   your real sign-ins and nothing persists between sessions.
@@ -62,6 +62,15 @@ and adds three defaults:
   `.playwright-mcp/` directory into whatever directory the agent runs in.
   Replace the placeholder with an absolute path: the option does not expand
   `~`, and a `~/...` value creates a literal `~` directory in the project.
+- `--output-max-size=5242880` sets a 5 MB eviction threshold, not a hard cap.
+  After each tool response, Playwright MCP deletes the oldest earlier output
+  files until the directory is back under 5 MB; files written by that response
+  are never deleted, so one oversized response can leave the directory above
+  the threshold, and a failed delete is only logged at debug level. Earlier
+  files from the same session can be evicted too. This bounds growth but does
+  not erase recent output: snapshots hold page text in plain form, so after
+  testing a system with real or sensitive data, delete
+  `$GOLDBAND_HOME/playwright-mcp` (default `~/.goldband/playwright-mcp`).
 
 Page content returned by Playwright MCP is not wrapped or scanned for prompt
 injection. The protection against injected instructions is what the agent may
@@ -79,8 +88,8 @@ absolute path, leaves any existing `playwright` entry untouched, and wraps
 Set `GOLDBAND_SKIP_PLAYWRIGHT_MCP=1` to skip it; `./install.sh status` reports
 whether each host has it. Other install targets and `auto-refresh` never add
 it, so a removed entry stays removed. The first use downloads the package from
-npm through `npx`. An entry installed before the output-dir default keeps its
-old arguments; remove it (`claude mcp remove playwright -s user`, and the
+npm through `npx`. An entry installed before the output-dir or size-cap
+defaults keeps its old arguments; remove it (`claude mcp remove playwright -s user`, and the
 `[mcp_servers.playwright]` table) and rerun the installer to pick it up.
 
 To add it by hand instead:
@@ -88,7 +97,7 @@ To add it by hand instead:
 ```bash
 claude mcp add --scope user playwright -- npx -y @playwright/mcp@0.0.83 --isolated \
   "--allowed-origins=http://localhost:*;http://127.0.0.1:*" \
-  "--output-dir=$HOME/.goldband/playwright-mcp"
+  "--output-dir=$HOME/.goldband/playwright-mcp" --output-max-size=5242880
 ```
 
 ## Token-Backed Setup Flow
