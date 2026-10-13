@@ -1,11 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import {
-  closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync,
-  readFileSync, readSync, realpathSync, writeFileSync,
-} from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { assertValidReviewExecutionOptions, MAX_REVIEW_DIFF_BYTES, MAX_REVIEW_PROMPT_OVERHEAD_BYTES } from '../lib/review-runtime-contract';
+import { readStableRegularFile } from '../lib/stable-file-read';
 import { materializeReviewUntrackedFile } from '../lib/verification-receipt';
 import { stateRoot } from './evidence';
 import { adapterFor, HostRunError, type HostExecutionPolicy, type HostUsage } from './host-adapter';
@@ -23,7 +21,6 @@ import { resolveReviewWorkspace } from './review-workspace';
 
 export type UntrackedDiffState = { includedBytes: number };
 const REVIEW_GIT_MAX_BUFFER_BYTES = MAX_REVIEW_DIFF_BYTES + 1024 * 1024;
-const REVIEW_FILE_READ_CHUNK_BYTES = 64 * 1024;
 
 type ReviewResult = {
   schemaVersion: 1;
@@ -68,12 +65,13 @@ function collectDiff(ctx: WorkflowContext): ReviewDiffInput {
   );
   if (ctx.options.diffFile) {
     const file = resolve(ctx.cwd, ctx.options.diffFile);
-    const diff = readBoundedRegularFile(
-      file,
-      MAX_REVIEW_DIFF_BYTES,
-      timeBudget,
-      'review/code diff file',
-    ).toString('utf8');
+    const label = 'review/code diff file';
+    const diff = readStableRegularFile(file, {
+      label,
+      maxBytes: MAX_REVIEW_DIFF_BYTES,
+      checkpoint: () => timeBudget.assertWithinDeadline(),
+      tooLarge: () => reviewDiffSizeError(label),
+    }).toString('utf8');
     return {
       source: `diff-file:${file}`,
       diff,
@@ -388,88 +386,6 @@ export function untrackedFileDiff(
     beforeOpen,
     afterFirstRead,
   );
-}
-
-function readBoundedRegularFile(
-  file: string,
-  maxBytes: number,
-  timeBudget: ReviewTimeBudget | undefined,
-  label: string,
-  beforeOpen: () => void = () => {},
-  expectedStat = lstatSync(file),
-  afterFirstRead: () => void = () => {},
-): Buffer {
-  if (expectedStat.isSymbolicLink() || !expectedStat.isFile()) {
-    throw new Error(`${label} must be a regular file: ${file}`);
-  }
-  if (expectedStat.size > maxBytes) throw reviewDiffSizeError(label, maxBytes);
-
-  beforeOpen();
-  const flags = constants.O_RDONLY |
-    (constants.O_NOFOLLOW ?? 0) |
-    (constants.O_NONBLOCK ?? 0);
-  let fd: number | undefined;
-  try {
-    fd = openSync(file, flags);
-    const openedStat = fstatSync(fd);
-    if (!sameFileVersion(openedStat, expectedStat)) {
-      throw new Error(`${label} changed while it was being opened: ${file}`);
-    }
-    if (openedStat.size > maxBytes) throw reviewDiffSizeError(label, maxBytes);
-    const buffer = readDescriptorWithinLimit(
-      fd,
-      maxBytes,
-      timeBudget,
-      label,
-      afterFirstRead,
-    );
-    if (!sameFileVersion(fstatSync(fd), openedStat)) {
-      throw new Error(`${label} changed while it was being read: ${file}`);
-    }
-    return buffer;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
-}
-
-function readDescriptorWithinLimit(
-  fd: number,
-  maxBytes: number,
-  timeBudget: ReviewTimeBudget | undefined,
-  label: string,
-  afterFirstRead: () => void,
-): Buffer {
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-  while (true) {
-    timeBudget?.assertWithinDeadline();
-    const remainingWithSentinel = (maxBytes + 1) - totalBytes;
-    if (remainingWithSentinel <= 0) throw reviewDiffSizeError(label, maxBytes);
-    const chunk = Buffer.allocUnsafe(
-      Math.min(REVIEW_FILE_READ_CHUNK_BYTES, remainingWithSentinel),
-    );
-    const bytesRead = readSync(fd, chunk, 0, chunk.length, null);
-    if (bytesRead === 0) break;
-    totalBytes += bytesRead;
-    if (totalBytes > maxBytes) throw reviewDiffSizeError(label, maxBytes);
-    chunks.push(chunk.subarray(0, bytesRead));
-    if (chunks.length === 1) afterFirstRead();
-  }
-  timeBudget?.assertWithinDeadline();
-  return Buffer.concat(chunks, totalBytes);
-}
-
-function sameFileVersion(
-  left: ReturnType<typeof fstatSync>,
-  right: ReturnType<typeof fstatSync>,
-): boolean {
-  return left.isFile() &&
-    right.isFile() &&
-    left.dev === right.dev &&
-    left.ino === right.ino &&
-    left.size === right.size &&
-    left.mtimeMs === right.mtimeMs &&
-    left.ctimeMs === right.ctimeMs;
 }
 
 function assertReviewDiffSize(diff: string): void {

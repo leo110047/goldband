@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -102,6 +103,40 @@ describe('review impact graph', () => {
       expect(second.impact.reusedFiles).toBe(4);
       expect(second.impact.observedTestFiles).toEqual(['tests/consumer.test.ts']);
       expect(existsSync(join(goldbandHome, 'review-impact'))).toBe(true);
+    });
+  });
+
+  test('skips a source file that changes while the index reads it', () => {
+    withRepository(({ repo, goldbandHome }) => {
+      writeTracked(repo, 'src/core.ts', 'export const core = true;\n');
+      writeTracked(repo, 'src/other.ts', 'export const other = true;\n');
+      writeTracked(repo, 'src/consumer.ts', "import { core } from './core';\nexport const consumer = core;\n");
+      const changing = join(repo, 'src', 'changing.ts');
+      writeTracked(
+        repo,
+        'src/changing.ts',
+        `import { core } from './core';\n${'// padding\n'.repeat(15_000)}`,
+      );
+      const budget = createReviewTimeBudget({});
+      const timeBudget = {
+        ...budget,
+        assertWithinDeadline: () => {
+          // Every deadline checkpoint, including those inside a file read,
+          // grows the file after the index validated its metadata.
+          appendFileSync(changing, '// grown\n');
+          budget.assertWithinDeadline();
+        },
+      };
+
+      const result = collectReviewImpactContext(
+        workflowContext(repo, goldbandHome, 'changing-source'),
+        { source: 'fixture', diff: '+core\n+other', changedFiles: ['src/core.ts', 'src/other.ts'] },
+        timeBudget,
+      );
+
+      expect(result.impact.diagnostics.some((line) =>
+        line.startsWith('source file changed or was unreadable: src/changing.ts'))).toBe(true);
+      expect(result.impact.impactedFiles.map((item) => item.file)).toEqual(['src/consumer.ts']);
     });
   });
 

@@ -3,18 +3,13 @@
 import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
-	closeSync,
-	constants,
 	cpSync,
 	existsSync,
-	fstatSync,
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
-	openSync,
 	readdirSync,
 	readFileSync,
-	readSync,
 	realpathSync,
 	rmSync,
 	statSync,
@@ -34,6 +29,7 @@ import {
 	runManagedCommand,
 } from "../lib/managed-worktree-boundary";
 import { superviseReviewRuntime } from "../lib/review-runtime-process";
+import { readStableRegularFile } from "../lib/stable-file-read";
 import {
 	acquireReviewExecutionLease,
 	releaseReviewExecutionLease,
@@ -411,87 +407,15 @@ export function readStablePlanInput(
 		afterFirstRead?: () => void;
 	} = {},
 ): Buffer {
-	const resolvedFile = resolve(file);
-	const pathBefore = lstatSync(resolvedFile);
-	if (pathBefore.isSymbolicLink()) {
-		throw new Error("plan create --input must not be a symbolic link");
-	}
-	if (!pathBefore.isFile()) {
-		throw new Error("plan create --input must be a regular file");
-	}
-	const noFollowFlag =
-		options.noFollowFlag === undefined
-			? (constants.O_NOFOLLOW ?? null)
-			: options.noFollowFlag;
-	const flags = constants.O_RDONLY | (noFollowFlag ?? 0);
-	let descriptor: number;
-	try {
-		descriptor = openSync(resolvedFile, flags);
-	} catch (error) {
-		if (error instanceof Error && "code" in error && error.code === "ELOOP") {
-			throw new Error("plan create --input must not be a symbolic link");
-		}
-		throw error;
-	}
-	try {
-		const before = fstatSync(descriptor);
-		const preciseBefore = fstatSync(descriptor, { bigint: true });
-		if (
-			!before.isFile() ||
-			before.ino !== pathBefore.ino ||
-			before.dev !== pathBefore.dev
-		) {
-			throw new Error("plan create --input must be a regular file");
-		}
-		if (before.size > MAX_PLAN_INPUT_BYTES) {
-			throw new Error(
-				`plan create --input exceeds ${MAX_PLAN_INPUT_BYTES} bytes`,
-			);
-		}
-		const content = readPlanInputBuffer(descriptor, before.size);
-		options.afterFirstRead?.();
-		const confirmation = readPlanInputBuffer(descriptor, before.size);
-		const after = fstatSync(descriptor);
-		const preciseAfter = fstatSync(descriptor, { bigint: true });
-		const pathAfter = lstatSync(resolvedFile);
-		if (
-			!content.equals(confirmation) ||
-			after.size !== before.size ||
-			after.ino !== before.ino ||
-			after.dev !== before.dev ||
-			after.mtimeMs !== before.mtimeMs ||
-			preciseAfter.mtimeNs !== preciseBefore.mtimeNs ||
-			preciseAfter.ctimeNs !== preciseBefore.ctimeNs ||
-			pathAfter.isSymbolicLink() ||
-			pathAfter.ino !== before.ino ||
-			pathAfter.dev !== before.dev
-		) {
-			throw new Error("plan create --input changed while being read");
-		}
-		return content;
-	} finally {
-		closeSync(descriptor);
-	}
-}
-
-function readPlanInputBuffer(descriptor: number, size: number): Buffer {
-	const content = Buffer.alloc(size);
-	let offset = 0;
-	while (offset < content.length) {
-		const bytes = readSync(
-			descriptor,
-			content,
-			offset,
-			content.length - offset,
-			offset,
-		);
-		if (bytes === 0) break;
-		offset += bytes;
-	}
-	if (offset !== size) {
-		throw new Error("plan create --input changed while being read");
-	}
-	return content;
+	return readStableRegularFile(resolve(file), {
+		label: "plan create --input",
+		maxBytes: MAX_PLAN_INPUT_BYTES,
+		tooLarge: () =>
+			new Error(`plan create --input exceeds ${MAX_PLAN_INPUT_BYTES} bytes`),
+		confirmContent: true,
+		noFollowFlag: options.noFollowFlag,
+		afterFirstRead: options.afterFirstRead,
+	});
 }
 
 export function planCreate(

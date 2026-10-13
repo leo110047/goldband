@@ -21,6 +21,7 @@ import {
 } from "../workflows/work-map";
 import { WorkMapStore } from "../workflows/work-map-store";
 import { detectSecretLikeContent, SECRET_CONTENT_RULES } from "./secret-content";
+import { readStableRegularFile } from "./stable-file-read";
 
 type VerificationStage = "red" | "green" | "check" | "manual";
 
@@ -557,26 +558,19 @@ export function materializeReviewUntrackedFile(
 		);
 	}
 	beforeOpen();
-	const flags = fs.constants.O_RDONLY |
-		(fs.constants.O_NOFOLLOW ?? 0) |
-		(fs.constants.O_NONBLOCK ?? 0);
-	let descriptor: number | undefined;
 	let content: Buffer;
 	try {
-		descriptor = fs.openSync(absolute, flags);
-		const opened = fs.fstatSync(descriptor);
-		if (!sameFileVersion(opened, stat)) throw new Error("file changed");
-		content = readDescriptor(descriptor, maxFileBytes, afterFirstRead);
-		if (!sameFileVersion(fs.fstatSync(descriptor), opened)) {
-			throw new Error("file changed");
-		}
+		content = readStableRegularFile(absolute, {
+			label: "untracked file",
+			maxBytes: maxFileBytes,
+			expected: stat,
+			afterFirstRead,
+		});
 	} catch {
 		return skippedReviewFile(
 			relative,
 			"file changed or became unreadable during review collection",
 		);
-	} finally {
-		if (descriptor !== undefined) fs.closeSync(descriptor);
 	}
 	if (state.includedBytes + content.length > maxTotalBytes) {
 		return skippedReviewFile(
@@ -934,37 +928,6 @@ function redactBoundedManualField(
 		throw new Error(`${label} exceeds ${maxBytes} byte limit`);
 	}
 	return redactSummary(trimmed);
-}
-
-function readDescriptor(
-	descriptor: number,
-	maxBytes: number,
-	afterFirstRead: () => void,
-): Buffer {
-	const chunks: Buffer[] = [];
-	let total = 0;
-	while (true) {
-		const remaining = maxBytes + 1 - total;
-		if (remaining <= 0) throw new Error("file exceeds review limit");
-		const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, remaining));
-		const count = fs.readSync(descriptor, chunk, 0, chunk.length, null);
-		if (count === 0) break;
-		total += count;
-		if (total > maxBytes) throw new Error("file exceeds review limit");
-		chunks.push(chunk.subarray(0, count));
-		if (chunks.length === 1) afterFirstRead();
-	}
-	return Buffer.concat(chunks, total);
-}
-
-function sameFileVersion(left: fs.Stats, right: fs.Stats): boolean {
-	return left.isFile() &&
-		right.isFile() &&
-		left.dev === right.dev &&
-		left.ino === right.ino &&
-		left.size === right.size &&
-		left.mtimeMs === right.mtimeMs &&
-		left.ctimeMs === right.ctimeMs;
 }
 
 function isLikelyBinary(content: Buffer): boolean {
