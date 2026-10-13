@@ -148,7 +148,7 @@ Review 範圍接線、Finding 處理與 checker advisory 由主計畫負責。�
 | A3 | Marker 組裝、相依連結與讀回缺失檢查移入 `projection.ts`；CLI wire helper 移入 `cli-adapter.ts`；共用測試涵蓋兩個 provider | 無 |
 | A4 | 新增 `goldband-loop/lib/knowledge-search.cjs`，CLI 與 MCP 共用篩選、排序與 knowledge home | Home 仍是 `GOLDBAND_HOME` → `~/.goldband`，沒有改用 `state-root`，避免改變既有 knowledge 的存放位置。行為變更：明確指定 `--status retired` 時會回傳 retired 條目；MCP 的 `status: 'all'` 改為排除 retired，與 CLI 相同 |
 | A5 | Hook secret 規則由 `sync-plugin-assets` 生成到 `goldband-loop/lib/secret-patterns.cjs`；刪除 fallback 規則 | 不直接報錯，改為讓 link 與 copy 安裝都帶有同一份規則 |
-| A6 | `utils.js` 縮減為 5 個有使用端的 export；`core.cjs` 移除 12 個無使用端的 export | 沒有擴充 knip：`core.cjs` 的部分 export 只由 root 測試使用，knip 看不到這些使用端 |
+| A6 | `utils.js` 縮減為 5 個有使用端的 export；`core.cjs` 移除 12 個無使用端的 export | 沒有擴充 knip：knip 看不到 `require` 後以成員方式使用的 export，也看不到依路徑動態載入的模組，誤報過多。之後新增 `scripts/check-unused-exports.mjs`，並接進 pre-commit、`npm test` 與 CI；見 `docs/DECISIONS.md`。啟用時另外移除 32 個只在模組內使用的 export |
 | A7 | 以行為測試取代 upgrade 原始碼比對（突變為 preflight 執行 pull 時會失敗）；刪除 design 空 smoke 測試，LRU 改用公開路由斷言，fixture 改讓 done board 較新（原 fixture 無法區分淘汰順序） | pdftotext 整組移除：`copyPasteGate` 沒有 caller，`make-pdf setup` 不再檢查 pdftotext，Windows CI 移除對應測試 |
 | A8 | 刪除 `scripts/analytics.ts`、`test/analytics.test.ts` 與 `analytics` script | 確認 `goldband-telemetry-log` 不寫 `repo`／`hook_fire`，被刪除的兩個報表段落原本沒有資料來源 |
 | Cross-review | `cross-review-gate.js` 與 `module-loader.js` 改為共用模組並生成到 Codex；請求判斷抽成 `goldband-loop/cross-review/cross-review-request.cjs`，由 core 使用並生成到兩個 Host 的 hook 目錄，因此缺少 core 時與 core 判斷相同的 prompt；Claude 也搜尋已安裝的 runtime，明確要求 cross-review 但缺少 core 時會報錯；回歸測試涵蓋 Claude plugin 佈局載入 `~/.claude/skills/goldband` 的 core，以及缺少 core 的情況 | 無 |

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const DISTRIBUTION_MANIFEST_FILE = 'distribution-manifest.json';
+const DISTRIBUTION_MANIFEST_FILE = 'distribution-manifest.json';
 const MAX_SIDE_ARTIFACT_BYTES = 1024 * 1024;
 const OPTIONAL_GENERATED_SOURCE_INPUTS = new Set([
   'goldband-loop/design/dist',
@@ -55,7 +55,7 @@ export function workflowSourceInputManifest(
   };
 }
 
-export function installedArtifactManifest(runtimeRoot) {
+function installedArtifactManifest(runtimeRoot) {
   const entries = collectEntries(
     runtimeRoot,
     ['.'],

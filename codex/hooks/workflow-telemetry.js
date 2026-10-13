@@ -163,7 +163,4 @@ function buildWorkflowUsageEvents(input, context) {
 
 module.exports = {
   buildWorkflowUsageEvents,
-  firstWorkflowCommand,
-  normalizeEntryName,
-  workflowSlashCommands,
 };

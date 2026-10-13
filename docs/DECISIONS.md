@@ -2857,3 +2857,24 @@ replacements or state migration.
 
 This is a breaking CLI change for callers that passed `--specialists off`.
 Earlier `auto`/`all` budgets in the 2026-07-20 decision remain historical only.
+
+## 2026-10-13: First-Party Exports Outside Knip Need a Consumer
+
+Decision: `scripts/check-unused-exports.mjs` fails when a first-party module in
+`hooks/`, `codex/hooks/`, `scripts/`, `goldband-loop/cross-review/`, skill
+scripts, or `mcp/server/src/` exports a name that no other first-party source
+file mentions. It runs in the pre-commit project style gate for any staged
+source file, in `npm test` as `root:unused-exports`, and in the validate
+workflow. `goldband-loop` TypeScript stays with its existing knip check.
+
+knip was tried on these directories and rejected: it does not see members used
+through `const core = require(...); core.name(...)` or modules loaded by path
+at runtime, so it reported mostly false positives. The dedicated check parses
+`module.exports = { ... }` and ESM `export` declarations and counts any
+identifier mention in another tracked source file as a consumer, including
+tests. Generated copies listed by `managedGeneratedFiles()` and `plugin-assets/`
+are neither checked nor counted, and `hooks/fixtures/` is excluded.
+
+The check is deliberately lenient: a common name mentioned elsewhere counts as
+used, and an export that tests import without exercising still passes. It
+guards against orphaned exports, not against dead code that review must judge.

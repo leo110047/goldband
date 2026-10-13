@@ -11,12 +11,12 @@ export const PLUGIN_ROOT_PATH = path.join(
   'plugin-assets',
   'claude-code-plugin',
 );
-export const ROOT_PLUGIN_MANIFEST_PATH = path.join(
+const ROOT_PLUGIN_MANIFEST_PATH = path.join(
   ROOT_DIR,
   '.claude-plugin',
   'plugin.json',
 );
-export const MARKETPLACE_PATH = path.join(
+const MARKETPLACE_PATH = path.join(
   ROOT_DIR,
   '.claude-plugin',
   'marketplace.json',
@@ -26,12 +26,12 @@ export const PLUGIN_HOOKS_PATH = path.join(
   'hooks',
   'hooks.json',
 );
-export const PLUGIN_MANIFEST_PATH = path.join(
+const PLUGIN_MANIFEST_PATH = path.join(
   PLUGIN_ROOT_PATH,
   '.claude-plugin',
   'plugin.json',
 );
-export const ROOT_PLUGIN_HOOKS_PATH = path.join(
+const ROOT_PLUGIN_HOOKS_PATH = path.join(
   ROOT_DIR,
   'hooks',
   'plugin-hooks.json',
@@ -42,7 +42,7 @@ export const EXPECTED_ASSETS_PATH = path.join(
   'reports',
   'plugin-expected-assets.json',
 );
-export const GENERATED_RULE_SKILL_PATH = path.join(
+const GENERATED_RULE_SKILL_PATH = path.join(
   PLUGIN_ROOT_PATH,
   'skills',
   'goldband-rules',

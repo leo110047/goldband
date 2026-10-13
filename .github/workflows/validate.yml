@@ -57,6 +57,8 @@ jobs:
         run: npm run test:workflow-contracts
       - name: Check coding style gate
         run: node scripts/check-code-style.mjs
+      - name: Check first-party exports have consumers
+        run: npm run test:unused-exports
       - name: Check plugin distribution artifacts are fresh
         run: node scripts/sync-plugin-assets.mjs --check
       - name: Check app support artifacts are fresh

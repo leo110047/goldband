@@ -53,6 +53,16 @@ const checks = [
       file === 'scripts/verify-hook-script-references.py',
   },
   {
+    id: 'unused-exports',
+    label: 'First-party exports have consumers',
+    command: 'node',
+    args: ['scripts/check-unused-exports.mjs'],
+    // Removing a consumer anywhere can orphan an export, so any source runs it.
+    matches: (file) =>
+      /\.(?:js|cjs|mjs|ts|tsx|sh)$/.test(file) &&
+      !file.startsWith('plugin-assets/'),
+  },
+  {
     id: 'codex-portability',
     label: 'Codex portable baseline',
     command: 'bash',

@@ -152,11 +152,8 @@ function getActiveModes(sessionId) {
 }
 
 module.exports = {
-  DEFAULT_SESSION_ID,
   normalizeSessionId,
-  resolveModeStateFile,
   readModeState,
-  writeModeState,
   setModeActive,
   isModeActive,
   getActiveModes,

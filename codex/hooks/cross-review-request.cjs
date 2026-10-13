@@ -1,5 +1,6 @@
-// Recognizes an explicit /goldband-cross-review request. Owned here and
-// generated into the Claude and Codex hook directories so a hook without the
+// Recognizes an explicit /goldband-cross-review request. Owned by
+// goldband-loop/cross-review/cross-review-request.cjs; scripts/sync-plugin-assets.mjs
+// copies it into the Claude and Codex hook directories so a hook without the
 // runtime core applies the same rule when it reports the missing install.
 
 const CODE_FENCE_PATTERN = /```[\s\S]*?```/g;

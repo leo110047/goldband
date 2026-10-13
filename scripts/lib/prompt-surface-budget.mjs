@@ -11,7 +11,7 @@ export const PROMPT_SURFACE_BUDGETS = Object.freeze({
   portableSkillBytes: 16 * 1024,
 });
 
-export function utf8ByteLength(content) {
+function utf8ByteLength(content) {
   return Buffer.byteLength(content, 'utf8');
 }
 
@@ -33,7 +33,7 @@ export function assertPromptSurfaceTotal(label, entries, maxBytes) {
   return totalBytes;
 }
 
-export function formatBytes(bytes) {
+function formatBytes(bytes) {
   if (bytes % 1024 === 0) {
     return `${bytes / 1024} KiB`;
   }

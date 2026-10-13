@@ -12,7 +12,7 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const bunCmd = process.platform === 'win32' ? 'bun.exe' : 'bun';
 
-export const TEST_SUITES = [
+const TEST_SUITES = [
   suite({
     id: 'root:test-environment',
     label: 'Root repository test environment contract',
@@ -82,6 +82,13 @@ export const TEST_SUITES = [
     cwd: ROOT,
     command: npmCmd,
     args: ['run', 'test:sandbox-image-lifecycle'],
+  }),
+  suite({
+    id: 'root:unused-exports',
+    label: 'Root unused export check',
+    cwd: ROOT,
+    command: npmCmd,
+    args: ['run', 'test:unused-exports'],
   }),
   suite({
     id: 'root:codex-portability',
@@ -225,11 +232,11 @@ function selectedSuites(options) {
   return TEST_SUITES.filter((item) => options.suites.has(item.id));
 }
 
-export function formatCommand(item) {
+function formatCommand(item) {
   return [item.command, ...item.args].join(' ');
 }
 
-export function formatSuiteLine(status, item, detail = '') {
+function formatSuiteLine(status, item, detail = '') {
   const suffix = detail ? ` ${detail}` : '';
   return `[test:repo] ${status} ${item.id} - ${item.label}${suffix}`;
 }

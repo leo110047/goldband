@@ -230,11 +230,7 @@ module.exports = {
   dataWindow,
   loadJsonl,
   queryUsageTelemetry,
-  scopedByDays,
   sortedCounts,
   summarizeEvents,
-  summarizeMetrics,
-  summarizeTopEvents,
-  summarizeUsageCategory,
   summarizeWorkflowEntries,
 };
