@@ -78,20 +78,20 @@ export const ExitCode = {
   BadArgs: 1,
   RenderError: 2,
   PagedJsTimeout: 3,
-  BrowseUnavailable: 4,
+  ChromiumUnavailable: 4,
 } as const;
 export type ExitCode = typeof ExitCode[keyof typeof ExitCode];
 
 /**
- * Structured error for browse CLI shell-out failures.
+ * Chromium could not be launched for PDF rendering.
  */
-export class BrowseClientError extends Error {
-  constructor(
-    public readonly exitCode: number,
-    public readonly command: string,
-    public readonly stderr: string,
-  ) {
-    super(`browse ${command} exited ${exitCode}: ${stderr.trim()}`);
-    this.name = "BrowseClientError";
+export class ChromiumUnavailableError extends Error {
+  constructor(detail: string) {
+    super(
+      `Chromium failed to launch: ${detail.trim()}\n` +
+        "Install it with: bunx playwright install chromium " +
+        "(or set GOLDBAND_CHROMIUM_PATH to a compatible Chromium binary)",
+    );
+    this.name = "ChromiumUnavailableError";
   }
 }

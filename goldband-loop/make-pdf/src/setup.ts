@@ -2,56 +2,36 @@
  * `$P setup` — guided smoke test.
  *
  * Flow (per the CEO plan CLI UX spec):
- *   1. Verify browse binary exists and responds
- *   2. Verify Chromium launches via $B goto about:blank
- *   3. Verify pdftotext is installed (warn, don't fail)
- *   4. Generate a smoke-test PDF from an inline 2-paragraph fixture
- *   5. Open it
- *   6. Print a 3-command cheatsheet
+ *   1. Verify Playwright can launch Chromium
+ *   2. Verify pdftotext is installed (warn, don't fail)
+ *   3. Generate a smoke-test PDF from an inline 2-paragraph fixture
+ *   4. Print a 3-command cheatsheet
  */
 
 import * as os from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs";
 
-import * as browseClient from "./browseClient";
+import { checkChromium } from "./pdfRenderer";
 import { resolvePdftotext, PdftotextUnavailableError } from "./pdftotext";
 import { generate } from "./orchestrator";
 
 export async function runSetup(): Promise<void> {
   process.stderr.write("make-pdf setup — verifying install\n\n");
 
-  // 1. Resolve browse binary
-  process.stderr.write("  [1/5] Checking browse binary...");
+  // 1. Chromium smoke
+  process.stderr.write("  [1/4] Launching Chromium...");
   try {
-    const bin = browseClient.resolveBrowseBin();
-    process.stderr.write(` OK (${bin})\n`);
+    const version = await checkChromium();
+    process.stderr.write(` OK (${version})\n`);
   } catch (err: any) {
     process.stderr.write(" FAIL\n");
     process.stderr.write(`\n${err.message}\n`);
     process.exit(4);
   }
 
-  // 2. Chromium smoke (navigate a dedicated tab to about:blank)
-  process.stderr.write("  [2/5] Launching Chromium...");
-  let chromiumTab: number | null = null;
-  try {
-    chromiumTab = browseClient.newtab("about:blank");
-    process.stderr.write(` OK (tab ${chromiumTab})\n`);
-  } catch (err: any) {
-    process.stderr.write(" FAIL\n");
-    process.stderr.write(`\nChromium failed to launch: ${err.message}\n`);
-    process.stderr.write("\nTo fix: run goldband setup from the goldband repo:\n");
-    process.stderr.write("  cd ~/.claude/skills/goldband && ./setup\n");
-    process.exit(4);
-  } finally {
-    if (chromiumTab !== null) {
-      try { browseClient.closetab(chromiumTab); } catch { /* ignore */ }
-    }
-  }
-
-  // 3. pdftotext (optional — CI gate only)
-  process.stderr.write("  [3/5] Checking pdftotext (optional)...");
+  // 2. pdftotext (optional — CI gate only)
+  process.stderr.write("  [2/4] Checking pdftotext (optional)...");
   try {
     const info = resolvePdftotext();
     process.stderr.write(` OK (${info.flavor}, ${info.version.split(" ").slice(-1)[0] || "version unknown"})\n`);
@@ -67,8 +47,8 @@ export async function runSetup(): Promise<void> {
     }
   }
 
-  // 4. Render smoke-test PDF
-  process.stderr.write("  [4/5] Generating smoke-test PDF...\n");
+  // 3. Render smoke-test PDF
+  process.stderr.write("  [3/4] Generating smoke-test PDF...\n");
   const fixture = [
     "# Hello from make-pdf",
     "",
@@ -96,8 +76,8 @@ export async function runSetup(): Promise<void> {
     try { fs.unlinkSync(fixturePath); } catch { /* ignore */ }
   }
 
-  // 5. Cheatsheet
-  process.stderr.write("  [5/5] All checks passed.\n\n");
+  // 4. Cheatsheet
+  process.stderr.write("  [4/4] All checks passed.\n\n");
   process.stderr.write([
     "make-pdf is ready. Try:",
     "  $P generate letter.md                  # default memo mode",

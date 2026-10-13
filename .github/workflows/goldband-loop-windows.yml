@@ -102,6 +102,15 @@ jobs:
           test -f bin/goldband-global-discover.exe || test -f bin/goldband-global-discover || (echo "MISSING: goldband-global-discover" && exit 1)
           test -f bin/goldband-task-emission.exe || test -f bin/goldband-task-emission || (echo "MISSING: goldband-task-emission" && exit 1)
 
+      # make-pdf renders through Node on Windows (oven-sh/bun#4253); prove it.
+      - name: Render a PDF with the Windows binary
+        run: |
+          set -e
+          bunx playwright install chromium
+          printf '# Windows render\n\n## Section\n\nHello.\n' > "$RUNNER_TEMP/render.md"
+          make-pdf/dist/pdf generate "$RUNNER_TEMP/render.md" "$RUNNER_TEMP/render.pdf" --toc
+          test "$(head -c 5 "$RUNNER_TEMP/render.pdf")" = "%PDF-"
+
       - name: Verify find-browse binary resolution
         run: |
           set -e
