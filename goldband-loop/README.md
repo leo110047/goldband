@@ -12,9 +12,10 @@ repository.
 ## What It Provides
 
 - Capability routing and workflow execution behind one public selector.
-- Runtime binaries under [bin/](bin/) for config, telemetry, browser control,
-  memory sync, review logs, relinking, and setup helpers.
-- Browser, PDF, design, iOS QA, benchmark, eval, and documentation tooling.
+- Runtime binaries under [bin/](bin/) for config, telemetry, memory sync, review
+  logs, relinking, and setup helpers.
+- PDF, design, iOS QA, benchmark, eval, and documentation tooling. Browser work
+  uses the host's browser tool; Goldband Loop does not ship a browser.
 - Host adapters for Claude Code, Codex, and other supported coding-agent hosts.
 - A machine-readable install inventory in [inventory.json](inventory.json).
 
@@ -122,11 +123,11 @@ skill discovery.
 - Git
 - Bun v1.3.11+
 - Node.js where required by the host or platform
-- Playwright Chromium for browser-backed workflows
+- Playwright Chromium for `make-pdf` rendering
 
 The root installer verifies Playwright Chromium for workflow installs. In
-offline or CI environments, set `GOLDBAND_SKIP_PLAYWRIGHT=1` to skip browser
-workflow setup, or set `GOLDBAND_CHROMIUM_PATH` to a compatible Chromium binary.
+offline or CI environments, set `GOLDBAND_SKIP_PLAYWRIGHT=1` to skip Chromium
+setup, or set `GOLDBAND_CHROMIUM_PATH` to a compatible Chromium binary.
 
 ## Runtime State
 
@@ -176,20 +177,17 @@ bash scripts/verify-decision-guidance.sh
 | --- | --- |
 | [Capability catalog](../docs/generated/capabilities.md) | Supported public capability/action pairs and runtime status |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Goldband Loop internals and runtime structure |
-| [BROWSER.md](BROWSER.md) | Browser command reference |
-| [docs/domain-skills.md](docs/domain-skills.md) | Domain skill packaging |
 | [docs/tutorial-document-generate.md](docs/tutorial-document-generate.md) | Documentation-generation tutorial |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Runtime development workflow |
 | [CHANGELOG.md](CHANGELOG.md) | Runtime history |
 
 ## Privacy And Telemetry
 
-Telemetry is opt-in. When enabled, Goldband Loop sends usage metadata such as
-skill name, duration, success or failure, version, and OS. It does not send
-source code, prompts, file contents, repository names, branch names, or arbitrary
-user artifacts.
+Telemetry is opt-in and stays on this machine; Goldband Loop has no upload
+path. When enabled, it records usage metadata such as skill name, duration,
+success or failure, version, and OS in a local JSONL log.
 
-Local analytics are available without remote telemetry:
+Summarize the local log:
 
 ```bash
 goldband-analytics

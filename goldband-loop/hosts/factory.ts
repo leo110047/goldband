@@ -11,7 +11,7 @@ const factory: HostConfig = {
   hostSubdir: '.factory',
 
   runtimeRoot: {
-    globalSymlinks: ['bin', 'browse/dist', 'browse/bin', 'goldband-upgrade', 'ETHOS.md'],
+    globalSymlinks: ['bin', 'goldband-upgrade', 'ETHOS.md'],
     globalFiles: {
       'review': ['checklist.md', 'TODOS-format.md'],
     },

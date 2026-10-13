@@ -1,7 +1,6 @@
 .env
 node_modules/
 dist/
-browse/dist/
 design/dist/
 make-pdf/dist/
 bin/goldband-global-discover
@@ -23,11 +22,6 @@ bin/goldband-task-emission.exe
 .gbrain/
 .gbrain-source
 .context/
-extension/.auth.json
-# xterm assets are vendored from npm at build time; not source-of-truth.
-extension/lib/xterm.js
-extension/lib/xterm.css
-extension/lib/xterm-addon-fit.js
 .goldband-worktrees/
 /tmp/
 *.log

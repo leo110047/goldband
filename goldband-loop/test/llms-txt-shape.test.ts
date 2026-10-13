@@ -15,10 +15,9 @@ describe('gen-llms-txt — shape', () => {
   test('emits required top-level sections', () => {
     expect(generated.content).toContain('# goldband');
     expect(generated.content).toContain('## Capability actions');
-    expect(generated.content).toContain('## Browse Commands');
+    expect(generated.content).not.toContain('## Browse Commands');
     // Convention block
     expect(generated.content).toContain('Capabilities use');
-    expect(generated.content).toContain('Browse commands run as');
     // Footer
     expect(generated.content).toContain('## More');
     expect(generated.content).toContain('auto-generated');
@@ -57,14 +56,6 @@ describe('gen-llms-txt — shape', () => {
     }
   });
 
-  test('every browse command in COMMAND_DESCRIPTIONS appears in the index', () => {
-    expect(generated.browseCommands.length).toBeGreaterThan(0);
-    for (const cmd of generated.browseCommands) {
-      // Use word boundaries; backtick-wrapped command name OR usage.
-      expect(generated.content).toContain(cmd);
-    }
-  });
-
   test('skills are sorted alphabetically', () => {
     const names = generated.skills.map((s) => s.name);
     const sorted = [...names].sort((a, b) => a.localeCompare(b));
@@ -77,7 +68,7 @@ describe('gen-llms-txt — shape', () => {
     // collapses them).
     const skillsSection = generated.content
       .split('## Capability actions')[1]
-      .split('## Browse Commands')[0];
+      .split('\n## ')[0];
     const bullets = skillsSection
       .split('\n')
       .filter((line) => line.startsWith('- `'));

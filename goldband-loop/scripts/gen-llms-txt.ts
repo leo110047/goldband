@@ -5,7 +5,6 @@
  *
  * Inputs:
  *   - generated/capability-actions.json, normalized from goldband.manifest.json
- *   - browse/src/commands.ts COMMAND_DESCRIPTIONS
  *   - design/src/commands.ts COMMAND_DESCRIPTIONS (if present)
  *
  * Output: goldband/llms.txt at repo root.
@@ -17,7 +16,6 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { COMMAND_DESCRIPTIONS as BROWSE_COMMANDS } from '../browse/src/commands';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 const OUTPUT = path.join(ROOT, 'goldband', 'llms.txt');
@@ -63,7 +61,6 @@ interface GenerateOptions {
 export interface GenerateResult {
   content: string;
   skills: SkillEntry[];
-  browseCommands: string[];
   designCommands: string[];
   warnings: string[];
 }
@@ -100,17 +97,15 @@ export async function generateLlmsTxt(opts: GenerateOptions = {}): Promise<Gener
     });
   skills.sort((a, b) => a.name.localeCompare(b.name));
 
-  const browseCommands = Object.keys(BROWSE_COMMANDS).sort();
   const designCommands = Object.keys(await readDesignCommands()).sort();
 
   const lines: string[] = [];
   lines.push('# goldband');
   lines.push('');
-  lines.push("> goldband is Goldband Loop: AI coding skills + a fast headless browser binary + a design CLI. This file indexes every capability so agents can discover and invoke them without crawling individual SKILL.md files.");
+  lines.push("> goldband is Goldband Loop: AI coding skills, a design CLI, and a Markdown-to-PDF CLI. This file indexes every capability so agents can discover and invoke them without crawling individual SKILL.md files.");
   lines.push('');
   lines.push('Conventions:');
   lines.push('- Capabilities use `$goldband <capability> <action>`; historical workflow names are not aliases.');
-  lines.push('- Browse commands run as `browse <command> [args]` (or `$B` shorthand).');
   lines.push('- Design commands run as `design <command> [args]` (or `$D`).');
   lines.push('- Project-specific config lives in `CLAUDE.md`. Always read it first.');
   lines.push('');
@@ -122,26 +117,6 @@ export async function generateLlmsTxt(opts: GenerateOptions = {}): Promise<Gener
     lines.push(`- \`$goldband ${skill.name.replace('/', ' ')}\`: ${summary}`);
   }
   lines.push('');
-
-  lines.push('## Browse Commands');
-  lines.push('');
-  lines.push('Run with `browse <command> [args]`. Goldband guidance: `manuals/browser.md`.');
-  lines.push('');
-  const byCategory: Record<string, Array<{ name: string; description: string; usage?: string }>> = {};
-  for (const cmd of browseCommands) {
-    const meta = BROWSE_COMMANDS[cmd];
-    const cat = meta.category || 'Other';
-    if (!byCategory[cat]) byCategory[cat] = [];
-    byCategory[cat].push({ name: cmd, description: meta.description, usage: meta.usage });
-  }
-  for (const cat of Object.keys(byCategory).sort()) {
-    lines.push(`### ${cat}`);
-    for (const cmd of byCategory[cat]) {
-      const usage = cmd.usage ? `\`${cmd.usage}\`` : `\`${cmd.name}\``;
-      lines.push(`- ${usage}: ${oneLine(cmd.description)}`);
-    }
-    lines.push('');
-  }
 
   if (designCommands.length > 0) {
     lines.push('## Design Commands');
@@ -167,7 +142,6 @@ export async function generateLlmsTxt(opts: GenerateOptions = {}): Promise<Gener
   return {
     content: lines.join('\n'),
     skills,
-    browseCommands,
     designCommands,
     warnings,
   };
@@ -203,7 +177,7 @@ if (import.meta.main) {
       console.log('[gen-llms-txt] up to date');
     } else {
       console.log(`[gen-llms-txt] wrote ${OUTPUT}`);
-      console.log(`[gen-llms-txt]   skills=${result.skills.length} browse=${result.browseCommands.length} design=${result.designCommands.length}`);
+      console.log(`[gen-llms-txt]   skills=${result.skills.length} design=${result.designCommands.length}`);
     }
   })();
 }

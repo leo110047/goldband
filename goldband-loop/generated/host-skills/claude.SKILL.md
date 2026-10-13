@@ -19,7 +19,6 @@ For an empty invocation, show this generated capability menu and stop:
 - `$goldband investigate code` — Find and verify the root cause of a failure.
 - `$goldband qa app` — Verify product behavior with explicit evidence.
 - `$goldband plan create` — Create, expand, or tune an implementation plan.
-- `$goldband browser session` — Operate the persistent browser and browser-backed tools.
 - `$goldband design consult` — Define, explore, and prototype product design.
 - `$goldband safety guard` — Apply or remove workflow safety boundaries.
 - `$goldband context restore` — Save, restore, and summarize working context.
@@ -53,7 +52,7 @@ For an empty invocation, show this generated capability menu and stop:
 Load on-demand manuals only for their generated selectors:
 
 <!-- AUTO-GENERATED from goldband.manifest.json. Do not edit. -->
-- Read `manuals/browser.md` only for `browser/*`, `qa/app`.
+- Read `manuals/browser.md` only for `qa/app`.
 
 Load host-specific setup only when the selected contract explicitly points to
 it.

@@ -3,7 +3,6 @@
 - `$goldband investigate code` — Find and verify the root cause of a failure.
 - `$goldband qa app` — Verify product behavior with explicit evidence.
 - `$goldband plan create` — Create, expand, or tune an implementation plan.
-- `$goldband browser session` — Operate the persistent browser and browser-backed tools.
 - `$goldband design consult` — Define, explore, and prototype product design.
 - `$goldband safety guard` — Apply or remove workflow safety boundaries.
 - `$goldband context restore` — Save, restore, and summarize working context.

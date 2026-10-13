@@ -24,10 +24,9 @@ describe('setup: Apple Silicon codesign', () => {
     const forMatch = content.match(/for _bin in ([^;]+);/);
     expect(forMatch).toBeTruthy();
     const binaries = forMatch![1].trim().split(/\s+/);
-    // All four compiled binaries from `bun run build` must be covered
-    expect(binaries).toContain('browse/dist/browse');
-    expect(binaries).toContain('browse/dist/find-browse');
+    // Every compiled binary from `bun run build` must be covered
     expect(binaries).toContain('design/dist/design');
+    expect(binaries).toContain('make-pdf/dist/pdf');
     expect(binaries).toContain('bin/goldband-global-discover');
     expect(binaries).toContain('bin/goldband-task-emission');
   });
@@ -35,16 +34,16 @@ describe('setup: Apple Silicon codesign', () => {
   test('codesign block is inside the NEEDS_BUILD=1 branch', () => {
     const content = fs.readFileSync(SETUP_SCRIPT, 'utf-8');
     // The codesign block should appear after the build command and before the
-    // `if [ ! -x "$BROWSE_BIN" ]` guard that checks the build succeeded. The
+    // `if [ ! -x "$PDF_BIN" ]` guard that checks the build succeeded. The
     // setup script invokes the build via `bun_cmd run build` (not literal
     // `bun run build`) so the wrapper can route through asdf/volta/etc;
     // matching the wrapped form keeps this test stable across that indirection.
     const buildIdx = content.indexOf('bun_cmd run build');
     const codesignIdx = content.indexOf('codesign --remove-signature');
-    const browseCheckIdx = content.indexOf('goldband setup failed: browse binary missing');
+    const buildCheckIdx = content.indexOf('goldband setup failed: make-pdf binary missing');
     expect(buildIdx).toBeGreaterThan(-1);
     expect(codesignIdx).toBeGreaterThan(buildIdx);
-    expect(browseCheckIdx).toBeGreaterThan(codesignIdx);
+    expect(buildCheckIdx).toBeGreaterThan(codesignIdx);
   });
 
   test('codesign block is idempotent (skips missing binaries)', () => {

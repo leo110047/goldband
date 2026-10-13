@@ -126,7 +126,6 @@ describe('workflow runtime', () => {
 
   test('owned typed workflows expose action-specific runtime steps', () => {
     const owned = [
-      'browser/session',
       'design/consult',
       'document/generate',
       'safety/guard',
@@ -152,95 +151,7 @@ describe('workflow runtime', () => {
     }
   });
 
-  test('browser/session delegates only non-outward-effect commands', async () => {
-	const navigation = await runWorkflow(getWorkflow('browser/session'), {
-	  mode: 'mock',
-	  cwd: ROOT,
-	  goldbandHome: tmpHome,
-	  inputFile: writeInput('browser-goto.json', {
-		command: 'goto',
-		args: ['https://example.com'],
-	  }),
-	});
-	expect(navigation.output).toMatchObject({
-	  owner: 'browse',
-	  operation: 'goto',
-	  status: 'completed',
-	});
-
-    const result = await runWorkflow(getWorkflow('browser/session'), {
-      mode: 'mock',
-      cwd: ROOT,
-      goldbandHome: tmpHome,
-      inputFile: writeInput('browser-write.json', {
-        command: 'click',
-        args: ['#buy'],
-      }),
-    });
-    expect(result.output).toMatchObject({
-      owner: 'browse',
-      operation: 'click',
-      status: 'blocked',
-    });
-
-    const clearing = await runWorkflow(getWorkflow('browser/session'), {
-      mode: 'mock',
-      cwd: ROOT,
-      goldbandHome: tmpHome,
-      inputFile: writeInput('browser-clear.json', {
-        command: 'console',
-        args: ['--clear'],
-      }),
-    });
-    expect(clearing.output).toMatchObject({ status: 'blocked' });
-
-    for (const [command, args] of [
-      ['network', ['--export', 'capture.json']],
-      ['network', ['--capture']],
-      ['snapshot', ['--output', 'snapshot.txt']],
-      ['snapshot', ['-a']],
-    ] as const) {
-      const sideEffect = await runWorkflow(getWorkflow('browser/session'), {
-        mode: 'mock',
-        cwd: ROOT,
-        goldbandHome: tmpHome,
-        inputFile: writeInput(`browser-${command}-${args[0]}.json`, {
-          command,
-          args: [...args],
-        }),
-      });
-      expect(sideEffect.output).toMatchObject({ status: 'blocked' });
-    }
-  });
-
   test('blocked high-risk modes stop at safety admission before their owner', async () => {
-    await expect(runWorkflow(getWorkflow('browser/session'), {
-      mode: 'mock',
-      cwd: ROOT,
-      goldbandHome: tmpHome,
-      inputFile: writeInput('browser-cookies.json', {
-        command: 'cookie-import',
-        args: ['cookies.json'],
-      }),
-    })).rejects.toThrow('browser/cookies: safety gate is blocked-before-runtime');
-    expect(readJsonl('browser/session')).toMatchObject([
-      {
-        step: 'safety-gate:blocked',
-        status: 'failed',
-        error: expect.stringContaining('browser/cookies'),
-      },
-    ]);
-
-    await expect(runWorkflow(getWorkflow('browser/session'), {
-      mode: 'mock',
-      cwd: ROOT,
-      goldbandHome: tmpHome,
-      inputFile: writeInput('browser-state-load.json', {
-        command: 'state',
-        args: ['load', 'authenticated-session'],
-      }),
-    })).rejects.toThrow('browser/cookies: safety gate is blocked-before-runtime');
-
     await expect(runWorkflow(getWorkflow('ios/qa'), {
       mode: 'mock',
       cwd: ROOT,

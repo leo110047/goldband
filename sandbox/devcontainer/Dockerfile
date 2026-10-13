@@ -34,7 +34,6 @@ ENV HOME=/home/goldband \
 USER goldband
 WORKDIR /opt/goldband
 RUN rm -rf \
-        goldband-loop/browse/dist \
         goldband-loop/design/dist \
         goldband-loop/make-pdf/dist \
     && GOLDBAND_SKIP_BUILD=0 ./install.sh all-with-workflow

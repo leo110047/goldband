@@ -1207,13 +1207,13 @@ Consequences:
 - `$goldband review code` no longer enters a contradictory flow where the user
   approves escalation but the session’s `approval_policy=never` rejects the
   same request.
-- `$goldband browser session` works in Codex CLI without an app-hosted browser
-  provider. Inspection commands can run without prompting; navigation requires
-  Codex's normal approval because the Chromium daemon can reach local services.
+- The browser session action (retired 2026-10-13 with `browse`) worked in Codex
+  CLI without an app-hosted browser provider. Inspection commands ran without
+  prompting; navigation required Codex's normal approval.
 - Updating Goldband must rebuild the trusted snapshot; source edits alone do
   not change the admitted executable until reinstall.
-- The install adds the bundled workflow entrypoints, browser client/server, and
-  review assets under `~/.codex/goldband`.
+- The install adds the bundled workflow entrypoints and review assets under
+  `~/.codex/goldband` (the browser client/server was removed on 2026-10-13).
 
 Alternatives considered:
 
@@ -2756,3 +2756,35 @@ same name. `commands/plan.md` is renamed to `commands/goldband-plan.md`, and
 already lives in `rules/claim-verification.md` and the global instructions.
 New Goldband commands use the `goldband-` prefix unless no host command can
 share the name.
+
+## 2026-10-13: Retire the Goldband Browser in Favor of Host Browser Tools
+
+`goldband-loop/browse` (the persistent Chromium daemon, its Chrome extension and
+side panel, browser skills, the macOS browser app, `chrome-cdp`, and the
+prompt-injection classifier) is removed. The `browser/session` action and its
+`browser/cookies` safety gate are retired; the Codex launcher no longer stages a
+browser client or auto-admits browser commands. Browser work, including real
+`qa/app` QA, uses the active host's browser tool under `manuals/browser.md`.
+`mcp/` templates offer an optional Playwright MCP entry pinned to
+`@playwright/mcp@0.0.83` with `--isolated` and a localhost-only
+`--allowed-origins` default. `make-pdf` keeps its feature and now drives
+Chromium directly through Playwright (`make-pdf/src/pdfRenderer.ts`).
+
+Why: on 2026-10-12 the three QA fixtures (15 seeded bugs, now under
+`goldband-loop/test/fixtures/qa-eval*.html`) were run with `browse` and with
+Playwright MCP. Playwright MCP found 15/15 and passed every capability probe
+(HttpOnly session, dialogs, upload, iframe, popup tabs, PDF). `browse` found
+14/15 because it never captured uncaught page exceptions, and it missed popup
+tabs. Keeping roughly 66k lines of browser runtime for no QA capability the
+hosts lack is not justified. Claude in Chrome was not measured because its
+extension was disconnected.
+
+Trade-off: page content from Playwright MCP is not wrapped as untrusted or
+scanned by a classifier. Protection against injected instructions rests on what
+the agent may do afterwards (native permissions, auto-mode review, sandboxing,
+and the approval rules in `manuals/browser.md`), plus the template's isolation
+and origin defaults. Playwright documents `--allowed-origins` as not a security
+boundary. On Windows `make-pdf` runs the Chromium job in a Node child process,
+because Bun 1.3 there cannot launch Chromium (oven-sh/bun#4253) and cannot use
+`chromium.connect` on any platform; the Windows CI job renders a real PDF to
+prove that path.

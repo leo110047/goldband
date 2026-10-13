@@ -69,7 +69,7 @@ result against a machine-readable inventory.
 
 - workflow runtime source, the shared root capability router, and thin contracts
 - programmatic workflow contracts under `goldband-loop/workflows/`
-- workflow-native docs, build metadata, tests, browser/PDF/design/iOS tooling
+- workflow-native docs, build metadata, tests, PDF/design/iOS tooling
 - runtime binaries under `goldband-loop/bin/goldband-*`
 - the Goldband Loop inventory at `goldband-loop/inventory.json`
 

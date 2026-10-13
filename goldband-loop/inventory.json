@@ -276,43 +276,6 @@
       ]
     },
     {
-      "id": "browser",
-      "description": "Operate the persistent browser and browser-backed tools.",
-      "defaultAction": "session",
-      "actions": [
-        {
-          "id": "session",
-          "description": "Use the persistent browser for interactive work.",
-          "runtime": "typed",
-          "owner": "browse",
-          "dispatch": "trusted-launcher",
-          "risk": "medium",
-          "safetyGates": [
-            {
-              "operation": "browser/cookies",
-              "mode": "cookies",
-              "enforcement": "blocked-before-runtime",
-              "owner": null,
-              "authorization": "native-host-approval",
-              "preconditions": [
-                "source-profile-resolved",
-                "domain-scope-explicit",
-                "credential-store-approval"
-              ],
-              "sideEffects": [
-                "session-cookie-import"
-              ],
-              "readback": [
-                "imported-domain-list",
-                "import-count",
-                "no-cookie-values-in-evidence"
-              ]
-            }
-          ]
-        }
-      ]
-    },
-    {
       "id": "design",
       "description": "Define, explore, and prototype product design.",
       "defaultAction": "consult",
@@ -612,7 +575,6 @@
     }
   ],
   "binaries": [
-    "chrome-cdp",
     "dev-setup",
     "dev-teardown",
     "goldband",
@@ -630,7 +592,6 @@
     "goldband-developer-profile",
     "goldband-diff-scope",
     "goldband-env",
-    "goldband-extension",
     "goldband-global-discover",
     "goldband-ios-qa-daemon",
     "goldband-ios-qa-mint",

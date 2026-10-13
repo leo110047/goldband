@@ -10,7 +10,7 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, mkdirSync
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-const SCRIPT = join(import.meta.dir, '..', '..', 'bin', 'goldband-config');
+const SCRIPT = join(import.meta.dir, '..', 'bin', 'goldband-config');
 
 let stateDir: string;
 

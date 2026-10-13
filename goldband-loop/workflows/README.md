@@ -43,9 +43,9 @@ or the registry iteration cap is reached. A CLI cap may lower but never raise
 the registry cap.
 
 `review/code` supports one typed diff-collection and model-review pass with
-validated findings. It rejects `--loop`; `qa/app` currently provides a typed mock adapter;
-real browser QA remains unsupported until its checks consume the typed
-`browser/session` evidence contract.
+validated findings. It rejects `--loop`; `qa/app` currently provides a typed mock adapter.
+Real browser QA runs through the active host's browser tool under the `qa/app`
+prompt contract and `manuals/browser.md`; the typed adapter does not claim it.
 
 Interactive Codex and Claude `$goldband review code` invocations must enter this
 runtime. Claude uses `<installed-skill-root>/bin/goldband review code`. Codex uses
@@ -72,18 +72,6 @@ active review to prevent recursion. Read-only tools, approval policy, output
 schema, and timeout remain adapter-owned. Launcher or runtime failures are
 reported explicitly and do not prevent a later retry. Project verification is
 separate from the semantic report.
-
-Codex CLI browser work uses the same trusted launcher followed by
-`browser session --host codex <command> [args...]`. It does not depend on the
-Codex App's Browser or Chrome plugin bindings. The installed snapshot carries a
-materialized browser client and bundled server, so neither the launcher nor the
-daemon is resolved from the writable workspace. Exact rules auto-admit only
-inspection commands. Navigation (`goto`, `back`, `forward`, `reload`) and
-`wait` remain on Codex's native approval path so repository instructions cannot
-silently use the trusted launcher to reach localhost or private-network
-services. The runtime still rejects commands with outward effects.
-Claude uses `bin/goldband browser session --host claude` and the source-owned
-browser runtime.
 
 Review input has a 2 MiB limit. Larger Git diffs fail with an explicit request
 to narrow scope instead of a host-specific buffer error. `--diff-file` accepts
@@ -180,7 +168,6 @@ produced by the model; runtime owners validate, gate, persist, and read it back.
 | Action | Runtime owner | Real-mode input |
 | --- | --- | --- |
 | `plan/create` | `work-map-store` | `mode`, concrete `destination`, included/excluded `scope`, decision references, fog, and dependency-ordered tickets. Runtime derives Git identity, revision, frontier, blockers, and state paths. Use only for cross-session, dependency-linked, parallel, unknown-bearing, or explicitly tracked work; small ordinary tasks bypass Work Maps. |
-| `browser/session` | `browse` | Optional `command` and `args`; only non-outward-effect navigation and inspection commands are delegated. Mutations use the browser tool's native approval path. |
 | `design/consult` | `design-decision-store` | `brief` and `decisions` with typography, color, spacing, layout, and motion. |
 | `safety/guard` | `workflow-safety-state` | Optional `scope`. |
 | `safety/freeze` / `safety/unfreeze` | `freeze-hook-state` | Optional freeze `scope`; unfreeze reads the same state owner. |

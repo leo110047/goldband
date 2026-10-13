@@ -23,7 +23,7 @@ EOF_DISTRIBUTION
 
 create_minimal_real_setup_fixture() {
   local loop_dir="$1"
-  mkdir -p "$loop_dir/bin" "$loop_dir/browse/dist" "$loop_dir/generated" "$loop_dir/lib" "$loop_dir/review" "$loop_dir/workflows" "$loop_dir/scripts"
+  mkdir -p "$loop_dir/bin" "$loop_dir/make-pdf/dist" "$loop_dir/generated" "$loop_dir/lib" "$loop_dir/review" "$loop_dir/workflows" "$loop_dir/scripts"
   install -m 755 "$ROOT_DIR/goldband-loop/setup" "$loop_dir/setup"
   cp "$ROOT_DIR/goldband-loop/scripts/prepare-internal-workflow-root.sh" "$loop_dir/scripts/prepare-internal-workflow-root.sh"
   cp "$ROOT_DIR/goldband-loop/lib/retired-workflow-entry-names.txt" "$loop_dir/lib/retired-workflow-entry-names.txt"
@@ -44,11 +44,11 @@ create_minimal_real_setup_fixture() {
   done
   write_fake_config_bin "$loop_dir"
   write_noop_runtime_bin "$loop_dir" "goldband-task-emission"
-  cat > "$loop_dir/browse/dist/browse" <<'EOF_BROWSE'
+  cat > "$loop_dir/make-pdf/dist/pdf" <<'EOF_PDF'
 #!/usr/bin/env bash
 exit 0
-EOF_BROWSE
-  chmod +x "$loop_dir/browse/dist/browse"
+EOF_PDF
+  chmod +x "$loop_dir/make-pdf/dist/pdf"
   printf '%s\n' '{"engines":{"bun":">=1.3.11"}}' > "$loop_dir/package.json"
   printf '0.0.0-test\n' > "$loop_dir/VERSION"
   write_skill "$loop_dir" "goldband"

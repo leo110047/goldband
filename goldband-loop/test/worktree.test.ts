@@ -23,13 +23,10 @@ function createTestRepo(): string {
   // Create initial commit so HEAD exists
   fs.writeFileSync(path.join(dir, 'README.md'), '# Test repo\n');
   // Add .gitignore matching real repo (so copied build artifacts don't appear as changes)
-  fs.writeFileSync(path.join(dir, '.gitignore'), '.agents/\nbrowse/dist/\n.goldband-worktrees/\n');
+  fs.writeFileSync(path.join(dir, '.gitignore'), '.agents/\n.goldband-worktrees/\n');
   // Create a .agents directory (simulating gitignored build artifacts)
   fs.mkdirSync(path.join(dir, '.agents', 'skills'), { recursive: true });
   fs.writeFileSync(path.join(dir, '.agents', 'skills', 'test-skill.md'), '# Test skill\n');
-  // Create browse/dist (simulating build artifacts)
-  fs.mkdirSync(path.join(dir, 'browse', 'dist'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'browse', 'dist', 'browse'), '#!/bin/sh\necho browse\n');
 
   spawnSync('git', ['add', 'README.md', '.gitignore'], { cwd: dir, stdio: 'pipe' });
   spawnSync('git', ['commit', '-m', 'Initial commit'], { cwd: dir, stdio: 'pipe' });
@@ -101,7 +98,6 @@ describe('WorktreeManager', () => {
     const worktreePath = mgr.create('test-agents');
 
     expect(fs.existsSync(path.join(worktreePath, '.agents', 'skills', 'test-skill.md'))).toBe(true);
-    expect(fs.existsSync(path.join(worktreePath, 'browse', 'dist', 'browse'))).toBe(true);
 
     mgr.cleanup('test-agents');
   });

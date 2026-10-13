@@ -19,9 +19,11 @@ browser evidence，不可用 fixture 冒充 real-mode E2E。
 
 ### 待辦
 
-- [ ] 執行 `qa/app` real browser E2E；把 checks 接到已 typed 的
-  `browser/session` evidence contract。在完成前維持 unsupported，不可把 mock
-  check 或 Playwright setup 當成 runtime 支援。
+- [ ] 執行 `qa/app` real browser E2E。`browse` 與 `browser/session` 已於
+  2026-10-13 退役，真實 QA 改由 host 的瀏覽器工具（Playwright MCP 或
+  Claude in Chrome）執行；typed adapter 維持 mock，不可把 mock check 當成
+  runtime 支援。2026-10-12 以 `goldband-loop/test/fixtures/qa-eval*.html`
+  的 15 個預埋 bug 評估：Playwright MCP 15/15，Claude in Chrome 尚未測。
 - [ ] 對 live runs 驗證 iteration context、stop reason 與 artifact readback，並把
   結果同步到 architecture / coverage 文件。
 

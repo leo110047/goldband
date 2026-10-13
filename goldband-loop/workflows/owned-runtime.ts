@@ -13,7 +13,6 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { BROWSER_SESSION_COMMANDS } from "../lib/browser-runtime-contract";
 import { stateRoot } from "./evidence";
 import { workflowAssetPath } from "./paths";
 import { parseIosQaInput, parseSystemUpgradeInput } from "./safety-gates";
@@ -58,15 +57,10 @@ const resultSchema: SchemaValidator<OwnedRuntimeResult> = {
 	},
 };
 
-const BROWSER_SESSION_COMMAND_SET = new Set<string>(BROWSER_SESSION_COMMANDS);
-
-const TRUSTED_BROWSER_EXECUTABLE_ENV = "GOLDBAND_TRUSTED_BROWSER_EXECUTABLE";
-
 const OWNED_HANDLERS: Record<
 	string,
 	(ctx: WorkflowContext) => OwnedRuntimeResult
 > = {
-	"browser/session": runBrowserSession,
 	"design/consult": runDesignConsult,
 	"document/generate": runDocumentGenerate,
 	"safety/guard": runSafetyGuard,
@@ -173,86 +167,6 @@ export function ownedRuntimeSteps(name: string): WorkflowStep[] | undefined {
 			run: handler,
 		},
 	];
-}
-
-function runBrowserSession(ctx: WorkflowContext): OwnedRuntimeResult {
-	const input = optionalRecord(ctx.input, "browser/session input");
-	const command = optionalString(input.command, "command") || "status";
-	const args = optionalStringArray(input.args, "args");
-	if (!BROWSER_SESSION_COMMAND_SET.has(command)) {
-		return blocked(
-			"browse",
-			command,
-			`browser/session only delegates non-outward-effect commands; ${command} requires the browser tool's native approval path`,
-			[`allowed=${[...BROWSER_SESSION_COMMAND_SET].sort().join(",")}`],
-		);
-	}
-	const unsafeInspectionArgument = unsafeBrowserInspectionArgument(
-		command,
-		args,
-	);
-	if (unsafeInspectionArgument) {
-		return blocked(
-			"browse",
-			command,
-			`${command} ${unsafeInspectionArgument} has a side effect and requires the browser tool's native approval path`,
-			[`argument=${unsafeInspectionArgument}`],
-		);
-	}
-	if (!isReal(ctx)) {
-		return completed("browse", command, "Validated browser session request.", [
-			`command=${command}`,
-			`args=${args.length}`,
-		]);
-	}
-	const trustedBrowserExecutable = process.env[TRUSTED_BROWSER_EXECUTABLE_ENV];
-	const result = commandResult(
-		trustedBrowserExecutable || "bun",
-		trustedBrowserExecutable
-			? [command, ...args]
-			: ["run", workflowAssetPath("browse/src/cli.ts"), command, ...args],
-		ctx.cwd,
-		30_000,
-	);
-	if (result.status !== 0) {
-		return blocked("browse", command, "Browser owner rejected the request.", [
-			compact(result.stderr || result.stdout),
-		]);
-	}
-	return completed(
-		"browse",
-		command,
-		"Browser owner completed the non-outward-effect command.",
-		[compact(result.stdout)],
-		[],
-		browserOutput(result.stdout),
-	);
-}
-
-function unsafeBrowserInspectionArgument(
-	command: string,
-	args: string[],
-): string | undefined {
-	const unsafeByCommand: Record<string, Set<string>> = {
-		console: new Set(["--clear"]),
-		network: new Set(["--capture", "--clear", "--export"]),
-		snapshot: new Set(["--annotate", "--output", "-a", "-o"]),
-	};
-	const unsafe = unsafeByCommand[command];
-	return unsafe ? args.find((arg) => unsafe.has(arg)) : undefined;
-}
-
-function browserOutput(stdout: string): JsonRecord {
-	const limit = 64 * 1024;
-	if (stdout.length <= limit) {
-		return { content: stdout, truncated: false };
-	}
-	return {
-		content: stdout.slice(0, limit),
-		truncated: true,
-		outputBytes: Buffer.byteLength(stdout),
-		hint: "Narrow the browser command or selector and retry.",
-	};
 }
 
 function runDesignConsult(ctx: WorkflowContext): OwnedRuntimeResult {

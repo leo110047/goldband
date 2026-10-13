@@ -23,294 +23,26 @@ retired. The installer replaces obsolete runtime assets but preserves historical
 reports and external state. Retired CLI flags fail explicitly. Existing managed
 worktree project verification and Git integration safeguards remain in place.
 
-## The core idea
+## Browser work
 
-goldband gives Claude Code a persistent browser and a set of opinionated workflow skills. The browser is the hard part — everything else is Markdown.
+Goldband does not ship its own browser. QA and other browser work use the
+browser capability of the active host: Claude in Chrome or a configured
+Playwright MCP server on Claude Code, and the host browser or Playwright MCP on
+Codex. `manuals/browser.md` holds the shared guidance, and `qa/app` loads it.
+See the root `mcp/README.md` for the optional Playwright MCP template and its
+isolation defaults.
 
-The key insight: an AI agent interacting with a browser needs **sub-second latency** and **persistent state**. If every command cold-starts a browser, you're waiting 3-5 seconds per tool call. If the browser dies between commands, you lose cookies, tabs, and login sessions. So goldband runs a long-lived Chromium daemon that the CLI talks to over localhost HTTP.
-
-```
-Claude Code                     goldband
-─────────                      ──────
-                               ┌──────────────────────┐
-  Tool call: $B snapshot -i    │  CLI (compiled binary)│
-  ─────────────────────────→   │  • reads state file   │
-                               │  • POST /command      │
-                               │    to localhost:PORT   │
-                               └──────────┬───────────┘
-                                          │ HTTP
-                               ┌──────────▼───────────┐
-                               │  Server (Bun.serve)   │
-                               │  • dispatches command  │
-                               │  • talks to Chromium   │
-                               │  • returns plain text  │
-                               └──────────┬───────────┘
-                                          │ CDP
-                               ┌──────────▼───────────┐
-                               │  Chromium (headless)   │
-                               │  • persistent tabs     │
-                               │  • cookies carry over  │
-                               │  • 30min idle timeout  │
-                               └───────────────────────┘
-```
-
-First call starts everything (~3s). Every call after: ~100-200ms.
+`make-pdf` is the only component that drives Chromium directly. It launches a
+dedicated headless Chromium through Playwright for each render
+(`make-pdf/src/pdfRenderer.ts`) and closes it afterwards.
 
 ## Why Bun
 
-Node.js would work. Bun is better here for three reasons:
-
-1. **Compiled binaries.** `bun build --compile` produces a single ~58MB executable. No `node_modules` at runtime, no `npx`, no PATH configuration. The binary just runs. This matters because goldband installs into `~/.claude/skills/` where users don't expect to manage a Node.js project.
-
-2. **Native SQLite.** Cookie decryption reads Chromium's SQLite cookie database directly. Bun has `new Database()` built in — no `better-sqlite3`, no native addon compilation, no gyp. One less thing that breaks on different machines.
-
-3. **Native TypeScript.** The server runs as `bun run server.ts` during development. No compilation step, no `ts-node`, no source maps to debug. The compiled binary is for deployment; source files are for development.
-
-4. **Built-in HTTP server.** `Bun.serve()` is fast, simple, and doesn't need Express or Fastify. The server handles ~10 routes total. A framework would be overhead.
-
-The bottleneck is always Chromium, not the CLI or server. Bun's startup speed (~1ms for the compiled binary vs ~100ms for Node) is nice but not the reason we chose it. The compiled binary and native SQLite are.
-
-## The daemon model
-
-### Why not start a browser per command?
-
-Playwright can launch Chromium in ~2-3 seconds. For a single screenshot, that's fine. For a QA session with 20+ commands, it's 40+ seconds of browser startup overhead. Worse: you lose all state between commands. Cookies, localStorage, login sessions, open tabs — all gone.
-
-The daemon model means:
-
-- **Persistent state.** Log in once, stay logged in. Open a tab, it stays open. localStorage persists across commands.
-- **Sub-second commands.** After the first call, every command is just an HTTP POST. ~100-200ms round-trip including Chromium's work.
-- **Automatic lifecycle.** The server auto-starts on first use, auto-shuts down after 30 minutes idle. No process management needed.
-
-### State file
-
-The server writes `.goldband/browse.json` (atomic write via a unique tmp file +
-rename, mode 0o600):
-
-```json
-{
-  "pid": 12345,
-  "port": 34567,
-  "token": "uuid-v4",
-  "startedAt": "...",
-  "instanceId": "uuid-v4",
-  "processStartTime": "OS-stable process start identity",
-  "phase": "ready",
-  "binaryVersion": "abc123"
-}
-```
-
-The file is the authoritative capability pointer for one canonical project state
-path. Startup first publishes an owner-bound `starting` reservation, then promotes
-that same `instanceId` to `ready`. Publish, tunnel updates, and shutdown cleanup use
-compare-and-swap under a project-scoped ownership lock. A stale server cannot
-overwrite or delete a newer owner's pointer.
-If startup fails after acquiring Chromium, Xvfb, or a listener, rollback removes
-the reservation only after those resources are confirmed stopped. A timeout,
-permission denial, or unknown process state preserves the reservation fail closed.
-Xvfb records its PID and display in the starting reservation immediately after
-spawn, then adds the validated process start identity. Probe failure or readiness
-timeout signals the authoritative child handle and waits for exit; if exit cannot
-be confirmed, the partial or complete record remains non-replaceable.
-Normal shutdown follows the same ownership rule: browser close timeout/rejection,
-an owned Xvfb that cannot be confirmed stopped, or a live/unverifiable Chromium
-profile lock preserves both the controller pointer and all singleton files.
-Fatal synchronous cleanup likewise retains the recovery record for the next
-identity-aware CLI invocation.
-
-The CLI combines `GET /health`, tri-state PID liveness, and process start identity.
-A healthy matching owner is reused. Only a confirmed-dead owner or a mismatched
-process identity (recycled PID) may be recovered automatically. An unreachable or
-unverifiable owner—such as localhost denial plus POSIX `EPERM`—fails closed: the
-state file and browser are preserved and the command tells the caller to retry from
-a host lane with localhost and process-control access. Malformed state is preserved
-for inspection rather than overwritten. Normal, version-restart, connect, disconnect,
-and supervisor replacement all use the same resource-preparation gate; a partial
-Xvfb identity is unverifiable, never equivalent to no Xvfb. The CLI transfers
-its startup-lock lease to the spawned daemon with an exact nonce-bound handoff;
-the daemon verifies and atomically adopts the on-disk lease before proceeding.
-A directly invoked `server.ts` has no handoff, so it must acquire the same lock
-and pass the same Chromium/Xvfb replacement gate before claiming `browse.json`.
-
-### Port selection
-
-Random port between 10000-60000 (retry up to 5 on collision). This means 10 Conductor workspaces can each run their own browse daemon with zero configuration and zero port conflicts. The old approach (scanning 9400-9409) broke constantly in multi-workspace setups.
-
-### Version auto-restart
-
-The build writes `git rev-parse HEAD` to `browse/dist/.version`. On each CLI
-invocation, if the binary's version doesn't match the running server's
-`binaryVersion`, the CLI restarts only after validating controller identity under
-the shared startup lock. Legacy states without exact instance and process identity
-are not automatically reused or signalled; confirmed-dead legacy state can be
-recovered, while unverifiable state is preserved for manual inspection.
-
-## Security model
-
-### Localhost only
-
-The HTTP server binds to `127.0.0.1`, not `0.0.0.0`. It's not reachable from the network.
-
-### Dual-listener tunnel architecture (v1.6.0.0)
-
-When a user runs `pair-agent --client`, the daemon starts an ngrok tunnel so a remote paired agent can drive the browser. Exposing the full daemon surface to the internet (even behind a random ngrok subdomain) meant `GET /health` leaked the root token on any Origin spoof, and `/cookie-picker` embedded the token into HTML that any caller could fetch.
-
-The fix is **two HTTP listeners**, not one:
-
-- **Local listener** (`127.0.0.1:LOCAL_PORT`) — always bound. Serves bootstrap (`GET /health` with token delivery), `/cookie-picker`, `/inspector/*`, `/welcome`, `/refs`, the sidebar-agent API, and the full command surface. Never forwarded.
-- **Tunnel listener** (`127.0.0.1:TUNNEL_PORT`) — bound lazily on `/tunnel/start`, torn down on `/tunnel/stop`. Serves a locked allowlist: `/connect` (pairing ceremony, unauth + rate-limited), `/command` (scoped tokens only, further restricted to a browser-driving command allowlist), and `/sidebar-chat`. Everything else 404s.
-
-ngrok forwards only the tunnel port. The security property comes from **physical port separation**: a tunnel caller cannot reach `GET /health` or `/cookie-picker` because those paths don't exist on that TCP socket. Header inference (check `x-forwarded-for`, check origin) is unreliable (ngrok header behavior changes; local proxies can add these headers); socket separation isn't.
-
-| Endpoint | Local listener | Tunnel listener | Notes |
-|---|---|---|---|
-| `GET /health` | public (no token unless headed/extension) | 404 | Token bootstrap for extension happens locally only |
-| `GET /connect` | public (`{alive:true}`) | public (`{alive:true}`) | Probe path for tunnel liveness |
-| `POST /connect` | public (rate-limited 300/min) | public (rate-limited) | Setup-key exchange for pair-agent |
-| `POST /command` | auth (Bearer root OR scoped) | auth (scoped only, allowlisted commands) | Root token on tunnel = 403 |
-| `POST /sidebar-chat` | auth | auth | Lets remote agent post into local sidebar |
-| `POST /pair` | root-only | 404 | Pairing mint — local operator action |
-| `POST /tunnel/{start,stop}` | root-only | 404 | Daemon configuration |
-| `POST /token`, `DELETE /token/:id` | root-only | 404 | Scoped token mint/revoke |
-| `GET /cookie-picker`, `GET /cookie-picker/*` | public UI, auth API | 404 | Local-only — reads local browser DBs |
-| `GET /inspector`, `/inspector/events`, etc. | auth | 404 | Extension callback, local-only |
-| `GET /welcome` | public | 404 | Goldband Loop Browser landing page, local-only |
-| `GET /refs` | auth | 404 | Ref map — internal state |
-| `GET /activity/stream` | Bearer OR HttpOnly `goldband_sse` cookie | 404 | SSE. ?token= query param no longer accepted |
-| `GET /inspector/events` | Bearer OR HttpOnly `goldband_sse` cookie | 404 | SSE. Same cookie as /activity/stream |
-| `POST /sse-session` | auth (Bearer) | 404 | Mints the view-only 30-min SSE session cookie |
-
-**Tunnel surface denial logs.** Every rejection on the tunnel listener (`path_not_on_tunnel`, `root_token_on_tunnel`, `missing_scoped_token`, `disallowed_command:*`) is recorded asynchronously to `~/.goldband/security/attempts.jsonl` with timestamp, source IP (from `x-forwarded-for`), path, and method. Rate-capped at 60 writes/min globally to prevent log-flood DoS. Shares the attempt log with the prompt-injection scanner.
-
-**SSE session cookies.** EventSource can't send Authorization headers, so the extension POSTs `/sse-session` once at bootstrap with the root Bearer and receives a 30-minute view-only cookie (`goldband_sse`, HttpOnly, SameSite=Strict). The cookie is valid ONLY for `/activity/stream` and `/inspector/events` — it is NOT a scoped token and cannot be used on `/command`. Scope isolation is enforced by the module boundary: `sse-session-cookie.ts` has no imports from `token-registry.ts`.
-
-**Non-goal in this wave** (tracked as #1136): the cookie-import-browser path launches Chrome with `--remote-debugging-port=<random>`. On Windows with App-Bound Encryption v20, a same-user local process can connect to that port and exfiltrate decrypted v20 cookies — an elevation path relative to reading the SQLite DB directly (which can't decrypt v20 without DPAPI context). Fix direction is `--remote-debugging-pipe` instead of TCP; requires restructuring the CDP client.
-
-### Bearer token auth
-
-Every server session generates a random UUID token, written to the state file with mode 0o600 (owner-only read). Every HTTP request that mutates browser state must include `Authorization: Bearer <token>`. If the token doesn't match, the server returns 401.
-
-This prevents other processes on the same machine from talking to your browse server. The cookie picker UI (`/cookie-picker`) and health check (`GET /health`) are exempt on the local listener — they're 127.0.0.1-bound and don't execute commands. On the tunnel listener nothing is exempt except `/connect`.
-
-### Cookie security
-
-Cookies are the most sensitive data goldband handles. The design:
-
-1. **Keychain access requires user approval.** First cookie import per browser triggers a macOS Keychain dialog. The user must click "Allow" or "Always Allow." goldband never silently accesses credentials.
-
-2. **Decryption happens in-process.** Cookie values are decrypted in memory (PBKDF2 + AES-128-CBC), loaded into the Playwright context, and never written to disk in plaintext. The cookie picker UI never displays cookie values — only domain names and counts.
-
-3. **Database is read-only.** goldband copies the Chromium cookie DB to a temp file (to avoid SQLite lock conflicts with the running browser) and opens it read-only. It never modifies your real browser's cookie database.
-
-4. **Key caching is per-session.** The Keychain password + derived AES key are cached in memory for the server's lifetime. When the server shuts down (idle timeout or explicit stop), the cache is gone.
-
-5. **No cookie values in logs.** Console, network, and dialog logs never contain cookie values. The `cookies` command outputs cookie metadata (domain, name, expiry) but values are truncated.
-
-### Shell injection prevention
-
-The browser registry (Comet, Chrome, Arc, Brave, Edge) is hardcoded. Database paths are constructed from known constants, never from user input. Keychain access uses `Bun.spawn()` with explicit argument arrays, not shell string interpolation.
-
-### Unicode sanitization at server egress (v1.38.0.0)
-
-Page content harvested by CDP can contain lone UTF-16 surrogate halves (orphaned high or low surrogates from broken JavaScript string handling on the page). When those reach `JSON.stringify`, Bun emits them as `\uD800`-style escape sequences that the downstream consumer's `JSON.parse` accepts, but the Anthropic API rejects with a 400 — turning a single weird page into a session-killing error. Defense is single-point, applied at every server egress that ships page-derived strings.
-
-| Egress path | Module | Sanitization point |
-|---|---|---|
-| `POST /command` (HTTP) | `browse/src/server.ts` | `handleCommandInternal` wrapper (sanitizes the result of `handleCommandInternalImpl`) |
-| `POST /command/batch` | `browse/src/server.ts` | Same wrapper — batch consumers inherit it |
-| `GET /activity/stream` (SSE) | `browse/src/server.ts` | `sanitizeReplacer` passed to `JSON.stringify` |
-| `GET /inspector/events` (SSE) | `browse/src/server.ts` | `sanitizeReplacer` passed to `JSON.stringify` |
-
-`sanitizeReplacer` is a `JSON.stringify` replacer function that cleans every string value during encoding. Post-stringify regex doesn't work here — `JSON.stringify` has already converted `\uD800` into the literal escape sequence `"\\ud800"` before the regex could match, so the replacer must run inside the encoding pipeline. The pure-string helper `sanitizeLoneSurrogates` is used directly for `text/plain` responses.
-
-**Architectural invariant.** Every new SSE/WebSocket writer or HTTP response that ships page-content-derived strings MUST go through one of two paths: `JSON.stringify(payload, sanitizeReplacer)` for object payloads, or `sanitizeLoneSurrogates(body)` for text bodies. New surfaces that bypass both will desync the system. Inline comments at both SSE producers in `server.ts` say so; `browse/test/server-sanitize-surrogates.test.ts` pins wiring with bug-repro + invariant tests (`handleCommandInternalImpl` rename, central sanitization line, replacer existence, SSE producers stringify with replacer).
-
-### Prompt injection defense (sidebar agent)
-
-The Chrome sidebar agent has tools (Bash, Read, Glob, Grep, WebFetch) and reads hostile web pages, so it's the part of goldband most exposed to prompt injection. Defense is layered, not single-point.
-
-1. **L1-L3 content security (`browse/src/content-security.ts`).** Runs on every page-content command and every tool output: datamarking, hidden-element strip, ARIA regex, URL blocklist, and a trust-boundary envelope wrapper. Applied at both the server and the agent.
-
-2. **L4 ML classifier — TestSavantAI (`browse/src/security-classifier.ts`).** A 22MB BERT-small ONNX model (int8 quantized) bundled with the agent. Runs locally, no network. Scans every user message and every Read/Glob/Grep/WebFetch tool output before Claude sees it. Opt-in 721MB DeBERTa-v3 ensemble via `GOLDBAND_SECURITY_ENSEMBLE=deberta`.
-
-3. **L4b transcript classifier.** A Claude Haiku pass that looks at the full conversation shape (user message, tool calls, tool output), not just text. Gated by `LOG_ONLY: 0.40` so most clean traffic skips the paid call.
-
-4. **L5 canary token (`browse/src/security.ts`).** A random token injected into the system prompt at session start. Rolling-buffer detection across `text_delta` and `input_json_delta` streams catches the token if it shows up anywhere in Claude's output, tool arguments, URLs, or file writes. Deterministic BLOCK — if the token leaks, the attacker convinced Claude to reveal the system prompt, and the session ends.
-
-5. **L6 ensemble combiner (`combineVerdict`).** BLOCK requires agreement from two ML classifiers at >= `WARN` (0.75), not a single confident hit. This is the Stack Overflow instruction-writing false-positive mitigation. On tool-output scans, single-layer high confidence BLOCKs directly — the content wasn't user-authored, so the FP concern doesn't apply.
-
-**Critical constraint:** `security-classifier.ts` runs only in the sidebar-agent process, never in the compiled browse binary. `@huggingface/transformers` v4 requires `onnxruntime-node`, which fails `dlopen` from Bun compile's temp extract directory. Only the pure-string pieces (canary inject/check, verdict combiner, attack log, status) are in `security.ts`, which is safe to import from `server.ts`.
-
-**Env knobs:** `GOLDBAND_SECURITY_OFF=1` is a real kill switch (skips ML scan, canary still injects). Model cache at `~/.goldband/models/testsavant-small/` (112MB, first run) and `~/.goldband/models/deberta-v3-injection/` (721MB, opt-in only). Attack log at `~/.goldband/security/attempts.jsonl` (salted sha256 + domain, rotates at 10MB, 5 generations). Per-device salt at `~/.goldband/security/device-salt` (0600), cached in-process to survive FS-unwritable environments.
-
-**Visibility.** The sidebar header shows a shield icon (green/amber/red) polled via `/sidebar-chat`. A centered banner appears on canary leak or BLOCK verdict with the exact layer scores. Attempts are logged locally only; there is no cross-user aggregation.
-
-## The ref system
-
-Refs (`@e1`, `@e2`, `@c1`) are how the agent addresses page elements without writing CSS selectors or XPath.
-
-### How it works
-
-```
-1. Agent runs: $B snapshot -i
-2. Server calls Playwright's page.accessibility.snapshot()
-3. Parser walks the ARIA tree, assigns sequential refs: @e1, @e2, @e3...
-4. For each ref, builds a Playwright Locator: getByRole(role, { name }).nth(index)
-5. Stores Map<string, RefEntry> on the BrowserManager instance (role + name + Locator)
-6. Returns the annotated tree as plain text
-
-Later:
-7. Agent runs: $B click @e3
-8. Server resolves @e3 → Locator → locator.click()
-```
-
-### Why Locators, not DOM mutation
-
-The obvious approach is to inject `data-ref="@e1"` attributes into the DOM. This breaks on:
-
-- **CSP (Content Security Policy).** Many production sites block DOM modification from scripts.
-- **React/Vue/Svelte hydration.** Framework reconciliation can strip injected attributes.
-- **Shadow DOM.** Can't reach inside shadow roots from the outside.
-
-Playwright Locators are external to the DOM. They use the accessibility tree (which Chromium maintains internally) and `getByRole()` queries. No DOM mutation, no CSP issues, no framework conflicts.
-
-### Ref lifecycle
-
-Refs are cleared on navigation (the `framenavigated` event on the main frame). This is correct — after navigation, all locators are stale. The agent must run `snapshot` again to get fresh refs. This is by design: stale refs should fail loudly, not click the wrong element.
-
-### Ref staleness detection
-
-SPAs can mutate the DOM without triggering `framenavigated` (e.g. React router transitions, tab switches, modal opens). This makes refs stale even though the page URL didn't change. To catch this, `resolveRef()` performs an async `count()` check before using any ref:
-
-```
-resolveRef(@e3) → entry = refMap.get("e3")
-                → count = await entry.locator.count()
-                → if count === 0: throw "Ref @e3 is stale — element no longer exists. Run 'snapshot' to get fresh refs."
-                → if count > 0: return { locator }
-```
-
-This fails fast (~5ms overhead) instead of letting Playwright's 30-second action timeout expire on a missing element. The `RefEntry` stores `role` and `name` metadata alongside the Locator so the error message can tell the agent what the element was.
-
-### Cursor-interactive refs (@c)
-
-The `-C` flag finds elements that are clickable but not in the ARIA tree — things styled with `cursor: pointer`, elements with `onclick` attributes, or custom `tabindex`. These get `@c1`, `@c2` refs in a separate namespace. This catches custom components that frameworks render as `<div>` but are actually buttons.
-
-## Logging architecture
-
-Three ring buffers (50,000 entries each, O(1) push):
-
-```
-Browser events → CircularBuffer (in-memory) → Async flush to .goldband/*.log
-```
-
-Console messages, network requests, and dialog events each have their own buffer. Flushing happens every 1 second — the server appends only new entries since the last flush. This means:
-
-- HTTP request handling is never blocked by disk I/O
-- Logs survive server crashes (up to 1 second of data loss)
-- Memory is bounded (50K entries × 3 buffers)
-- Disk files are append-only, readable by external tools
-
-The `console`, `network`, and `dialog` commands read from the in-memory buffers, not disk. Disk files are for post-mortem debugging.
+`design` and `make-pdf` ship as `bun build --compile` binaries: a single
+executable with no `node_modules` or PATH setup at runtime, which matters
+because goldband installs into host skill directories where users do not expect
+to manage a Node.js project. Workflow runtimes run TypeScript directly with
+`bun run`, so there is no compilation step during development.
 
 ## Workflow prompt architecture
 
@@ -336,38 +68,6 @@ Per-workflow `SKILL.md`/`SKILL.md.tmpl`, universal preamble injection, model
 overlays, and resolver-driven prompt assembly are retired. Contract generation
 fails when prohibited boilerplate appears or when size limits are exceeded.
 `scripts/test-workflow-contracts.mjs` also rejects their reintroduction.
-
-## Command dispatch
-
-Commands are categorized by side effects:
-
-- **READ** (text, html, links, console, cookies, ...): No mutations. Safe to retry. Returns page state.
-- **WRITE** (goto, click, fill, press, ...): Mutates page state. Not idempotent.
-- **META** (snapshot, screenshot, tabs, chain, ...): Server-level operations that don't fit neatly into read/write.
-
-This isn't just organizational. The server uses it for dispatch:
-
-```typescript
-if (READ_COMMANDS.has(cmd))  → handleReadCommand(cmd, args, bm)
-if (WRITE_COMMANDS.has(cmd)) → handleWriteCommand(cmd, args, bm)
-if (META_COMMANDS.has(cmd))  → handleMetaCommand(cmd, args, bm, shutdown)
-```
-
-The `help` command returns all three sets so agents can self-discover available commands.
-
-## Error philosophy
-
-Errors are for AI agents, not humans. Every error message must be actionable:
-
-- "Element not found" → "Element not found or not interactable. Run `snapshot -i` to see available elements."
-- "Selector matched multiple elements" → "Selector matched multiple elements. Use @refs from `snapshot` instead."
-- Timeout → "Navigation timed out after 30s. The page may be slow or the URL may be wrong."
-
-Playwright's native errors are rewritten through `wrapError()` to strip internal stack traces and add guidance. The agent should be able to read the error and know what to do next without human intervention.
-
-### Crash recovery
-
-The server doesn't try to self-heal. If Chromium crashes (`browser.on('disconnected')`), the server exits immediately. The CLI detects the dead server on the next command and auto-restarts. This is simpler and more reliable than trying to reconnect to a half-dead browser process.
 
 ## E2E test infrastructure
 
@@ -445,16 +145,8 @@ The `EvalCollector` accumulates test results and writes them in two ways:
 
 | Tier | What | Cost | Speed |
 |------|------|------|-------|
-| 1 — Static validation | Parse `$B` commands, validate against registry, observability unit tests | Free | <5s |
+| 1 — Static validation | Contract, registry, and observability unit tests | Free | <5s |
 | 2 — E2E via `claude -p` | Spawn real Claude session, run each skill, scan for errors | ~$3.85 | ~20min |
 | 3 — LLM-as-judge | Sonnet scores docs on clarity/completeness/actionability | ~$0.15 | ~30s |
 
 Tier 1 runs on every `bun test`. Tiers 2+3 are gated behind `EVALS=1`. The idea: catch 95% of issues for free, use LLMs only for judgment calls and integration testing.
-
-## What's intentionally not here
-
-- **No WebSocket streaming.** HTTP request/response is simpler, debuggable with curl, and fast enough. Streaming would add complexity for marginal benefit.
-- **No MCP protocol.** MCP adds JSON schema overhead per request and requires a persistent connection. Plain HTTP + plain text output is lighter on tokens and easier to debug.
-- **No multi-user support.** One server per workspace, one user. The token auth is defense-in-depth, not multi-tenancy.
-- **No Windows/Linux cookie decryption.** macOS Keychain is the only supported credential store. Linux (GNOME Keyring/kwallet) and Windows (DPAPI) are architecturally possible but not implemented.
-- **No iframe auto-discovery.** `$B frame` supports cross-frame interaction (CSS selector, @ref, `--name`, `--url` matching), but the ref system does not auto-crawl iframes during `snapshot`. You must explicitly enter a frame context first.

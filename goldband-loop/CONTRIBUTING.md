@@ -54,9 +54,7 @@ only the small capability router; it is not a workflow template system.
 - Add deterministic regression coverage for contract changes.
 - Use `bun run check:source` before handing off production TypeScript changes.
 
-Browse source changes require `bun run build`. The bundled browser skills under
-`browser-skills/` are independent executable assets and retain their own
-`SKILL.md`, scripts, fixtures, and tests.
+Compiled CLI changes (`design`, `make-pdf`) require `bun run build`.
 
 ## Installing for verification
 

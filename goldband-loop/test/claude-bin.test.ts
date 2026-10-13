@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { resolveClaudeCommand, resolveClaudeBinary } from '../src/claude-bin';
+import { resolveClaudeCommand, resolveClaudeBinary } from '../lib/claude-bin';
 
 // Empty env baseline — no PATH, no overrides — ensures no environmental claude binary leaks in.
 const EMPTY_ENV = { PATH: '', Path: '' } as NodeJS.ProcessEnv;

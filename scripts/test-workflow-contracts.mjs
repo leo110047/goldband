@@ -197,25 +197,6 @@ assert.match(
   'plan/create must not misrepresent phase metadata as a hard gate',
 );
 
-const browserSessionContract = contracts.get(
-  'goldband-loop/generated/workflow-contracts/browser/session.workflow.md',
-);
-assert.ok(browserSessionContract, 'browser/session contract must exist');
-assert.match(
-  browserSessionContract,
-  /On Codex CLI, do not probe Browser or Chrome plugin bindings/,
-  'browser/session must not route Codex CLI through app browser bindings',
-);
-assert.match(
-  browserSessionContract,
-  /\.workflow-launcher\.json and execute its exact argvPrefix plus browser session --host codex/,
-  'browser/session must use the installed trusted Codex workflow launcher',
-);
-assert.match(
-  browserSessionContract,
-  /Missing marker, runtime, or rule is an install failure/,
-  'browser/session must fail closed when its trusted runtime is incomplete',
-);
 assert.match(
   reviewCodeContract,
   /Missing runtime or rule is an install failure/,
@@ -238,12 +219,12 @@ const actions = manifest.capabilities.flatMap((capability) =>
     owner: action.owner ?? null,
   })),
 );
-assert.equal(actionCount, 22);
+assert.equal(actionCount, 21);
 assert.equal(
   actions.filter((action) => action.lifecycle === 'public').length,
-  20,
+  19,
 );
-assert.equal(actions.filter((action) => action.runtime === 'typed').length, 17);
+assert.equal(actions.filter((action) => action.runtime === 'typed').length, 16);
 assert.equal(
   actions.filter((action) => action.runtime === 'compatibility').length,
   3,
@@ -272,6 +253,7 @@ assert.equal(
   'experimental actions cannot claim a runtime owner',
 );
 for (const retired of [
+  'browser/session',
   'qa/report-only',
   'release/report',
   'plan/tune',
@@ -287,7 +269,6 @@ for (const retired of [
 
 const safetyGates = collectSafetyGates(manifest.capabilities);
 assert.deepEqual(safetyGates.map((gate) => gate.operation).sort(), [
-  'browser/cookies',
   'ios/qa',
   'ios/sync',
   'plan/sync',
@@ -307,7 +288,7 @@ assert.deepEqual(
 assert.equal(
   safetyGates.filter((gate) => gate.enforcement === 'blocked-before-runtime')
     .length,
-  5,
+  4,
 );
 
 const missingPrimaryGate = structuredClone(manifest.capabilities);

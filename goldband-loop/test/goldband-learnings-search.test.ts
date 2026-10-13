@@ -80,3 +80,27 @@ describe('goldband-learnings-search cross-project trust gating', () => {
     expect(out).not.toContain('foreign-observed');
   });
 });
+
+describe("goldband-learnings-search injection behavior", () => {
+  test("a quote-breaking query is matched as data", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "learnings-injection-"));
+    try {
+      const projectDir = path.join(home, "projects", "other-project");
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(projectDir, "learnings.jsonl"),
+        `${JSON.stringify({ skill: "review", type: "pattern", key: "k", insight: "quote-marker it's data", confidence: 7, source: "observed", ts: new Date().toISOString() })}\n`,
+      );
+      const stdout = execFileSync(
+        BIN,
+        ["--cross-project", "--query", "it's ');process.exit(99);//", "--limit", "1"],
+        { encoding: "utf-8", timeout: 10_000, env: { ...process.env, GOLDBAND_HOME: home } },
+      );
+      // The script ends with `|| exit 0`, so the exit status cannot reveal an
+      // injection; a match proves the query was compared as data.
+      expect(stdout).toContain("quote-marker it's data");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+});

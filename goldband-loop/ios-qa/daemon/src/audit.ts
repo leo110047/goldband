@@ -1,5 +1,4 @@
-// Audit + attempts logging. Reuses the same rotation primitives as
-// browse/src/tunnel-denial-log.ts (10MB rotation, 5 generations).
+// Audit + attempts logging with size-based rotation (10MB, 5 generations).
 
 import { mkdir, appendFile, stat, rename, readFile } from 'fs/promises';
 import { join, dirname } from 'path';
@@ -80,7 +79,7 @@ export async function writeAttempt(opts: {
   await appendFile(path, JSON.stringify(row) + '\n', { mode: 0o600 });
 }
 
-// Sanitize-replacer for JSON responses — mirrors browse's sanitize-replacer.ts.
+// Sanitize-replacer for JSON responses.
 // Strips lone UTF-16 surrogate halves that would otherwise reach the
 // Anthropic API as \uD800-style escapes and trigger 400.
 export function sanitizeReplacer(_key: string, value: unknown): unknown {

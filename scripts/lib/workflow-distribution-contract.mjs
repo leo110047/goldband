@@ -5,7 +5,6 @@ import path from 'node:path';
 export const DISTRIBUTION_MANIFEST_FILE = 'distribution-manifest.json';
 const MAX_SIDE_ARTIFACT_BYTES = 1024 * 1024;
 const OPTIONAL_GENERATED_SOURCE_INPUTS = new Set([
-  'goldband-loop/browse/dist',
   'goldband-loop/design/dist',
   'goldband-loop/make-pdf/dist',
 ]);
@@ -21,9 +20,6 @@ export const SOURCE_INPUTS = [
   'goldband-loop/VERSION',
   'goldband-loop/bin',
   'goldband-loop/biome.json',
-  'goldband-loop/browse/bin',
-  'goldband-loop/browse/dist',
-  'goldband-loop/browse/src',
   'goldband-loop/bunfig.toml',
   'goldband-loop/bun.lock',
   'goldband-loop/cross-review',

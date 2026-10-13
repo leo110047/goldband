@@ -11,7 +11,7 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync, mkdirSync
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-const SCRIPT = join(import.meta.dir, '..', '..', 'bin', 'goldband-update-check');
+const SCRIPT = join(import.meta.dir, '..', 'bin', 'goldband-update-check');
 
 let goldbandDir: string;
 let stateDir: string;
@@ -43,7 +43,7 @@ beforeEach(() => {
   // Link real goldband-config so update_check config check works
   const binDir = join(goldbandDir, 'bin');
   mkdirSync(binDir);
-  symlinkSync(join(import.meta.dir, '..', '..', 'bin', 'goldband-config'), join(binDir, 'goldband-config'));
+  symlinkSync(join(import.meta.dir, '..', 'bin', 'goldband-config'), join(binDir, 'goldband-config'));
 });
 
 afterEach(() => {
@@ -252,7 +252,7 @@ describe('goldband-update-check', () => {
   // regressions like the "exits 1 when up to date" bug.
   test('exits 0 with real project VERSION and unreachable remote', () => {
     // Simulate agent context: real VERSION file, network unavailable
-    const projectRoot = join(import.meta.dir, '..', '..');
+    const projectRoot = join(import.meta.dir, '..');
     const versionFile = join(projectRoot, 'VERSION');
     if (!existsSync(versionFile)) return; // skip if no VERSION
     const version = readFileSync(versionFile, 'utf-8').trim();

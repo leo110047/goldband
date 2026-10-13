@@ -69,7 +69,7 @@ describe('workflow registry', () => {
       const expected = core.has(entry.name) ? 'integrated' : 'registered-only';
       expect(entry.integrationStatus).toBe(expected);
     }
-    expect(publicWorkflows()).toHaveLength(20);
+    expect(publicWorkflows()).toHaveLength(19);
     expect(experimentalWorkflows().map((entry) => entry.name).sort()).toEqual([
       'release/land',
       'release/setup',
@@ -78,12 +78,11 @@ describe('workflow registry', () => {
     expect(registeredOnlyWorkflows().every((entry) => entry.lifecycle === 'experimental')).toBe(true);
   });
 
-  test('nine high-risk operations have fail-closed safety contracts', () => {
+  test('eight high-risk operations have fail-closed safety contracts', () => {
     const gates = WORKFLOW_REGISTRY.flatMap((entry) =>
       entry.safetyGates.map((gate) => ({ ...gate, action: entry.name })),
     );
     expect(gates.map((gate) => gate.operation).sort()).toEqual([
-      'browser/cookies',
       'ios/qa',
       'ios/sync',
       'plan/sync',
@@ -101,7 +100,7 @@ describe('workflow registry', () => {
 	).toEqual(['ios/qa', 'plan/sync', 'plan/sync-preview', 'system/upgrade']);
     expect(
       gates.filter((gate) => gate.enforcement === 'blocked-before-runtime'),
-    ).toHaveLength(5);
+    ).toHaveLength(4);
     for (const entry of WORKFLOW_REGISTRY.filter(
       (workflow) => workflow.riskLevel === 'high',
     )) {
@@ -110,8 +109,6 @@ describe('workflow registry', () => {
       ).toBe(true);
     }
     expect(WORKFLOW_REGISTRY.some((entry) => entry.name === 'release/canary'))
-      .toBe(false);
-    expect(WORKFLOW_REGISTRY.some((entry) => entry.name === 'browser/cookies'))
       .toBe(false);
     expect(WORKFLOW_REGISTRY.some((entry) => entry.name === 'ios/sync'))
       .toBe(false);
@@ -226,7 +223,6 @@ describe('workflow registry', () => {
       'README.md',
       'CONTRIBUTING.md',
       'ARCHITECTURE.md',
-      'BROWSER.md',
       'DESIGN.md',
       'ETHOS.md',
       'AGENTS.md',

@@ -22,17 +22,13 @@ case "$(uname -s)" in
     ;;
 esac
 
-"$BUN_CMD" run vendor:xterm
 "$BUN_CMD" run gen:surfaces
-"$BUN_CMD" build --compile browse/src/cli.ts --outfile browse/dist/browse
-"$BUN_CMD" build --compile browse/src/find-browse.ts --outfile browse/dist/find-browse
 "$BUN_CMD" build --compile design/src/cli.ts --outfile design/dist/design
 "$BUN_CMD" build --compile make-pdf/src/cli.ts --outfile make-pdf/dist/pdf
 "$BUN_CMD" build --compile bin/goldband-global-discover.ts --outfile bin/goldband-global-discover
 "$BUN_CMD" build --compile scripts/task-emission-schema.ts --outfile bin/goldband-task-emission
-bash browse/scripts/build-node-server.sh
-bash scripts/write-version-files.sh browse/dist/.version design/dist/.version make-pdf/dist/.version
-chmod +x browse/dist/browse browse/dist/find-browse design/dist/design make-pdf/dist/pdf bin/goldband-global-discover bin/goldband-task-emission
+bash scripts/write-version-files.sh design/dist/.version make-pdf/dist/.version
+chmod +x design/dist/design make-pdf/dist/pdf bin/goldband-global-discover bin/goldband-task-emission
 rm -f .*.bun-build
 if [ "$BUN_CMD_WAS_COPIED" -eq 1 ]; then
   rm -rf "$ROOT/.tmp-bun-bin"

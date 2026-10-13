@@ -3,12 +3,9 @@
   "files": {
     "includes": [
       "bin/**/*.ts",
-      "browse/src/**/*.{ts,cjs}",
-      "browser-skills/**/*.ts",
       "cross-review/**/*.cjs",
       "design/prototype.ts",
       "design/src/**/*.ts",
-      "extension/**/*.js",
       "hosts/**/*.ts",
       "ios-qa/daemon/src/**/*.ts",
       "ios-qa/scripts/**/*.ts",
@@ -18,7 +15,6 @@
       "workflows/**/*.ts",
       "!**/*.test.*",
       "!**/test/**",
-      "!extension/lib/**",
       "!generated/**",
       "!workflows/**/*.generated.ts"
     ]

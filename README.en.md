@@ -21,7 +21,7 @@ On review failure, Claude/Codex hooks point to the installed launch contract; in
 - Have Git, Node.js, and the Claude Code or Codex CLI you intend to use available.
 - Installer-based Claude configuration also needs `jq`; Codex configuration installation and checks require **Python 3.11 or later**.
 - Use a complete Git checkout; do not download only `install.sh`.
-- Goldband Loop also requires **Bun 1.3.11 or later**. Browser workflows require Playwright Chromium, which the installer installs and verifies.
+- Goldband Loop also requires **Bun 1.3.11 or later**. `make-pdf` requires Playwright Chromium, which the installer installs and verifies. Browser QA uses the host's own browser tool or the optional Playwright MCP server (see [mcp/README.md](mcp/README.md)).
 - Use Bash on macOS/Linux and Git Bash or WSL on Windows. There is no native PowerShell installer. Individual workflow limits are described below.
 
 The installer changes tool configuration, hooks, and skills in your home directory. Choose either the Claude plugin or the installer's Claude core setup to avoid loading duplicate assets.

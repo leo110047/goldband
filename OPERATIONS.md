@@ -19,10 +19,11 @@ Plugins, app adapters, and full installer setups provide different features;
 see [distribution boundaries](ARCHITECTURE.md#system-shape). Avoid installing
 both the Claude core plugin and installer-managed Claude core assets.
 
-The workflow installer installs and verifies Playwright Chromium. For an offline
-or CI setup that does not need browser workflows, use
-`GOLDBAND_SKIP_PLAYWRIGHT=1` with your chosen install command. This explicitly
-skips browser setup; it does not provide a working browser workflow.
+The workflow installer installs and verifies Playwright Chromium, which
+`make-pdf` uses for rendering. For an offline or CI setup that does not need
+PDF output, use `GOLDBAND_SKIP_PLAYWRIGHT=1` with your chosen install command.
+Browser QA does not depend on this: it uses the host's browser tool or the
+optional Playwright MCP server described in [mcp/README.md](mcp/README.md).
 
 After updating, rerun your original installation command and `./install.sh status`.
 Status checks the installed source inputs, artifact integrity, and dispatch

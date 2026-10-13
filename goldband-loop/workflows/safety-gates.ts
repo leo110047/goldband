@@ -7,13 +7,6 @@ import type {
 	WorkflowRunOptions,
 } from "./types";
 
-const COOKIE_COMMANDS = new Set([
-	"cookie",
-	"cookie-import",
-	"cookie-import-browser",
-	"cookies",
-]);
-
 type SafetyWorkflowContract = Pick<
 	WorkflowDefinition,
 	"name" | "riskLevel" | "integrationStatus" | "runtimeOwner" | "safetyGates"
@@ -296,9 +289,6 @@ function operationFor(workflowName: string, input: unknown): string {
 	if (workflowName === "release/land" && record.mode === "canary") {
 		return "release/canary";
 	}
-	if (workflowName === "browser/session" && isCookieOperation(record)) {
-		return "browser/cookies";
-	}
 	if (workflowName === "ios/qa" && record.mode === "sync") {
 		return "ios/sync";
 	}
@@ -456,16 +446,6 @@ function verifyTrackerSyncReadback(
 	) {
 		throw new Error("plan/sync publish checkpoint readback mismatch");
 	}
-}
-
-function isCookieOperation(input: Record<string, unknown>): boolean {
-	if (typeof input.command !== "string") return false;
-	if (COOKIE_COMMANDS.has(input.command)) return true;
-	return (
-		input.command === "state" &&
-		Array.isArray(input.args) &&
-		input.args[0] === "load"
-	);
 }
 
 function assertGateOwnership(
