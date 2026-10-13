@@ -209,11 +209,6 @@
         54
       ]
     },
-    "make-pdf/src/orchestrator.ts": {
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        52
-      ]
-    },
     "make-pdf/src/render.ts": {
       "lint/complexity/noExcessiveLinesPerFunction": [
         63

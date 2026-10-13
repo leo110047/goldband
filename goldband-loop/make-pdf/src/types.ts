@@ -7,7 +7,7 @@
 type PageSize = "letter" | "a4" | "legal" | "tabloid";
 
 /**
- * Options for `$P generate` — the public CLI contract.
+ * Options for `make-pdf generate` — the public CLI contract.
  * Matches the flag set documented in the CEO plan.
  */
 export interface GenerateOptions {
@@ -50,7 +50,7 @@ export interface GenerateOptions {
 }
 
 /**
- * Options for `$P preview`.
+ * Options for `make-pdf preview`.
  */
 export interface PreviewOptions {
   input: string;
@@ -70,7 +70,7 @@ export interface PreviewOptions {
 }
 
 /**
- * Exit codes for $P generate.
+ * Exit codes for make-pdf generate.
  * Mirror these in orchestrator error paths.
  */
 export const ExitCode = {

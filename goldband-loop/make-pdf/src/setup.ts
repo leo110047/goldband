@@ -1,5 +1,5 @@
 /**
- * `$P setup` — guided smoke test.
+ * `make-pdf setup` — guided smoke test.
  *
  * Flow (per the CEO plan CLI UX spec):
  *   1. Verify Playwright can launch Chromium
@@ -80,9 +80,9 @@ export async function runSetup(): Promise<void> {
   process.stderr.write("  [4/4] All checks passed.\n\n");
   process.stderr.write([
     "make-pdf is ready. Try:",
-    "  $P generate letter.md                  # default memo mode",
-    "  $P generate --cover --toc essay.md     # full publication",
-    "  $P generate --watermark DRAFT memo.md  # diagonal watermark",
+    "  make-pdf generate letter.md                  # default memo mode",
+    "  make-pdf generate --cover --toc essay.md     # full publication",
+    "  make-pdf generate --watermark DRAFT memo.md  # diagonal watermark",
     "",
     `Smoke-test PDF: ${outPath}`,
     "",

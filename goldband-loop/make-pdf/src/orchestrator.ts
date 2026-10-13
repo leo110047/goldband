@@ -10,7 +10,7 @@
  *   - --verbose: stage timings.
  *
  * Browser lifecycle: every generate launches its own headless Chromium through
- * pdfRenderer.ts and closes it in a try/finally, so parallel $P generate calls
+ * pdfRenderer.ts and closes it in a try/finally, so parallel make-pdf generate calls
  * never share browser state.
  */
 
@@ -22,7 +22,7 @@ import { spawn } from "node:child_process";
 
 import { render } from "./render";
 import type { GenerateOptions, PreviewOptions } from "./types";
-import { renderPdf } from "./pdfRenderer";
+import { type PdfRenderOptions, renderPdf } from "./pdfRenderer";
 
 class ProgressReporter {
   private readonly quiet: boolean;
@@ -52,10 +52,9 @@ class ProgressReporter {
     const total = ((Date.now() - this.totalStart) / 1000).toFixed(1);
     process.stderr.write(`\r\x1b[KDone in ${total}s. ${extra}\n`);
   }
-  fail(stage: string, err: Error): void {
-    if (!this.quiet) process.stderr.write("\r\x1b[K");
-    // Always emit failure info, even in quiet mode — this is an error path.
-    process.stderr.write(`${stage} failed: ${err.message}\n`);
+  /** End the pending stage line so the caller's error starts on its own line. */
+  interrupt(): void {
+    if (!this.quiet) process.stderr.write("\n");
   }
 }
 
@@ -107,36 +106,47 @@ export async function generate(opts: GenerateOptions): Promise<string> {
   // TOC was requested, then emit the PDF. The renderer always closes Chromium.
   try {
     progress.begin("Generating PDF");
-    await renderPdf({
-      html: rendered.html,
-      output: outputPath,
-      waitUntil: "domcontentloaded",
-      format: opts.pageSize ?? "letter",
-      marginTop: opts.marginTop ?? opts.margins ?? "1in",
-      marginRight: opts.marginRight ?? opts.margins ?? "1in",
-      marginBottom: opts.marginBottom ?? opts.margins ?? "1in",
-      marginLeft: opts.marginLeft ?? opts.margins ?? "1in",
-      headerTemplate: opts.headerTemplate,
-      footerTemplate: opts.footerTemplate,
-      // CSS is the single source of truth for page numbers (see print-css.ts
-      // @bottom-center). Chromium's native numbering always off to avoid double
-      // footers. The CSS layer honors pageNumbers + footerTemplate via render().
-      pageNumbers: false,
-      tagged: opts.tagged !== false,
-      outline: opts.outline !== false,
-      printBackground: !!opts.watermark,
-      toc: opts.toc,
-    });
+    await renderPdf(pdfRenderOptions(opts, rendered.html, outputPath));
     progress.end("Generating PDF");
 
     const stat = fs.statSync(outputPath);
     const kb = Math.round(stat.size / 1024);
     progress.done(`${rendered.meta.wordCount} words · ${kb}KB · ${outputPath}`);
+  } catch (err) {
+    progress.interrupt();
+    throw err;
   } finally {
     try { fs.unlinkSync(htmlTmp); } catch { /* best-effort */ }
   }
 
   return outputPath;
+}
+
+function pdfRenderOptions(
+  opts: GenerateOptions,
+  html: string,
+  outputPath: string,
+): PdfRenderOptions {
+  return {
+    html,
+    output: outputPath,
+    waitUntil: "domcontentloaded",
+    format: opts.pageSize ?? "letter",
+    marginTop: opts.marginTop ?? opts.margins ?? "1in",
+    marginRight: opts.marginRight ?? opts.margins ?? "1in",
+    marginBottom: opts.marginBottom ?? opts.margins ?? "1in",
+    marginLeft: opts.marginLeft ?? opts.margins ?? "1in",
+    headerTemplate: opts.headerTemplate,
+    footerTemplate: opts.footerTemplate,
+    // CSS is the single source of truth for page numbers (see print-css.ts
+    // @bottom-center). Chromium's native numbering always off to avoid double
+    // footers. The CSS layer honors pageNumbers + footerTemplate via render().
+    pageNumbers: false,
+    tagged: opts.tagged !== false,
+    outline: opts.outline !== false,
+    printBackground: !!opts.watermark,
+    toc: opts.toc,
+  };
 }
 
 /**
