@@ -83,27 +83,10 @@ paths, credential-shaped values, or one-off approvals that belong in
 
 ## Suggested Automation
 
-Use a local scheduled task outside this repo when you want recurring checks. The
-repo does not install scheduled jobs by default.
-
-Weekly check:
-
-```bash
-cd /path/to/goldband
-bash scripts/check-codex-portability.sh
-./scripts/check-skills.sh
-python3 scripts/verify-hook-script-references.py
-node scripts/check-code-style.mjs
-npm run test:hook-router
-npm run test:hook-router:coverage
-npm run test:eval-budget-cap
-```
-
-If `codex/rules/default.rules` becomes dirty with local approvals, run:
-
-```bash
-./install.sh repair-codex-rules
-```
+The repository installs no scheduled jobs. Recurring checks run `npm test` or the
+suites listed by `npm run test:repo:list` from a scheduler outside the repository.
+When `codex/rules/default.rules` collects local approvals, `./install.sh
+repair-codex-rules` moves them into the ignored `codex/local/` overlay.
 
 ## Codex Hooks
 
@@ -122,14 +105,9 @@ Install or refresh the global git style gate:
 
 ```bash
 ./install.sh style-gate
-git config --global --get core.hooksPath
 ```
 
-Expected goldband value:
-
-```text
-~/.config/goldband/git-hooks
-```
+The installed `core.hooksPath` is `~/.config/goldband/git-hooks`.
 
 Default install packs do not change global git settings; run `style-gate`
 explicitly when you want the machine-wide hook. The pre-commit hook checks only
@@ -161,24 +139,16 @@ If that project hook exists, goldband runs it next. If it does not exist, the
 hook chain ends without requiring any project configuration. There is no order
 setting; goldband-first is the default contract.
 
-This repository also has a project style gate script:
-
-```bash
-node scripts/check-goldband-project-style-gate.mjs --staged
-```
-
-It selects fast goldband-specific checks by staged path: selector parity,
-plugin distribution artifacts, hook script references, Codex portability, and
+This repository's project style gate
+(`scripts/check-goldband-project-style-gate.mjs --staged`) selects fast
+goldband-specific checks by staged path: plugin distribution artifacts, hook
+script references, Codex portability, first-party export consumers, and
 style-gate self-tests. `./install.sh style-gate` installs a thin
 `.git/hooks/pre-commit` shim for this checkout; the global goldband hook will
 invoke that project hook after the global gate passes.
 
-A repo can opt out permanently by adding `.goldband-no-style-gate`, or
-temporarily with:
-
-```bash
-GOLDBAND_STYLE_GATE=0 git commit
-```
+A repo opts out permanently with a `.goldband-no-style-gate` file, or for one
+command with `GOLDBAND_STYLE_GATE=0`.
 
 Temporary bypasses print a warning and write a local log under
 `${XDG_STATE_HOME:-$HOME/.local/state}/goldband/style-gate-bypass.log`.
@@ -198,25 +168,12 @@ claude plugin install goldband@goldband --scope user
 claude plugin list --json
 ```
 
-Before releasing plugin changes:
-
-```bash
-node scripts/sync-plugin-assets.mjs --check
-npm run test:plugin-distribution
-claude plugin validate plugin-assets/claude-code-plugin
-```
-
+Plugin changes follow [CONTRIBUTING.md](CONTRIBUTING.md#plugin-distribution-changes).
 The sync script generates `plugin-assets/claude-code-plugin/`,
 `.claude-plugin/marketplace.json`, and
 `docs/reports/plugin-expected-assets.json` from the source `commands/`,
 `rules/`, `hooks/`, and `skills/global/` directories. Do not hand-edit generated
 plugin files.
-
-CI installs Claude Code with `npm install -g @anthropic-ai/claude-code` and runs
-the full `npm run test:plugin-distribution` gate. Local contributors should run
-the same command before committing plugin-affecting changes; the `--skip-cli`
-mode is only a structural/runtime-smoke fallback and does not validate Claude
-plugin manifest schema or installation behavior.
 
 Uninstall paths are intentionally separate:
 
@@ -230,16 +187,7 @@ assets both exist. Duplicate `commands`, `rules`, `hooks`, or `skills` are not a
 green state; status reports active sources, duplicate names, remediation, and
 exits non-zero.
 
-goldband's active installer path is the POSIX installer:
-
-```bash
-./install.sh all-tools
-./install.sh all-with-workflow
-./install.sh status
-./install.sh uninstall
-```
-
-On Windows, use Git Bash or WSL. Native PowerShell install, status, uninstall,
+The installer is POSIX-only (`./install.sh help` lists its targets). On Windows, use Git Bash or WSL. Native PowerShell install, status, uninstall,
 and self-update wrappers are retired. If an older install left
 `~/.claude/bin/goldband-self-update.ps1`,
 `~/.claude/shell/goldband-launchers.ps1`, or
@@ -265,20 +213,12 @@ from GitHub unless `update_check` is `false`.
 
 ### Work Map tracker configuration and sync
 
-Work Maps are local-only unless tracker mode is explicitly configured. A
-configuration file contains no token; authentication stays in `gh` or `glab`.
-For example, save this request outside the repository and run the matching host
-launcher with `goldband plan sync configure --input <file> --host <host>`:
-
-```json
-{
-  "schemaVersion": 1,
-  "mode": "github",
-  "repository": "owner/repository",
-  "defaultLabels": ["goldband"],
-  "dependencyCapability": "body-links"
-}
-```
+Work Maps are local-only unless tracker mode is explicitly configured with
+`goldband plan sync configure --input <file> --host <host>`. The input file lives
+outside the repository and contains `schemaVersion: 1`, `mode` (`github`,
+`gitlab`, or `off`), `repository` (`owner/name`, or `null` when off),
+`defaultLabels`, and `dependencyCapability`. It contains no token;
+authentication stays in `gh` or `glab`.
 
 Configuration first reads CLI, auth, and repository access. Missing access is
 a blocked result and does not write config. Use `mode: "off"` with
@@ -298,19 +238,7 @@ Tracker telemetry is local-only at
 status, duration, and bounded conflict reason; it never contains issue bodies,
 comments, local paths, credentials, or environment values.
 
-Usage events:
-
-```bash
-node -e 'const t = require("./hooks/scripts/lib/hook-router/usage-telemetry"); console.log(t.getUsageFile())'
-```
-
-Metrics events:
-
-```bash
-node -e 'const m = require("./hooks/scripts/lib/hook-router/metrics"); console.log(m.getMetricsFile())'
-```
-
-Path resolution order:
+Hook usage events and metrics resolve their data root in this order:
 
 1. `CLAUDE_PLUGIN_DATA/<namespace>` when Claude exposes stable plugin data.
 2. `GOLDBAND_DATA_DIR/<namespace>` when explicitly configured.
@@ -329,14 +257,7 @@ enabled by default and can be disabled with
 `GOLDBAND_USAGE_TELEMETRY_ENABLED=0`. Hook metrics are enabled by default and
 can be disabled with `HOOK_ROUTER_METRICS_ENABLED=0`.
 
-Weekly usage and hook report:
-
-```bash
-node hooks/scripts/tools/report-usage-summary.js --days 7
-node hooks/scripts/tools/report-usage-summary.js --days 7 --json
-```
-
-The human report answers, in the first screen, which `goldband-*` workflow
+`node hooks/scripts/tools/report-usage-summary.js --days <n> [--json]` reports which `goldband-*` workflow
 entries were used and how often, separated into `confirmed` and `inferred`
 signals, plus hook deny and advisory counts. `confirmed` means a hook payload
 explicitly reported a `Skill` tool invocation with a `goldband-*` skill name.
@@ -346,16 +267,8 @@ Future keep/delete decisions should use confirmed workflow counts as the primary
 signal. Inferred workflow signals and hook advisories are secondary triage data
 and can be noisy.
 
-Weekly telemetry mining:
-
-```bash
-node scripts/mine-telemetry.mjs summary --days 7
-node scripts/mine-telemetry.mjs classify --days 7
-node scripts/mine-telemetry.mjs extract-fixtures --days 7 --out-dir /tmp/goldband-telemetry-review
-node scripts/mine-telemetry.mjs extract-evals --days 7 --out-dir /tmp/goldband-telemetry-review
-```
-
-The miner never rewrites source telemetry. It reads the usage JSONL base file
+`node scripts/mine-telemetry.mjs <summary|classify|extract-fixtures|extract-evals> --days <n>`
+mines local telemetry; the extract commands also take `--out-dir`. The miner never rewrites source telemetry. It reads the usage JSONL base file
 plus rotated siblings, and it reads workflow evidence from
 `${GOLDBAND_HOME:-$HOME/.goldband}/workflow-runs` unless
 `--workflow-runs-dir` is supplied. `extract-fixtures` runs candidate replay
@@ -366,31 +279,16 @@ them to `hooks/fixtures/router/replay-fixtures.json` or a formal eval dataset
 until a human has reviewed the sanitized content.
 
 OTLP trace export is opt-in and offline-first. JSONL remains the source of
-truth; the exporter only reads the usage file and sends a derived traces payload
-when explicitly run:
-
-```bash
-node scripts/export-telemetry-otlp.mjs --dry-run
-node scripts/export-telemetry-otlp.mjs --endpoint http://localhost:4318
-```
-
-The exporter supports `--usage-file`, `--cursor-file`, `--dry-run`, and
+truth; `scripts/export-telemetry-otlp.mjs` reads the usage file and sends a
+derived traces payload to `--endpoint` only when explicitly run. It supports `--usage-file`, `--cursor-file`, `--dry-run`, and
 `--limit`. `--since` is dry-run only because formal exports advance a cursor. See
 [docs/observability.md](docs/observability.md) for the local Jaeger demo and
 [docs/telemetry-schema.md](docs/telemetry-schema.md) for the v1 schema.
 
 ## Regression Gates and Failure Taxonomy
 
-Hook policy regressions are tracked through the required/free replay gate:
-
-```bash
-npm run test:hook-router
-npm run test:telemetry
-npm run test:hook-router:coverage
-npm run test:eval-budget-cap
-```
-
-The repository-root `Validate Config` workflow runs these commands on pushes to
+Hook policy regressions are tracked by the `test:hook-router`, `test:telemetry`,
+`test:hook-router:coverage`, and `test:eval-budget-cap` suites. The repository-root `Validate Config` workflow runs these commands on pushes to
 `dev`. The replay dataset is `hooks/fixtures/router/replay-fixtures.json`; the
 coverage checker reads that dataset plus the live hook policy modules so missing
 secret-pattern, pretool-policy, careful-mode, or freeze-mode cases fail

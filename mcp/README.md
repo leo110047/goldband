@@ -53,8 +53,8 @@ and adds four defaults:
 - `--isolated` keeps the browser profile in memory, so the agent never reuses
   your real sign-ins and nothing persists between sessions.
 - `--allowed-origins=http://localhost:*;http://127.0.0.1:*` limits navigation to
-  local development servers. Add your staging origin (for example
-  `;https://staging.example.com`) when you need it. Playwright documents this
+  local development servers; append other origins, separated by `;`, when
+  needed. Playwright documents this
   option as not a security boundary (it does not cover redirects), so treat it
   as protection against accidental browsing, not enforcement.
 - `--output-dir=/path/to/goldband-home/playwright-mcp` keeps page snapshots
@@ -92,13 +92,9 @@ npm through `npx`. An entry installed before the output-dir or size-cap
 defaults keeps its old arguments; remove it (`claude mcp remove playwright -s user`, and the
 `[mcp_servers.playwright]` table) and rerun the installer to pick it up.
 
-To add it by hand instead:
-
-```bash
-claude mcp add --scope user playwright -- npx -y @playwright/mcp@0.0.83 --isolated \
-  "--allowed-origins=http://localhost:*;http://127.0.0.1:*" \
-  "--output-dir=$HOME/.goldband/playwright-mcp" --output-max-size=5242880
-```
+A manual entry uses the same command and arguments as the `playwright` entry
+in `claude.mcp.json.template`, with the output-dir placeholder replaced by an
+absolute path.
 
 ## Token-Backed Setup Flow
 
@@ -121,20 +117,7 @@ node scripts/check-mcp-token-status.mjs --mcp-env-file codex/local/mcp.env --pri
 
 ## Validation
 
-First validate local syntax:
-
-```bash
-python3 -m json.tool mcp/claude.mcp.json.template
-python3 scripts/check-json-toml-syntax.py
-```
-
-For any server a user actually enables, run an MCP Inspector smoke test before
-documenting it as supported:
-
-```bash
-npx @modelcontextprotocol/inspector <server-command>
-```
-
-The smoke test must verify that the server starts and exposes the expected tool
-list. Token-backed servers such as GitHub or Sentry require user-provided
-credentials and must not be enabled by default.
+`scripts/check-json-toml-syntax.py` checks template syntax. A server is
+documented as supported only after an MCP Inspector smoke test shows that it
+starts and exposes the expected tool list. Token-backed servers such as GitHub
+or Sentry require user-provided credentials and are never enabled by default.

@@ -650,10 +650,8 @@ Implementation contract:
   an unrelated session does not imply that restoration is needed.
 - Prompt routing requires a capability-specific trigger. Generic words such as
   `檢查` do not activate review guidance by themselves.
-- Context saturation guidance is emitted once when entering warning severity
-  and once when entering critical severity, not every fixed number of calls.
-  _Superseded 2026-10-13: the tool-call-count context monitor was removed; see
-  [2026-10-13: Review Has One Reviewer Flag Surface and Bounded Improvement Findings](#2026-10-13-review-has-one-reviewer-flag-surface-and-bounded-improvement-findings)._
+- Hooks do not estimate context saturation; tool-call counts do not measure
+  actual context usage.
 - Ordinary `Stop` events do not produce desktop notifications or repeat style
   scans. Permission and elicitation notifications, immediate edit advisories,
   and deterministic stop blockers remain active.
@@ -926,19 +924,9 @@ Implementation contract:
 - An automatic launcher or runtime failure is terminal. The parent agent must
   not silently fall back to an untyped manual review or claim complete
   coverage.
-- Ordinary review keeps automatic specialist selection. A strict or exhaustive
-  request explicitly adds `--specialists all`, whose incomplete coverage fails
-  closed.
-- A real host call defaults to twelve minutes. A complete review pass is bounded
-  to twelve minutes with specialists off, twenty minutes in auto mode, and
-  thirty minutes only for explicit `--specialists all` coverage. Validated CLI
-  overrides may narrow or extend those budgets within 60 to 1800 seconds; the
-  host-call timeout cannot exceed the pass timeout.
-
-_Partially superseded: the two bullets above, and the specialist consequences
-below, are historical. The current contract has no `--specialists` flag and one
-twelve-minute default pass budget; see
-[2026-10-13: Review Has One Reviewer Flag Surface and Bounded Improvement Findings](#2026-10-13-review-has-one-reviewer-flag-surface-and-bounded-improvement-findings)._
+- A real host call and a complete review pass each default to twelve minutes.
+  Validated CLI overrides may narrow or extend them within 60 to 1800 seconds;
+  the host-call timeout cannot exceed the pass timeout.
 
 Assumptions:
 
@@ -951,16 +939,10 @@ Assumptions:
 
 Consequences:
 
-- Interactive review now uses deterministic diff collection, typed finding
-  validation, runtime evidence, and the selected specialist policy.
-- A normal review invocation may take longer and consume additional host model
-  calls; exhaustive specialist review costs more and remains explicit.
-- Normal auto reviews fail within a bounded twenty-minute pass instead of silently
-  inheriting the exhaustive thirty-minute ceiling. Timeout telemetry makes
-  later tuning evidence-driven rather than another hard-coded guess.
-- An optional auto specialist reaching the pass deadline degrades to a recorded
-  coverage diagnostic while preserving completed core findings. Explicit
-  exhaustive coverage still fails closed when any specialist is incomplete.
+- Interactive review uses deterministic diff collection, typed finding
+  validation, and runtime evidence.
+- A review pass fails at its deadline instead of running unbounded; timeout
+  telemetry makes later tuning evidence-driven.
 - Hosts outside Codex and Claude continue to use their supported prompt path
   until they gain a real typed adapter.
 
@@ -968,11 +950,11 @@ Alternatives considered:
 
 | Alternative | Why rejected |
 |-------------|--------------|
-| Keep the thin skill as a manual checklist | Leaves runtime entry, scope, evidence, and specialist dispatch dependent on model discretion. |
+| Keep the thin skill as a manual checklist | Leaves runtime entry, scope, and evidence dependent on model discretion. |
 | Launch the runtime from a prompt-routing hook | Generic review hints can fire for explanatory questions and are not the owner of long-running model subprocesses. |
 | Put a raw `bun workflows/run.ts` command in every installed contract | Couples prompt surfaces to source layout and breaks copied minimal runtimes. |
 | Silently fall back when the launcher fails | Produces a review that looks complete without typed runtime evidence. |
-| Keep one two-minute timeout for every mode | The measured real Codex pass exhausted it before producing findings, while it provided no whole-pass budget for specialist fan-out. |
+| Keep a two-minute timeout | The measured real Codex pass exhausted it before producing findings. |
 | Give every review a thirty-minute timeout | Makes ordinary review stalls too slow to diagnose and hides prompt or dispatch regressions. |
 
 Failure signals:
@@ -982,15 +964,13 @@ Failure signals:
 - A runtime-owned reviewer starts another `goldband review code` process.
 - A copied installation cannot resolve the executable workflow source.
 - Launcher failure is followed by an untyped manual approval.
-- Auto review approaches its twenty-minute deadline or repeatedly exhausts the
-  twelve-minute host-call budget.
+- Review repeatedly exhausts the twelve-minute host-call or pass budget.
 
 Revisit triggers:
 
 - Codex or Claude provides a native skill-to-executable binding that removes
   the need for a prompt-directed launcher.
 - A host supports typed review directly without spawning its CLI adapter.
-- Measured cost or latency justifies a different default specialist policy.
 - At least twenty comparable real-host runs provide a stable latency
   distribution that justifies replacing the initial timeout budgets.
 
@@ -1249,85 +1229,25 @@ Revisit triggers:
 - Codex changes rule precedence, matching, or sandbox behavior.
 - The typed runtime no longer needs host state outside the parent sandbox.
 
-## 2026-07-22: Review Runtime Forbids Independent Specialist Agents
+## 2026-07-22: Review Runs Exactly One Core Reviewer
 
-_Partially superseded 2026-10-13: the legacy `--specialists off` no-op and the
-specialist finding metadata described below were removed; see
-[2026-10-13: Review Has One Reviewer Flag Surface and Bounded Improvement Findings](#2026-10-13-review-has-one-reviewer-flag-surface-and-bounded-improvement-findings)._
+Decision: every `review/code` run launches exactly one core reviewer, and the
+review owner has no specialist dispatch path. The public launcher rejects
+`--specialists` with every value before it leases scope or starts a child; the
+internal `workflows/run.ts` treats it as an unknown argument.
 
-Decision: supersede the automatic-specialist default in the earlier interactive
-review decision. Every `review/code` run launches exactly one core reviewer.
-Independent specialist dispatch is removed from the production owner, and both
-the public launcher and shared runtime contract reject `--specialists auto|all`
-before any review host starts.
+Why: a specialist is another full host-model call with its own copy of the
+complete diff, and automatic routing cannot authorize that cost. The core
+reviewer already receives the complete shared rubric in one repository context.
 
-Context:
-
-- A specialist is another full host-model call with its own prompt and a copy of
-  the complete review diff, not a zero-cost checklist inside the core reviewer.
-- Machine-local evidence on 2026-07-22 recorded 26 review passes selecting 129
-  specialists. The core prompts alone contained more than 43 MB before counting
-  the duplicated specialist prompts.
-- The core reviewer already receives the shared rubric and can evaluate the full
-  finding taxonomy in one reusable repository context.
-- Automatic keyword and impact-graph routing can identify possible review lenses,
-  but it cannot authorize another full model call or prove user consent to the
-  quota cost.
-
-Implementation contract:
-
-- `review.ts` contains one host call and no specialist prompt preparation,
-  selection, concurrency, or dispatch path.
-- `review-runtime-contract.ts` is the shared execution gate. Omitted mode and
-  the legacy `off` no-op are valid; `auto` and `all` fail before diff collection
-  or host dispatch.
-- The public `bin/goldband` launcher does not advertise the option and applies
-  the same rejection before it starts the workflow runtime.
-- The manifest and checklist assign every review category to the one core
-  reviewer in the same repository-reading context.
-- Real-host regression coverage counts exactly one host invocation; bypass tests
-  prove rejected modes produce zero host invocations.
-
-Assumptions:
-
-- One core reviewer with the complete shared rubric is the correct default for
-  ordinary code review.
-- Independent second opinions need a separate, explicit capability with its own
-  visible cost contract; they are not a hidden mode of ordinary code review.
-
-Consequences:
-
-- Ordinary review no longer hides parallel model fan-out or repeatedly sends the
-  same diff to multiple child reviewers.
-- Specialist names remain only as optional finding metadata for compatibility;
-  they no longer correspond to child processes in this workflow.
-- A single reviewer may miss an issue that an independent second opinion would
-  find. That tradeoff is explicit rather than paid silently on every review.
-
-Alternatives considered:
-
-| Alternative | Why rejected |
-|-------------|--------------|
-| Keep `auto` as the default and add a warning | A warning does not prevent hidden quota use or prove informed consent. |
-| Keep automatic fan-out but cap it at one specialist | Still turns a normal review into multiple host calls and leaves an agent-opened bypass. |
-| Keep `auto` or `all` as opt-in flags | The runtime cannot prove the parent agent did not add the flag itself; prompt-level consent is not enforcement. |
-| Keep dormant dispatch code behind a guard | A future caller or refactor can bypass the guard; deleting the production path gives one authoritative owner. |
-| Let the parent agent decide whether to append `auto` | Makes quota behavior prompt-dependent instead of runtime-enforced. |
+Consequences: one reviewer may miss an issue an independent second opinion
+would find. Independent second opinions need a separate, explicit capability
+with its own cost contract; they are not a hidden mode of ordinary review.
 
 Failure signals:
 
-- Any `review/code` path contains more than one host invocation.
-- `--specialists auto|all` reaches diff collection or host dispatch instead of
-  failing at the boundary.
-- Default telemetry reports a selected specialist.
-- Generated contracts or CLI help advertise independent specialist dispatch.
-
-Revisit triggers:
-
-- The runtime can reuse one model context across lenses without starting another
-  host call or resending the full diff.
-- A separate user-visible cross-review capability gains an enforceable quota
-  authorization contract and bounded inputs.
+- A `review/code` path makes more than one host invocation.
+- `--specialists` reaches diff collection or host dispatch.
 
 ## 2026-07-22: Review Launches Are Single-Owner and Non-Recursive
 
@@ -1619,9 +1539,10 @@ Revisit triggers:
 
 ## 2026-07-31: Work Map Evidence Is Bound Through Runtime Readback
 
-Decision: bind a Work Map ticket, managed worktree lease, verification receipt,
-review artifact, and integrated commit through stable IDs and SHA-256 digests.
-The Work Map store is the only ticket-transition owner.
+Decision: a Work Map ticket, managed worktree lease, verification receipt, and
+integrated commit are bound through stable IDs and SHA-256 digests. The Work Map
+store is the only ticket-transition owner. Semantic review reports are
+independent of this chain and never advance a ticket.
 
 Implementation contract:
 
@@ -1633,27 +1554,18 @@ Implementation contract:
   `implemented`.
 - TDD evidence requires a failing RED with an expected signal followed by a
   successful GREEN on the same declared seam. A changed candidate invalidates
-  the current receipt. Requested changes increment a claim attempt, and records
-  from an earlier attempt cannot satisfy the new receipt.
+  the current receipt, and records from an earlier claim attempt cannot satisfy
+  a new receipt.
 - Existing-test tickets persist the exact planning command argument array and
   reject substitute commands, even when the substitute exits successfully.
-- Analysis-only tickets use a normalized named artifact copied into broker-owned
-  state, with an analysis claim and review lifecycle but no code worktree.
-- Work Map-scoped `review/code` treats ticket text as untrusted project data.
-  Its scope is runtime-owned: code review uses the canonical candidate diff and
-  analysis review uses the recorded artifact. The review artifact binds the map
-  revision, ticket and subject digests, reviewed diff digest, and candidate or
-  artifact digest. Runtime readback, not reviewer prose, advances the ticket to
-  `verified` or requested changes.
-- Canonical candidate diffs use the same bounded untracked-file materializer as
-  ordinary review, including secret-like-content skips and stable descriptor reads.
-- Bound `worktree finish` reads the lease, map, ticket, receipt, review
-  artifact, and current candidate. It integrates only a matching verified
-  chain, then records the integrated commit through the Work Map store.
-- Integrated-commit readback retries revision CAS conflicts caused by unrelated
-  map updates and refuses to overwrite a different recorded commit.
-- Standalone managed worktrees remain supported but cannot emit Work Map
-  evidence.
+- Analysis-only tickets complete by recording a normalized named artifact in
+  broker-owned state; they have no code worktree.
+- Bound `worktree finish` reads the lease, map, ticket, receipt, and current
+  candidate, integrates only a matching chain, and records the integrated commit
+  and final status through the Work Map store. Readback retries revision CAS
+  conflicts caused by unrelated map updates and refuses to overwrite a different
+  recorded commit.
+- Standalone managed worktrees remain supported but emit no Work Map evidence.
 
 This is an evidence-integrity and workflow gate, not a security boundary
 against a user or process with the same host account and filesystem access.
@@ -1663,10 +1575,9 @@ Failure signals:
 - Evidence from another map, ticket, lease, base commit, or candidate is reused.
 - RED proves an unrelated failure or GREEN has no earlier matching RED.
 - A successful command different from the planning command is accepted.
-- Caller-selected review scope differs from the candidate that finish integrates.
 - An analysis-only ticket has no named-artifact completion path.
-- Reviewer output directly edits Work Map state.
-- Finish checks only ticket status and ignores artifact provenance.
+- A review report changes Work Map state.
+- Finish checks only ticket status and ignores receipt provenance.
 - Full command output or secret-like values are persisted as summaries.
 - Claude and Codex installed runtimes expose different evidence contracts.
 
@@ -2075,39 +1986,26 @@ image-heavy pages, estimated (not measured) at a few hundred KB per screenshot,
 still leave room for roughly ten to twenty. No full `qa/app` session has been
 measured against the threshold.
 
-## 2026-10-13: Review Has One Reviewer Flag Surface and Bounded Improvement Findings
+## 2026-10-13: Review Findings Are Typed and Every Valid Finding Blocks
 
-Decision: remove `--specialists` entirely. The public launcher rejects it,
-including the former `off` no-op, with `--specialists was removed` before it
-leases scope or starts a child process; the internal `workflows/run.ts` reports
-it as an unknown argument. Every `review/code` run still launches exactly one
-core reviewer, and the host and pass timeouts keep their twelve-minute defaults,
-60-1800 second overrides, and deadline semantics. Telemetry and timeout
-messages no longer carry the fixed `off` mode, and findings no longer carry
-`specialist` or `contributingSpecialists` metadata.
+Decision: findings carry `kind: "defect" | "improvement"`. A defect needs
+evidence, a failure scenario, and verification. An improvement records an
+adoptable design change without a reachable failure; it needs evidence and a
+recommendation and is `medium`, `low`, or `info`. Every valid finding blocks:
+the runtime forces an improvement's `blocking` to `true`, reports all valid
+findings after deduplication, and counts both kinds in the review signal, so a
+review is clean only when none remain. An invalid improvement is discarded with
+a reported reason; kind and severity are never reclassified. One
+`review-engine.ts` operation owns validity, deduplication, and ordering. The
+rubric Suppressions exclude pure style, consistency-only changes, and
+unsupported advice.
 
-Findings gain `kind: "defect" | "improvement"`. Defects keep the existing
-evidence, failure-scenario, and verification requirements and remain the only
-input to the review signal. Improvements record adoptable design changes
-without a reachable failure; they need evidence and a recommendation, cannot be
-`high` or `critical`, are never blocking, and are capped at three after
-deduplication with the omitted count reported. _Superseded 2026-10-13: valid
-improvements now block and are never truncated; see
-[2026-10-13: Review Improvements Block Like Defects](#2026-10-13-review-improvements-block-like-defects)._
-An invalid improvement is
-discarded with a reported reason instead of failing the review or being
-reclassified. One `review-engine.ts` operation owns validity, deduplication,
-ordering, and truncation.
+Rule selection and prompt assembly use the changed paths collected with the
+diff; no consumer re-parses it.
 
-Rule selection and prompt assembly consume the changed paths collected with the
-diff instead of re-parsing it; a Git-quoted path had silently dropped a
-path-routed Rule. The orphan `schemas/review-result.schema.json` (no runtime
-consumer) and the PostToolUse context monitor, which inferred context
-saturation from tool-call counts rather than actual usage, were deleted without
-replacements or state migration.
-
-This is a breaking CLI change for callers that passed `--specialists off`.
-Earlier `auto`/`all` budgets in the 2026-07-20 decision remain historical only.
+Why: an advisory improvement is easily left behind as design debt, and a
+display cap discarded findings the reviewer had already produced. A second diff
+parser dropped a path-routed rule for a Git-quoted path.
 
 ## 2026-10-13: First-Party Exports Outside Knip Need a Consumer
 
@@ -2129,22 +2027,3 @@ are neither checked nor counted, and `hooks/fixtures/` is excluded.
 The check is deliberately lenient: a common name mentioned elsewhere counts as
 used, and an export that tests import without exercising still passes. It
 guards against orphaned exports, not against dead code that review must judge.
-
-## 2026-10-13: Review Improvements Block Like Defects
-
-Decision: a valid `improvement` finding is design debt and blocks like a
-defect. The runtime forces its `blocking` to `true`, reports every valid
-improvement after deduplication instead of capping the report at three, and
-counts it in the review signal (`findingCount`, `severityCounts`,
-`blockerKey`), so a review is clean only when neither defects nor improvements
-remain. `omittedImprovementCount` is removed from the finding set.
-
-Unchanged: improvements still need evidence and a recommendation, stay
-`medium`, `low`, or `info`, and an invalid one is discarded with its reason
-rather than reclassified. The rubric Suppressions still exclude pure style,
-consistency-only changes, and unsupported advice, which keeps the blocking set
-to changes worth making now.
-
-Rejected: keeping improvements advisory with a three-item cap. A non-blocking
-improvement is easy to leave behind, and truncated ones were not recorded
-anywhere, so the cap silently dropped debt the reviewer had already found.
