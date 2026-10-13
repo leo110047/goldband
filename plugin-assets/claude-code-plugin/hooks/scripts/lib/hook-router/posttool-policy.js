@@ -1,71 +1,45 @@
-const fs = require('fs');
-const path = require('path');
-const { spawnSync } = require('child_process');
 const { reviewLaunchAdvisory } = require('./review-launch-advisory');
+const {
+  styleAdvisoryAfterShell,
+  styleAdvisoryForFiles,
+} = require('./style-gate-advisory');
 
-function repoRootFromPolicy() {
-  return path.resolve(__dirname, '../../../..');
-}
+const FILE_WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit']);
+const NO_ADVISORY = { message: null, spawnedProcesses: 0 };
 
-function collectStyleGateWarnings(filePath) {
-  if (!filePath) return [];
-
-  const repoRoot = repoRootFromPolicy();
-  const scriptPath = path.join(repoRoot, 'scripts', 'check-code-style.mjs');
-  if (!fs.existsSync(scriptPath)) return [];
-
-  const result = spawnSync(
-    process.execPath,
-    [scriptPath, '--files', filePath, '--format', 'advisory'],
-    {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-      maxBuffer: 5 * 1024 * 1024,
-      env: { ...process.env, GOLDBAND_STYLE_GATE_HOST: '1' },
-    },
-  );
-
-  if (result.error) {
-    return [
-      `[Hook] WARNING: style gate advisory failed: ${result.error.message}`,
-    ];
+function styleAdvisory(toolName, toolInput, input) {
+  if (FILE_WRITE_TOOLS.has(toolName)) {
+    return styleAdvisoryForFiles([toolInput.file_path]);
   }
-  if (result.status === 2) {
-    return [
-      '[Hook] WARNING: style gate advisory could not run',
-      result.stderr.trim(),
-    ].filter(Boolean);
+  if (toolName === 'NotebookEdit') {
+    return styleAdvisoryForFiles([toolInput.notebook_path]);
   }
-  const advisory = result.stdout.trim();
-  if (!advisory) return [];
-  return [`[Hook] WARNING: ${advisory}`];
+  if (toolName === 'Bash') return styleAdvisoryAfterShell(input);
+  return NO_ADVISORY;
 }
 
 function evaluatePostToolUse(input) {
   const toolName = input.tool_name || '';
   const toolInput = input.tool_input || {};
 
-  const reviewAdvice = reviewLaunchAdvisory(input);
-  const filePath = toolInput.file_path || '';
-
-  const styleWarnings =
-    toolName === 'Edit' || toolName === 'Write' || toolName === 'MultiEdit'
-      ? collectStyleGateWarnings(filePath)
-      : [];
+  // Exit-0 hook stderr is not model context, so advice travels as context.
+  const style = styleAdvisory(toolName, toolInput, input);
+  const context = [reviewLaunchAdvisory(input), style.message].filter(Boolean);
 
   return {
     decision: 'allow',
     blockedBy: null,
-    logs: styleWarnings,
-    outputJson: reviewAdvice
-      ? {
-          hookSpecificOutput: {
-            hookEventName: input.hook_event_name,
-            additionalContext: reviewAdvice,
-          },
-        }
-      : null,
-    spawnedProcesses: 0,
+    logs: [],
+    outputJson:
+      context.length > 0
+        ? {
+            hookSpecificOutput: {
+              hookEventName: input.hook_event_name,
+              additionalContext: context.join('\n\n'),
+            },
+          }
+        : null,
+    spawnedProcesses: style.spawnedProcesses,
   };
 }
 

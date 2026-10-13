@@ -153,8 +153,22 @@ recoverable local runtime state.
 ### Shared Hook Policy and Host Adapters
 
 `hooks/scripts/lib/hook-router/secret-patterns.js` owns secret signatures,
-severity, and safe diagnostic messages. Claude translates Write/Edit/MultiEdit
-content; Codex translates added patch lines, leaving removed/context lines out.
+severity, and safe diagnostic messages. Claude translates Write/Edit/MultiEdit/
+NotebookEdit content; Codex translates added patch lines, leaving
+removed/context lines out. Both deny a shell command whose text contains a
+high-confidence signature not marked `shellText: false`; database URLs and
+JWTs are excluded because legitimate commands carry them, and a private key
+counts only with key material after its header. The shell deny is a text
+heuristic: key material split across shell words (`printf` with separate
+arguments) is not recognized, and the post-command scan reports it once
+written. Slack placeholders without a
+numeric segment match no path. Removing an existing secret goes through a file edit or
+patch, since a shell command quoting it is denied. The post-command scan needs
+the checker, reachable from a linked install or an installed Git style gate;
+Claude plugin installs and copied installs without the style gate have no
+post-command scan. Files written by a shell command are scanned after it
+runs; that scan detects writes and cannot prevent them. Exfiltration and
+sensitive-file reads belong to native permissions.
 High-confidence matches block writes in every path, including fixtures and
 `.env.example`; generic signatures advise. Synthetic tests assemble token-shaped
 strings at runtime or decode escaped JSON fixtures. The optional Git style gate
@@ -165,10 +179,9 @@ shell/SSH command strings, command groups, redirects, and pipeline
 input/output relationships. `shell-invocation.js` owns wrapper/shell option
 handling and static `env -S` argv splitting; env-specific escapes and variable
 expansion deny analysis. `shell-policy.js` owns safe evaluation. Beyond
-explicit child commands, it scans unknown launchers only for signatures that
-require a command name and specific arguments, such as `git reset --hard` or
-`dd of=/dev/...`; it does not need to enumerate every launcher. Name-only rules
-such as `env`, `printenv`, and `sudo` apply only at actual command positions,
+explicit child commands, it scans unknown launchers only for signatures defined
+by a command name plus required arguments, so launchers need no enumeration.
+Rules defined by a command name alone apply only at actual command positions,
 including extracted child commands. Codex recognizes `mkfs` and `mkfs.*` as one
 command family. A separate `/dev/...` argument is sufficient to block; at an
 actual command position, any argument containing `$` also blocks because its
@@ -210,12 +223,13 @@ The installer carries the complete hook directory in both link and copy modes.
 | Documentation and dev servers | Allowed by both hooks; project conventions and accessible logs are guidance in `rules/coding-style.md`. |
 | Secrets in tool writes | Same signatures, severity and messages; adapters select newly written content. |
 | Shell high-risk guard | Codex has an always-on heuristic; Claude's broader careful mode is opt-in. Both use the same command extraction. |
-| Careful/freeze and interactive review read-only | Claude session modes; Codex has no matching mode hook. Native permissions are independently enforced. |
+| Careful/freeze and interactive review read-only | Claude session modes; Codex has none. Freeze and review read-only deny every non-Bash tool outside `READ_ONLY_TOOLS`, including `Agent`; freeze also denies every Bash command outside its allowlist. Modes are hook state, not a sandbox; review isolation is the native read-only launcher. The review read-only Bash check is a heuristic over the shared shell parser: it does not model writer option forms such as `cp -t DIR`, `install -d`, several `truncate` operands, or `mv` sources, programs run by data commands (`rg --pre`), renamed binaries such as `gsed`, options hidden by shell quoting, runtime paths that are not anchored (`src/tmp/x` counts as runtime), operands produced by command substitution (dropped from the parsed words), or writers behind launchers the parser does not unwrap (`stdbuf`, `flock`). Freeze's Bash allowlist reads raw text the same way: quoted options (`rg '--pre=…'`) and program-running flags beyond `--pre` (`rg --hostname-bin`) are not modeled. |
 | Managed worktree Git writes | Shared native isolation and broker; Claude adds an early hook diagnostic. |
-| Post-edit automation | Claude asynchronous format/typecheck; Codex style advice. Both are host-specific automation, not proof that checks passed. |
+| Live style advice | `check-code-style.mjs` selects files: paths written by file tools and patches, including move destinations; for a shell command, working-tree files whose identity changed during the call, regardless of exit status. Paths excluded from style checks still get the secret scan; Git-ignored files and background shell commands are not scanned, and pre-commit covers committed writes. Model-facing advisory and JSON output report Biome findings as rule, location, and message only; the terminal text format used by pre-commit adds Biome's full output. Live advice honors `.goldband-no-style-gate` and `GOLDBAND_STYLE_GATE=0`. All checker output passes through `redactSecrets`. `style-gate-advisory.js` locates and runs it for both hosts; copied installs use the Git style gate source record. Advisory; pre-commit blocks. |
+| Post-edit automation | Claude asynchronous format after Edit, Write, and MultiEdit, and typecheck after Edit, using only the project's installed `prettier` and `tsc`; nothing is downloaded. Not verification evidence. |
 | Subagent completion | Claude prompt hook; no corresponding Codex hook. |
 | Knowledge hints, tool-count advice, notifications | Claude convenience features; Codex uses explicit workflows. |
-| Push, tool-failure and mutating-MCP reminders | Host-specific advice; they do not authorize side effects. |
+| Push, tool-failure and mutating-MCP reminders | Host-specific advice; they do not authorize side effects. Claude PreToolUse advice that allows the call (warn-level secrets, the push reminder) is written to hook stderr, which Claude does not give the model; Codex returns the warn-level secret message as context. |
 
 `test-hook-policy-parity.mjs` replays shared secret fixtures and guidance cases
 through both native hook output contracts. `test-hook-policy-install.mjs`
@@ -454,10 +468,9 @@ Recall adapters are deliberately shallow. `goldband-review` and `goldband-qa`
 use a single `Prior Knowledge` resolver that queries learnings and the curated
 index instead of stacking near-identical sections.
 Claude `UserPromptSubmit` gets an advisory-only prompt hook that lists matching
-knowledge paths with summaries and rate-limits repeats per session. Codex does
-not currently have an equivalent prompt-time advisory adapter in this repo;
-Codex reaches the same knowledge through generated workflow instructions and
-the first-party MCP `knowledge-query` tool.
+knowledge paths with summaries and rate-limits repeats per session. Codex has no
+prompt-time advisory adapter; it reaches the same knowledge through generated
+workflow instructions and the first-party MCP `knowledge-query` tool.
 
 Promotion is explicit. `goldband-knowledge-review promote` records review
 metadata before a candidate becomes active. `goldband-knowledge graduate --to

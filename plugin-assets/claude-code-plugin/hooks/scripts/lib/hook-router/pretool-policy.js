@@ -1,8 +1,16 @@
-const { classifySecretContent } = require('./secret-patterns');
+const {
+  classifySecretContent,
+  classifyShellSecretContent,
+} = require('./secret-patterns');
 const { isModeActive, setModeActive } = require('./mode-state');
 const { matchCarefulModeRisk } = require('./careful-mode-rules');
 const { matchFreezeModeBashViolation } = require('./freeze-mode-rules');
 const { managedWorktreeBashViolation } = require('./managed-worktree-policy');
+const {
+  inspectShellCommand,
+  SHELL_ANALYSIS_FAILURE,
+} = require('./shell-policy');
+const { snapshotWorktreeBeforeShell } = require('./style-gate-advisory');
 
 const PRETOOL_DENY_POLICIES = [
   {
@@ -13,13 +21,46 @@ const PRETOOL_DENY_POLICIES = [
 ];
 
 const REVIEW_READ_ONLY_MODE = 'review-read-only';
+// Non-Bash tools allowed by freeze-mode and review-read-only. Bash has its own
+// per-mode command policy; every other tool fails closed in those modes.
+// `Agent` stays out: a subagent's tool calls are not verified to carry the
+// parent session's mode state.
+const READ_ONLY_TOOLS = new Set([
+  'Read',
+  'Glob',
+  'Grep',
+  'LSP',
+  'WebFetch',
+  'WebSearch',
+  'ToolSearch',
+  'TaskOutput',
+  'TaskList',
+  'TaskGet',
+  // Task and todo tools change only the session's task list.
+  'TaskCreate',
+  'TaskUpdate',
+  // Stopping the session's own background process changes no files.
+  'TaskStop',
+  'KillShell',
+  'ListMcpResourcesTool',
+  'ReadMcpResourceTool',
+  'TodoWrite',
+  'AskUserQuestion',
+  'Skill',
+  'EnterPlanMode',
+  'ExitPlanMode',
+  // Names used by earlier Claude Code versions.
+  'LS',
+  'NotebookRead',
+  'BashOutput',
+]);
 const READ_ONLY_WORKFLOW_SKILL_ALIASES = new Map([
   ['goldband-review', 'goldband-review'],
   ['review', 'goldband-review'],
 ]);
 const READ_ONLY_WORKFLOW_SKILLS = new Set(['goldband-review']);
 const REVIEW_RUNTIME_WRITE_PATH =
-  /(?:~\/\.goldband\b|\$GOLDBAND_[A-Z0-9_]+|\$\{GOLDBAND_[A-Z0-9_]+\}|\/tmp\/|\/private\/tmp\/|\$TMP(?:DIR|ERR|[A-Z0-9_]*)?\b|\$\{TMP(?:DIR|ERR|[A-Z0-9_]*)?\}|mktemp|\/dev\/null)/;
+  /(?:~\/\.goldband\b|\$GOLDBAND_[A-Z0-9_]+|\$\{GOLDBAND_[A-Z0-9_]+\}|\/tmp\/|\/private\/tmp\/|\$TMP(?:DIR|ERR|[A-Z0-9_]*)?\b|\$\{TMP(?:DIR|ERR|[A-Z0-9_]*)?\}|\/dev\/null)/;
 
 function safeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -83,30 +124,75 @@ function buildModeBlock(options) {
   };
 }
 
-function shellWords(value) {
-  return (
-    String(value || '')
-      .match(/"[^"]*"|'[^']*'|\S+/g)
-      ?.map((token) => token.replace(/^['"]|['"]$/g, '')) || []
-  );
-}
-
 function isRuntimeWriteTarget(token) {
   return REVIEW_RUNTIME_WRITE_PATH.test(token);
 }
 
-function mutationTargetsAreRuntime(command, args) {
-  const tokens = shellWords(args).filter(
-    (token) => token && !token.startsWith('-'),
-  );
+function mutationTargetsAreRuntime(command, tokens) {
   if (tokens.length === 0) return false;
-  if (command === 'cp' || command === 'mv') {
+  // Commands whose write target is the final operand.
+  if (['cp', 'mv', 'ln', 'install', 'rsync', 'truncate'].includes(command)) {
     return isRuntimeWriteTarget(tokens[tokens.length - 1]);
+  }
+  if (command === 'dd') {
+    const output = tokens.find((token) => token.startsWith('of='));
+    return !output || isRuntimeWriteTarget(output.slice(3));
   }
   if (command === 'chmod' || command === 'chown') {
     return tokens.slice(1).every(isRuntimeWriteTarget);
   }
   return tokens.every(isRuntimeWriteTarget);
+}
+
+// Commands that write their operands. `patch` writes files named inside its
+// input; `--dry-run` writes nothing.
+const FILE_WRITERS = new Set([
+  'touch',
+  'mkdir',
+  'rm',
+  'mv',
+  'cp',
+  'chmod',
+  'chown',
+  'tee',
+  'ln',
+  'install',
+  'rsync',
+  'truncate',
+  'dd',
+  'patch',
+]);
+
+function fileWriterViolation(words) {
+  const name = (words[0] || '').split('/').pop();
+  if (!FILE_WRITERS.has(name)) return null;
+  if (name === 'patch') {
+    return words.includes('--dry-run')
+      ? null
+      : { rule: 'no-source-mutation', detail: 'review-read-only blocks patch' };
+  }
+  const operands = words
+    .slice(1)
+    .filter((word) => word && !word.startsWith('-'));
+  if (mutationTargetsAreRuntime(name, operands)) return null;
+  return {
+    rule: 'no-source-mutation',
+    detail: `review-read-only blocks ${name} outside runtime artifact paths`,
+  };
+}
+
+// The shared shell parser resolves assignments, launchers, keywords, and
+// nested shells, so command extraction has one owner across policies.
+function fileMutationViolation(command) {
+  const result = inspectShellCommand(
+    command,
+    () => false,
+    (words) => fileWriterViolation(words),
+  );
+  if (result.failed) {
+    return { rule: 'shell-analysis-failed', detail: SHELL_ANALYSIS_FAILURE };
+  }
+  return result.risk;
 }
 
 function reviewReadOnlyBashViolation(command) {
@@ -115,7 +201,7 @@ function reviewReadOnlyBashViolation(command) {
   const rawCommand = String(command);
   const normalized = rawCommand.replace(/\s+/g, ' ').trim();
   const gitMutation = normalized.match(
-    /\bgit\s+(add|commit|push|reset|checkout|switch|clean|merge(?!-)|rebase|cherry-pick|apply|am|restore|stash)\b/,
+    /\bgit\s+(add|commit|push|reset|checkout|switch|clean|merge(?!-)|rebase|cherry-pick|apply|am|restore|stash|rm|mv)\b/,
   );
   if (gitMutation) {
     return {
@@ -134,25 +220,31 @@ function reviewReadOnlyBashViolation(command) {
     };
   }
 
-  const sedInPlace = normalized.match(/\bsed\s+[^|;&\n]*\s-i(?:\s|$)/);
-  if (sedInPlace) {
+  // sed: GNU -i/-i.bak/--in-place, BSD -i ''/-I, and option clusters.
+  // perl/ruby clusters admit only boolean switches before `i`, so `-Ilib`
+  // (include path) is not mistaken for in-place editing.
+  // Per line, with backslash continuations joined: a newline ends a command,
+  // so flags on a later line (`rg -li`) never pair with a `sed` before it.
+  const inPlaceEdit = rawCommand
+    .replace(/\\\r?\n/g, ' ')
+    .split('\n')
+    .some(
+      (line) =>
+        /\bsed\s(?:[^|;&]*\s)?(?:-[A-Za-z]*[iI]|--in-place)/.test(line) ||
+        /\b(?:perl|ruby)\s(?:[^|;&]*\s)?-[anpslw0-9]*i/.test(line) ||
+        /\bg?awk\s(?:[^|;&]*\s)?(?:-i\s*inplace|--include=inplace)\b/.test(
+          line,
+        ),
+    );
+  if (inPlaceEdit) {
     return {
       rule: 'no-source-mutation',
       detail: 'review-read-only blocks in-place file edits',
     };
   }
 
-  const fsMutationPattern =
-    /\b(touch|mkdir|rm|mv|cp|chmod|chown)\b([^|;&\n]*)/g;
-  for (const match of rawCommand.matchAll(fsMutationPattern)) {
-    const args = match[2] || '';
-    if (!mutationTargetsAreRuntime(match[1], args)) {
-      return {
-        rule: 'no-source-mutation',
-        detail: `review-read-only blocks ${match[1]} outside runtime artifact paths`,
-      };
-    }
-  }
+  const fileMutation = fileMutationViolation(rawCommand);
+  if (fileMutation) return fileMutation;
 
   const redirectPattern =
     /(?:^|[^0-9])(?:>{1,2})(?!\s*(?:&[0-9]|\/dev\/null\b|["']?\$TMP|["']?\$\{TMP|["']?~\/\.goldband\b|["']?\/tmp\/|["']?\/private\/tmp\/))/g;
@@ -294,7 +386,8 @@ function evaluateReviewReadOnlyFilePolicy(context) {
   const { reviewReadOnlyActive, sessionId, toolName } = context;
   if (
     !reviewReadOnlyActive ||
-    !['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(toolName)
+    toolName === 'Bash' ||
+    READ_ONLY_TOOLS.has(toolName)
   ) {
     return null;
   }
@@ -315,7 +408,11 @@ function evaluateReviewReadOnlyFilePolicy(context) {
 
 function evaluateFreezeFilePolicy(context) {
   const { freezeModeActive, sessionId, toolName } = context;
-  if (!freezeModeActive || (toolName !== 'Edit' && toolName !== 'Write')) {
+  if (
+    !freezeModeActive ||
+    toolName === 'Bash' ||
+    READ_ONLY_TOOLS.has(toolName)
+  ) {
     return null;
   }
 
@@ -328,21 +425,32 @@ function evaluateFreezeFilePolicy(context) {
     logs: [
       '[Hook] BLOCKED: freeze-mode allows inspection only',
       `[Hook] Tool: ${toolName}`,
-      '[Hook] Disable freeze-mode before making file changes.',
+      '[Hook] Only read-only tools are allowed; disable freeze-mode before making changes.',
     ],
   });
 }
 
+function secretScanContents(toolName, toolInput) {
+  if (toolName === 'Write') return [toolInput.content];
+  if (toolName === 'Edit') return [toolInput.new_string];
+  if (toolName === 'NotebookEdit') return [toolInput.new_source];
+  if (toolName === 'MultiEdit') {
+    return (toolInput.edits || []).map((edit) => edit.new_string);
+  }
+  if (toolName === 'Bash') return [toolInput.command];
+  return null;
+}
+
 function evaluateSecretPolicy(context) {
   const { toolInput, toolName } = context;
-  let contents;
-  if (toolName === 'Write') contents = [toolInput.content];
-  else if (toolName === 'Edit') contents = [toolInput.new_string];
-  else if (toolName === 'MultiEdit') {
-    contents = (toolInput.edits || []).map((edit) => edit.new_string);
-  } else return null;
+  const contents = secretScanContents(toolName, toolInput);
+  if (!contents) return null;
 
-  const decision = classifySecretContent(contents.filter(Boolean).join('\n'));
+  const text = contents.filter((value) => typeof value === 'string').join('\n');
+  const decision =
+    toolName === 'Bash'
+      ? classifyShellSecretContent(text)
+      : classifySecretContent(text);
   if (!decision) return null;
   return {
     decision: decision.severity === 'high' ? 'block' : 'allow',
@@ -365,19 +473,28 @@ function evaluatePreToolUse(input) {
     reviewReadOnlyActive: isModeActive(sessionId, REVIEW_READ_ONLY_MODE),
   };
 
+  // A secret block precedes every allow result, including Bash advisories.
+  const secretDecision = evaluateSecretPolicy(context);
+  if (secretDecision?.decision === 'block') return secretDecision;
+
   const decision =
     evaluateReadOnlyWorkflowActivation(context) ||
     (toolName === 'Bash' ? evaluateBashPolicy(context) : null) ||
     evaluateReviewReadOnlyFilePolicy(context) ||
     evaluateFreezeFilePolicy(context) ||
-    evaluateSecretPolicy(context);
+    secretDecision;
 
-  if (decision) return decision;
-
+  if (decision?.decision === 'block') return decision;
+  const spawnedProcesses =
+    toolName === 'Bash'
+      ? snapshotWorktreeBeforeShell(input).spawnedProcesses
+      : 0;
   return {
     decision: 'allow',
     blockedBy: null,
     logs: [],
+    ...decision,
+    spawnedProcesses,
   };
 }
 

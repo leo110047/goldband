@@ -50,6 +50,8 @@ function runNode(script, input, extraEnv = {}, expectedStatus = 0) {
       GOLDBAND_USAGE_FILE: usageFile,
       GOLDBAND_DATA_DIR: path.join(tmpDir, 'runtime-data'),
       HOOK_ROUTER_METRICS_FILE: metricsFile,
+      // Live style advice is out of scope; a missing checker writes no snapshots.
+      GOLDBAND_STYLE_GATE_SCRIPT: path.join(tmpDir, 'no-style-checker'),
       CLAUDE_SESSION_ID: 'claude-session',
       CODEX_SESSION_ID: 'codex-session',
       ...extraEnv,
