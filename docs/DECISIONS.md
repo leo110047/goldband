@@ -652,6 +652,8 @@ Implementation contract:
   `檢查` do not activate review guidance by themselves.
 - Context saturation guidance is emitted once when entering warning severity
   and once when entering critical severity, not every fixed number of calls.
+  _Superseded 2026-10-13: the tool-call-count context monitor was removed; see
+  [2026-10-13: Review Has One Reviewer Flag Surface and Bounded Improvement Findings](#2026-10-13-review-has-one-reviewer-flag-surface-and-bounded-improvement-findings)._
 - Ordinary `Stop` events do not produce desktop notifications or repeat style
   scans. Permission and elicitation notifications, immediate edit advisories,
   and deterministic stop blockers remain active.
@@ -932,6 +934,11 @@ Implementation contract:
   thirty minutes only for explicit `--specialists all` coverage. Validated CLI
   overrides may narrow or extend those budgets within 60 to 1800 seconds; the
   host-call timeout cannot exceed the pass timeout.
+
+_Partially superseded: the two bullets above, and the specialist consequences
+below, are historical. The current contract has no `--specialists` flag and one
+twelve-minute default pass budget; see
+[2026-10-13: Review Has One Reviewer Flag Surface and Bounded Improvement Findings](#2026-10-13-review-has-one-reviewer-flag-surface-and-bounded-improvement-findings)._
 
 Assumptions:
 
@@ -1243,6 +1250,10 @@ Revisit triggers:
 - The typed runtime no longer needs host state outside the parent sandbox.
 
 ## 2026-07-22: Review Runtime Forbids Independent Specialist Agents
+
+_Partially superseded 2026-10-13: the legacy `--specialists off` no-op and the
+specialist finding metadata described below were removed; see
+[2026-10-13: Review Has One Reviewer Flag Surface and Bounded Improvement Findings](#2026-10-13-review-has-one-reviewer-flag-surface-and-bounded-improvement-findings)._
 
 Decision: supersede the automatic-specialist default in the earlier interactive
 review decision. Every `review/code` run launches exactly one core reviewer.
@@ -2815,3 +2826,34 @@ a page snapshot about 4 KB, so 5 MB holds well over a hundred captures there;
 image-heavy pages, estimated (not measured) at a few hundred KB per screenshot,
 still leave room for roughly ten to twenty. No full `qa/app` session has been
 measured against the threshold.
+
+## 2026-10-13: Review Has One Reviewer Flag Surface and Bounded Improvement Findings
+
+Decision: remove `--specialists` entirely. The public launcher rejects it,
+including the former `off` no-op, with `--specialists was removed` before it
+leases scope or starts a child process; the internal `workflows/run.ts` reports
+it as an unknown argument. Every `review/code` run still launches exactly one
+core reviewer, and the host and pass timeouts keep their twelve-minute defaults,
+60-1800 second overrides, and deadline semantics. Telemetry and timeout
+messages no longer carry the fixed `off` mode, and findings no longer carry
+`specialist` or `contributingSpecialists` metadata.
+
+Findings gain `kind: "defect" | "improvement"`. Defects keep the existing
+evidence, failure-scenario, and verification requirements and remain the only
+input to the review signal. Improvements record adoptable design changes
+without a reachable failure; they need evidence and a recommendation, cannot be
+`high` or `critical`, are never blocking, and are capped at three after
+deduplication with the omitted count reported. An invalid improvement is
+discarded with a reported reason instead of failing the review or being
+reclassified. One `review-engine.ts` operation owns validity, deduplication,
+ordering, and truncation.
+
+Rule selection and prompt assembly consume the changed paths collected with the
+diff instead of re-parsing it; a Git-quoted path had silently dropped a
+path-routed Rule. The orphan `schemas/review-result.schema.json` (no runtime
+consumer) and the PostToolUse context monitor, which inferred context
+saturation from tool-call counts rather than actual usage, were deleted without
+replacements or state migration.
+
+This is a breaking CLI change for callers that passed `--specialists off`.
+Earlier `auto`/`all` budgets in the 2026-07-20 decision remain historical only.
