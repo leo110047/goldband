@@ -9,7 +9,6 @@ import {
 } from "fs";
 import { createHash } from "crypto";
 import { basename, dirname, join, resolve } from "path";
-import { homedir } from "os";
 import { execFileSync } from "child_process";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
@@ -126,25 +125,20 @@ export interface KnowledgeSearchOptions {
 const ID_RE = /^[a-z0-9][a-z0-9-]{1,80}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const require = createRequire(import.meta.url);
-const FALLBACK_SECRET_PATTERNS = [
-  { name: "AWS Access Key ID", pattern: /AKIA[0-9A-Z]{16}/ },
-  { name: "GitHub Token", pattern: /ghp_[A-Za-z0-9]{36}/ },
-  { name: "GitHub Fine-Grained Token", pattern: /github_pat_[A-Za-z0-9_]{22,}/ },
-  { name: "Stripe Secret Key", pattern: /sk_live_[A-Za-z0-9]{24,}/ },
-  { name: "Anthropic API Key", pattern: /sk-ant-[A-Za-z0-9\-_]{20,}/ },
-  { name: "OpenAI API Key", pattern: /sk-[A-Za-z0-9]{48,}/ },
-  {
-    name: "Generic API Key assignment",
-    pattern:
-      /(?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token)\s*[=:]\s*['"][A-Za-z0-9\-_]{20,}['"]/i,
-  },
-];
+// Generated from hooks/scripts/lib/hook-router/secret-patterns.js by
+// scripts/sync-plugin-assets.mjs so linked and copied runtimes carry the rules.
+const { detectSecrets } = require("./secret-patterns.cjs") as {
+  detectSecrets: (value: string) => Array<{ name: string }>;
+};
+const { knowledgeHome, searchKnowledgeRows } = require("./knowledge-search.cjs") as {
+  knowledgeHome: () => string;
+  searchKnowledgeRows: (
+    rows: KnowledgeIndexRow[],
+    options: KnowledgeSearchOptions,
+  ) => KnowledgeIndexRow[];
+};
 
-function goldbandHome(): string {
-  return process.env.GOLDBAND_HOME || join(homedir(), ".goldband");
-}
-
-export function knowledgeRoot(home = goldbandHome()): string {
+export function knowledgeRoot(home = knowledgeHome()): string {
   return join(home, "knowledge");
 }
 
@@ -292,47 +286,7 @@ export function searchKnowledge(
   options: KnowledgeSearchOptions = {},
   root = knowledgeRoot(),
 ): KnowledgeIndexRow[] {
-  const index = readIndex(root);
-  const queryTokens = tokenize(options.query || "");
-  const limit = Math.max(1, Math.min(options.limit || 10, 50));
-  const projectSlug = options.projectSlug || "";
-  const status = options.status || "active";
-  const scope = options.scope || "all";
-
-  return index.entries
-    .filter((row) => {
-      if (!options.includeRetired && row.status === "retired") return false;
-      if (status !== "all" && row.status !== status) return false;
-      if (options.type && row.type !== options.type) return false;
-      if (options.domain && !row.domains.includes(options.domain as KnowledgeDomain)) {
-        return false;
-      }
-      if (scope !== "all" && row.scope !== scope) return false;
-      if (projectSlug && row.scope === "project" && row.project_slug !== projectSlug) {
-        return false;
-      }
-      if (queryTokens.length === 0) return true;
-      const haystack = [
-        row.id,
-        row.title,
-        row.summary,
-        row.type,
-        row.scope,
-        row.project_slug,
-        row.canonical_remote,
-        ...row.domains,
-      ]
-        .join(" ")
-        .toLowerCase();
-      return queryTokens.some((token) => haystack.includes(token));
-    })
-    .sort((a, b) => {
-      if (b.confidence !== a.confidence) return b.confidence - a.confidence;
-      const bFreshness = b.last_verified || b.updated;
-      const aFreshness = a.last_verified || a.updated;
-      return bFreshness.localeCompare(aFreshness);
-    })
-    .slice(0, limit);
+  return searchKnowledgeRows(readIndex(root).entries, options);
 }
 
 export function transitionKnowledgeStatus(
@@ -592,10 +546,6 @@ function indexRowFromEntry(entry: KnowledgeEntry, filePath: string): KnowledgeIn
   };
 }
 
-function tokenize(query: string): string[] {
-  return query.toLowerCase().split(/\s+/).map((part) => part.trim()).filter(Boolean);
-}
-
 function validateBodyShape(entry: KnowledgeEntry): void {
   const required: Record<KnowledgeType, string[]> = {
     "problem-solution": ["情境", "症狀", "根因", "解法", "驗證方式"],
@@ -711,22 +661,7 @@ function validateSafeKnowledgeText(field: string, value: string): void {
 }
 
 function detectSecretLikeContent(value: string): string[] {
-  const shared = loadSharedSecretScanner();
-  if (shared) return shared(value).map((finding) => finding.name);
-  return FALLBACK_SECRET_PATTERNS
-    .filter((rule) => rule.pattern.test(value))
-    .map((rule) => rule.name);
-}
-
-function loadSharedSecretScanner():
-  | ((value: string) => Array<{ name: string }>)
-  | null {
-  try {
-    const module = require("../../hooks/scripts/lib/hook-router/secret-patterns.js");
-    return typeof module.detectSecrets === "function" ? module.detectSecrets : null;
-  } catch {
-    return null;
-  }
+  return detectSecrets(value).map((finding) => finding.name);
 }
 
 function slugPart(value: string): string {

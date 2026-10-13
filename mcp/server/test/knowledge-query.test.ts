@@ -81,6 +81,31 @@ test('knowledge-query sorts by confidence then last_verified freshness', () => {
   assert.equal(result.structuredContent.results[0].id, 'newer-verified');
 });
 
+test('knowledge-query follows CLI recall semantics for retired and project entries', () => {
+  const knowledgeHome = writeKnowledgeIndex([
+    entry({ id: 'active-entry', summary: 'Shared recall result.' }),
+    entry({
+      id: 'retired-entry',
+      status: 'retired',
+      summary: 'Shared recall result.',
+    }),
+    entry({
+      id: 'project-entry',
+      scope: 'project',
+      project_slug: 'checkout-service',
+      summary: 'Project specific note.',
+    }),
+  ]);
+  const ids = (input: Record<string, unknown>) =>
+    runKnowledgeQuery({ knowledgeHome, ...input })
+      .structuredContent.results.map((row: { id: string }) => row.id)
+      .sort();
+
+  assert.deepEqual(ids({ status: 'all', keyword: 'shared' }), ['active-entry']);
+  assert.deepEqual(ids({ status: 'retired' }), ['retired-entry']);
+  assert.deepEqual(ids({ keyword: 'checkout-service' }), ['project-entry']);
+});
+
 function writeKnowledgeIndex(entries: object[]) {
   const knowledgeHome = fs.mkdtempSync(
     path.join(os.tmpdir(), 'goldband-mcp-kb-'),

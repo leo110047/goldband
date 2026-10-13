@@ -154,6 +154,12 @@ describe("goldband-knowledge CLI", () => {
         "checklist",
       ]),
     ).toContain("review-checklist-rule");
+    expect(run(["search", "--status", "all", "--query", "checklist"])).not.toContain(
+      "review-checklist-rule",
+    );
+    expect(run(["search", "--status", "retired", "--query", "checklist"])).toContain(
+      "review-checklist-rule",
+    );
   });
 
   test("schema validation rejects practice entries missing required sections", () => {
