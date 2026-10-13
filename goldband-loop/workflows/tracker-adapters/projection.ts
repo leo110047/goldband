@@ -321,6 +321,79 @@ export function remoteProjectionDigest(
 	return projectionDigest(state);
 }
 
+const PROVIDER_LABELS: Record<TrackerProvider, string> = {
+	github: "GitHub",
+	gitlab: "GitLab",
+};
+
+type RemoteMarkerIndex = {
+	mapIssue: RemoteIssue | null;
+	ticketIssues: Record<string, RemoteIssue>;
+};
+
+function indexRemoteIssue(
+	index: RemoteMarkerIndex,
+	issue: RemoteIssue,
+	workId: string,
+): void {
+	if (!issue.body.includes("goldband-work-")) return;
+	const marker = parseProjectionMarker(issue.body);
+	if (marker.workId !== workId) return;
+	if (marker.kind === "map") {
+		if (index.mapIssue) throw new Error("duplicate remote Work Map marker");
+		index.mapIssue = issue;
+		return;
+	}
+	const ticketId = marker.ticketId as string;
+	if (index.ticketIssues[ticketId])
+		throw new Error(`duplicate remote ticket marker: ${ticketId}`);
+	index.ticketIssues[ticketId] = issue;
+}
+
+/** Build the readback state for one Work Map from provider issues. */
+export function assembleRemoteProjection(
+	provider: TrackerProvider,
+	repository: string,
+	workId: string,
+	issues: RemoteIssue[],
+): RemoteProjectionState {
+	const index: RemoteMarkerIndex = { mapIssue: null, ticketIssues: {} };
+	for (const issue of issues) indexRemoteIssue(index, issue, workId);
+	if (!index.mapIssue && Object.keys(index.ticketIssues).length === 0)
+		throw new Error("tracker projection not found");
+	const state = { provider, repository, workId, ...index };
+	return { ...state, digest: remoteProjectionDigest(state) };
+}
+
+/** Resolve a dependency ticket to its remote issue, failing when readback lacks it. */
+export function remoteDependencyIssue(
+	state: RemoteProjectionState,
+	dependencyId: string,
+): RemoteIssue {
+	const issue = state.ticketIssues[dependencyId];
+	if (!issue)
+		throw new Error(
+			`${PROVIDER_LABELS[state.provider]} dependency readback missing: ${dependencyId}`,
+		);
+	return issue;
+}
+
+/** Replace ticket references with remote URLs; every dependency must be read back. */
+export function linkedRemoteArtifactBody(
+	body: string,
+	dependencyIds: string[],
+	state: RemoteProjectionState,
+): string {
+	let linked = body;
+	for (const dependencyId of dependencyIds) {
+		linked = linked.replace(
+			`ticket:${dependencyId}`,
+			remoteDependencyIssue(state, dependencyId).url,
+		);
+	}
+	return linked;
+}
+
 export function expectedRemoteArtifactBody(
 	artifact: ProjectionArtifact,
 	remote: RemoteProjectionState | null,

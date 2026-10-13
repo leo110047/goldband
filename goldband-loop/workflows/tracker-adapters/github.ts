@@ -2,8 +2,17 @@ import {
 	inspectTrackerConfiguration,
 	type TrackerConfigurationV1,
 } from "../tracker-config";
-import { CliTrackerProjectionAdapter } from "./cli-adapter";
-import { parseProjectionMarker, remoteProjectionDigest } from "./projection";
+import {
+	boundedError,
+	CliTrackerProjectionAdapter,
+	parseArray,
+	requiredString,
+} from "./cli-adapter";
+import {
+	assembleRemoteProjection,
+	linkedRemoteArtifactBody,
+	remoteDependencyIssue,
+} from "./projection";
 import type {
 	ProjectionArtifact,
 	ProjectionPlan,
@@ -85,7 +94,7 @@ export class GitHubTrackerAdapter extends CliTrackerProjectionAdapter {
 			"GitHub issue list",
 		) as GitHubIssueWire[];
 		const issues = raw.map(parseGitHubIssue);
-		return assembleRemote(this.provider, this.repository, workId, issues);
+		return assembleRemoteProjection(this.provider, this.repository, workId, issues);
 	}
 
 	protected async writeStep(
@@ -146,18 +155,17 @@ export class GitHubTrackerAdapter extends CliTrackerProjectionAdapter {
 		}
 		if (step.action === "link") {
 			const state = await this.inspectRemote(artifact.workId);
-			const linkedBody = bodyWithRemoteLinks(
+			const linkedBody = linkedRemoteArtifactBody(
 				artifact.body,
 				artifact.blockedByTicketIds,
 				state,
 			);
 			if (this.#configuration.dependencyCapability === "native") {
 				const dependencyId = step.id.split(":").at(-1) ?? "";
-				const dependencyRemoteId = state.ticketIssues[dependencyId]?.id;
-				if (!dependencyRemoteId)
-					throw new Error(
-						`GitHub dependency readback missing: ${dependencyId}`,
-					);
+				const dependencyRemoteId = remoteDependencyIssue(
+					state,
+					dependencyId,
+				).id;
 				this.#run([
 					"api",
 					`repos/${this.repository}/issues/${remoteId}/dependencies/blocked_by`,
@@ -196,21 +204,6 @@ export class GitHubTrackerAdapter extends CliTrackerProjectionAdapter {
 	}
 }
 
-function bodyWithRemoteLinks(
-	body: string,
-	dependencyIds: string[],
-	state: RemoteProjectionState,
-): string {
-	let linked = body;
-	for (const dependencyId of dependencyIds) {
-		const url = state.ticketIssues[dependencyId]?.url;
-		if (!url)
-			throw new Error(`GitHub dependency readback missing: ${dependencyId}`);
-		linked = linked.replace(`ticket:${dependencyId}`, url);
-	}
-	return linked;
-}
-
 function parseGitHubIssue(value: GitHubIssueWire): RemoteIssue {
 	if (!Number.isSafeInteger(value.number) || (value.number ?? 0) < 1)
 		throw new Error("invalid GitHub issue number");
@@ -244,50 +237,3 @@ function parseGitHubIssue(value: GitHubIssueWire): RemoteIssue {
 	};
 }
 
-function assembleRemote(
-	provider: "github",
-	repository: string,
-	workId: string,
-	issues: RemoteIssue[],
-): RemoteProjectionState {
-	let mapIssue: RemoteIssue | null = null;
-	const ticketIssues: Record<string, RemoteIssue> = {};
-	for (const issue of issues) {
-		if (!issue.body.includes("goldband-work-")) continue;
-		const marker = parseProjectionMarker(issue.body);
-		if (marker.workId !== workId) continue;
-		if (marker.kind === "map") {
-			if (mapIssue) throw new Error("duplicate remote Work Map marker");
-			mapIssue = issue;
-		} else {
-			if (ticketIssues[marker.ticketId as string])
-				throw new Error(`duplicate remote ticket marker: ${marker.ticketId}`);
-			ticketIssues[marker.ticketId as string] = issue;
-		}
-	}
-	if (!mapIssue && Object.keys(ticketIssues).length === 0)
-		throw new Error("tracker projection not found");
-	const state = { provider, repository, workId, mapIssue, ticketIssues };
-	return { ...state, digest: remoteProjectionDigest(state) };
-}
-
-function parseArray(value: string, label: string): unknown[] {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(value);
-	} catch {
-		throw new Error(`${label} returned invalid JSON`);
-	}
-	if (!Array.isArray(parsed)) throw new Error(`${label} must return an array`);
-	return parsed;
-}
-
-function requiredString(value: unknown, label: string): string {
-	if (typeof value !== "string" || value.length === 0)
-		throw new Error(`invalid ${label}`);
-	return value;
-}
-
-function boundedError(value: string): string {
-	return value.replace(/[\r\n]+/g, " ").slice(0, 500) || "command failed";
-}

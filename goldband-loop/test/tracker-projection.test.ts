@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
+	assembleRemoteProjection,
 	buildProjectionPlan,
+	linkedRemoteArtifactBody,
 	MAX_TRACKER_BODY_BYTES,
 	parseProjectionMarker,
 	remoteProjectionDigest,
@@ -8,7 +10,12 @@ import {
 	renderTicketProjection,
 } from "../workflows/tracker-adapters/projection";
 import { parseTrackerSyncState } from "../workflows/tracker-adapters/sync-state";
+import type { RemoteIssue } from "../workflows/tracker-adapters/types";
 import { sampleWorkMap } from "./tracker-test-helpers";
+
+function remoteIssue(id: string, body: string): RemoteIssue {
+	return { id, url: `https://tracker.test/${id}`, title: id, body, state: "open", labels: [], assignees: [], comments: [] };
+}
 
 describe("tracker projection", () => {
 	test("renders deterministic map and ticket markers without local repository paths", () => {
@@ -83,4 +90,22 @@ describe("tracker projection", () => {
 		expect(parseTrackerSyncState(state)).toEqual(state);
 		expect(() => parseTrackerSyncState({ ...state, token: "secret" })).toThrow("fields");
 	});
+
+	for (const [provider, label] of [["github", "GitHub"], ["gitlab", "GitLab"]] as const) {
+		test(`${provider} readback assembles markers and rejects incomplete or duplicate projections`, () => {
+			const map = sampleWorkMap();
+			const mapIssue = remoteIssue("1", renderMapProjection(map).body);
+			const ticket = renderTicketProjection(map, map.tickets[0]);
+			const ticketIssue = remoteIssue("2", ticket.body);
+			const unrelated = remoteIssue("3", "ordinary issue");
+			const state = assembleRemoteProjection(provider, "owner/repo", map.id, [mapIssue, ticketIssue, unrelated]);
+			expect(state).toMatchObject({ provider, mapIssue, ticketIssues: { "ticket-1": ticketIssue } });
+			expect(state.digest).toBe(remoteProjectionDigest({ provider, repository: "owner/repo", workId: map.id, mapIssue, ticketIssues: { "ticket-1": ticketIssue } }));
+			expect(linkedRemoteArtifactBody("needs ticket:ticket-1", ["ticket-1"], state)).toBe("needs https://tracker.test/2");
+			expect(() => linkedRemoteArtifactBody("needs ticket:ticket-9", ["ticket-9"], state)).toThrow(`${label} dependency readback missing: ticket-9`);
+			expect(() => assembleRemoteProjection(provider, "owner/repo", map.id, [mapIssue, { ...mapIssue, id: "9" }])).toThrow("duplicate remote Work Map marker");
+			expect(() => assembleRemoteProjection(provider, "owner/repo", map.id, [ticketIssue, { ...ticketIssue, id: "9" }])).toThrow("duplicate remote ticket marker: ticket-1");
+			expect(() => assembleRemoteProjection(provider, "owner/repo", map.id, [unrelated])).toThrow("tracker projection not found");
+		});
+	}
 });
