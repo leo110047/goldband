@@ -52,7 +52,6 @@ const SCAN_ROOTS = [
   'plugin-assets',
   'scripts/generate-goldband-surfaces.mjs',
   'goldband-loop/README.md',
-  'goldband-loop/TODOS.md',
   'goldband-loop/setup',
   'goldband-loop/bin',
   'goldband-loop/lib',

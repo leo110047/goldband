@@ -85,29 +85,9 @@ Concrete ownership signals include:
 
 ### Rules Review Runtime
 
-`review/code` collects a bounded diff and related code context, loads the shared
-review rules, and calls one independent reviewer using the host's native read-only
-permissions. Findings must name an exact location, concrete code observation,
-trigger and impact, and suggested verification. The runtime validates and
-normalizes findings, rejects scope or policy drift, and writes a plain JSON result
-and Markdown report. It does not execute project checks or mutate Work Map state.
-
-The default scope is the current worktree. `--base`, `--staged`, and `--diff-file`
-select explicit scopes. After repairs, rerun the same entrypoint to inspect the
-current scope; failures and unchanged candidates do not create retry locks.
-Project tests, lint, typecheck, CI, and live checks remain separate responsibilities.
-No findings means only that this semantic pass reported no concrete concerns.
-
-Review manifests, providers, contract registries, acceptance lineage, signed
-review receipts, evidence repair, closure, and completion authorization are
-retired. The installer replaces obsolete runtime assets but preserves historical
-reports and external state. Retired CLI flags fail explicitly. Existing managed
-worktree project verification and Git integration safeguards remain in place.
-
-The Codex installer materializes the launcher, shared rules, and runtime outside
-the writable repository, pins the host executable, and installs exact execpolicy
-prefixes. Claude uses its installed entrypoint and native read-only tool policy.
-Neither host adapter grants general shell or repository-write authority.
+`review/code` runs one independent, read-only semantic review of a bounded
+scope. Its scope, finding contract, host adapters, and installation boundary are
+defined in [goldband-loop/workflows/README.md](goldband-loop/workflows/README.md).
 
 ### Managed Worktree Runtime
 
@@ -425,15 +405,11 @@ supplies Phase 2 verification evidence. GitHub and GitLab do not provide a
 cross-provider atomic claim lock, so concurrent claim drift stops for explicit
 resolution instead of choosing a winner or applying last-write-wins.
 
-For review workflows, untracked worktree files cross an additional trust
-boundary before real host execution: only bounded text files without secret-like
-content are materialized into the prompt, while skipped files are recorded as
-no-content markers.
-`runWorkflow` remains the single-pass compatibility entrypoint. `runWorkflowLoop`
-is the convergence-loop entrypoint for workflows that expose typed evaluation
-signals. Today `goldband-review` and `goldband-qa` can autonomously re-run until
-their target predicate matches, the same blocker repeats, the signal stops
-improving, or the registry iteration cap is reached. Loop runs add `iteration`,
+`runWorkflow` is the single-pass entrypoint. `runWorkflowLoop` is the
+convergence-loop entrypoint for workflows that expose typed evaluation signals;
+only `qa/app` uses it, and `review/code` rejects `--loop`. A loop re-runs until its
+target predicate matches, the same blocker repeats, the signal stops improving,
+or the registry iteration cap is reached. Loop runs add `iteration`,
 `signalSnapshot`, and a `loop-summary` event to the same JSONL evidence path so
 readback can reconstruct why each round continued or stopped.
 

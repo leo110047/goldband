@@ -47,7 +47,7 @@ const CAPABILITY_INVOCATION_ROOTS = [
   'codex/agents',
   'codex/hooks/hook-router.js',
   'codex/prompts/goldband.md',
-  'goldband-loop/CONTRIBUTING.md',
+  'CONTRIBUTING.md',
   'goldband-loop/SKILL.md',
   'goldband-loop/openclaw',
 ];

@@ -1794,83 +1794,16 @@ Revisit triggers:
 - Provider-neutral artifact synchronization itself no longer has demonstrated
   users or cannot maintain its privacy and secret-scanning contract.
 
-## ADR: Canonical review workspace and base-owned manifest authority
+## ADR: Review scope uses canonical repository coordinates
 
-Status: Accepted
+Decision: `review/code` resolves the canonical Git repository root and the
+invocation-relative offset once. Diff paths, changed files, the scope digest,
+snapshots, and the dependency projection use repo-root coordinates, so root and
+tracked-subdirectory invocations review the same repository scope. An invocation
+directory outside the canonical repository fails.
 
-Decision:
-
-- Resolve the canonical Git repository root and invocation-relative execution
-  offset once. Diff paths, changed files, candidate binding, scope digest,
-  snapshots, dependency projection, and default manifest lookup use repo-root
-  coordinates. Provider operations execute at the validated offset inside the
-  isolated repo-root snapshot.
-- Read the authoritative repository manifest from the reviewed base at the repo
-  root. A runtime-store contract is authoritative only when that base has no
-  manifest. Working-tree, index, and explicit manifests are candidate extensions
-  and must pass the existing monotonic comparison before any evidence operation
-  or semantic host dispatch.
-- Persist workspace coordinates plus base, candidate, store, and explicit source
-  identities, digests, and candidate tracking state in the existing artifact and
-  lineage contract. Do not create a second completion authority or a nested
-  manifest hierarchy.
-- Use review evidence manifest schema v2 for the required `lifecycle`,
-  `applicability`, and `executionContext` safety fields. Permit v1 only as the
-  committed-base side of a one-version transition to a v2 candidate, and only
-  when changing the base version marker alone passes the complete v2 contract.
-  Reject every other v1 input with observed and supported versions, source
-  identity, and explicit migration guidance; never infer safety defaults.
-
-Why:
-
-Subdirectory invocation previously mixed repo-root Git patch paths with a
-stripped subdirectory snapshot, and selected default manifests from ambient
-`cwd` even though runtime-store identity used the Git common directory. A
-candidate-controlled untracked or modified manifest could therefore appear to
-be repository authority. The old schema label also concealed a breaking safety
-contract change.
-
-Assumptions:
-
-- Git repo-root paths are the stable coordinate for all default review scopes.
-- A provider that intentionally runs from the invocation subdirectory can do so
-  safely only inside the materialized canonical snapshot.
-- Nested project contracts are out of scope until they have an explicit,
-  persistent scope identity and monotonic relationship to the repo-root base.
-
-Consequences:
-
-- Root and tracked-subdirectory invocations share repository identity, baseline,
-  and digest while exposing different execution offsets.
-- Default, worktree, staged, and base diffs include one consistently materialized
-  repo-root scope, including changes outside the invocation subdirectory.
-- Untracked, staged-new, and modified manifests remain reviewable changes but
-  cannot shadow or downgrade base/store authority.
-- Repositories and imported stores must migrate manifests to schema v2 before
-  the new runtime can execute review, apart from the narrowly validated
-  committed-v1-base to v2-candidate transition.
-
-Alternatives considered:
-
-| Alternative | Why rejected |
-|-------------|--------------|
-| Strip patch paths for subdirectory snapshots | It fixes one apply failure but leaves diff scope, manifest authority, dependencies, and lineage on conflicting coordinates. |
-| Walk parent directories for the nearest manifest | Ambient directory names remain implicit authority and enable an undefined nested hierarchy. |
-| Trust any Git-indexed manifest | Staged-new and candidate-modified files are still candidate-controlled rather than reviewed-base authority. |
-| Guess defaults for legacy v1 safety fields | Global/path applicability and runner ownership are safety decisions, not compatible defaults. |
-
-Failure signals:
-
-- Root and subdirectory inspect return different baseline identities or digests.
-- A repo-root patch cannot materialize from a tracked subdirectory.
-- Candidate manifest content reaches an operation without monotonic comparison.
-- An artifact omits workspace offset or base/candidate source provenance.
-
-Revisit triggers:
-
-- A real nested-project contract requires an explicit scope identity and
-  repo-root monotonic composition rule.
-- Git is no longer the authoritative candidate/base transport for review.
+Why: mixing repo-root patch paths with subdirectory-relative snapshots produced
+inconsistent review scope.
 
 ## ADR: Goldband Loop complexity debt is monotonic
 
@@ -1914,109 +1847,17 @@ Revisit triggers:
 - A stable AST-backed function identity is available and per-function monotonicity
   is worth the additional migration and rename contract.
 
-## 2026-09-08 — CI owns Goldband's macOS sandbox self-tests
+## 2026-09-15: Review input is bounded at 2 MiB
 
-Supersedes the self-test execution choice in “Same-host execution for
-provider-owned review evidence”; other local evidence boundaries remain.
+Decision: one runtime constant bounds the complete review patch at 2 MiB,
+including combined tracked and untracked input; prompt metadata overhead is
+bounded separately at 48 KiB. Oversized input fails explicitly and asks for a
+narrower scope. There is no project exception, waiver, or silent truncation.
 
-The named host lane still wrapped each test process in the runtime's Seatbelt
-profile. Tests creating a different inner profile failed with `sandbox_apply`,
-and installed-runtime tests lost their temporary environment inside the sealed
-runtime, failed with EPERM and timed out. Identical nested profiles can work,
-but the actual tests require different profiles; broadening individual allowed
-operations did not provide a valid boundary for these tests.
-
-Use the existing public `push dev` macOS CI job for the three existing provider
-operations. Add explicit steps before candidate build scripts, keep the full
-workflow suite, and read only exact commit/tree/run/attempt/step metadata through
-a fixed GitHub API adapter. The trusted runtime pins the entire workflow recipe.
-GitHub's native commit tree is checked as well as local Git to reject replacement
-objects or a misleading local HEAD. No new runner service, token handling,
-evidence upload, caller-supplied JSON, or unsandboxed local fallback is added.
-
-This explicitly accepts trusted writable CI execution for these self-tests;
-it does not attest an immutable checkout, exit code, network denial, or overall
-pipeline success. Non-success or unavailable metadata stays runtime-incomplete.
-The operation network field does not grant the consumer candidate-controlled
-network actions; the CI workflow owns its network environment. Only the three
-unchanged operations have a one-way transport migration. Existing signed
-receipts, finding IDs and closure obligations remain authoritative.
-
-Consequences: uncommitted candidates cannot obtain CI evidence, and a changed
-workflow requires a reviewed runtime recipe update. Local unit and installed
-fixture tests validate the adapter but cannot substitute for a live candidate
-CI run. Both existing installers bundle the shared consumer and guide.
-
-## 2026-09-09: Preserve project registry discovery across sandbox fallback
-
-Project review contracts are managed in the durable Goldband registry and selected
-by Git identity, without an Agent-supplied path on ordinary review runs. Temporary
-evidence output must not redirect contract lookup. `inspect` is read-only and
-reports the expected entry path even when no registration exists.
-
-Legacy repository-baseline enforcement remains intact. Removal during migration
-requires an identical registered digest; a missing or changed registration cannot
-authorize removal. Goldband's old manifests are retained as regression fixtures
-for portable CI, while active local configuration lives under `~/.goldband`.
-
-## 2026-09-09: Local self-test evidence before push
-
-Required order: local candidate, independent review, then push and CI. The three
-Goldband macOS self-test recipes cannot require an already-pushed CI candidate.
-Use a fixed installed local-host lane on exact candidate copies, with temporary
-HOME/state, no credential forwarding, bounded execution, and existing signed
-candidate-bound evidence. The self-tests start their own Seatbelt processes;
-the parent therefore uses native host permissions and explicitly declares host
-networking, rather than claiming another enclosing sandbox.
-
-Only the three existing full recipes can migrate from CI, preserving behavior
-cells and operation contracts except runner/network context and longer timeouts.
-General project evidence remains sealed. The historical CI adapter is retained
-for post-push evidence; no push or test omission is needed to start local review.
-
-## 2026-09-15: Restore the shared review patch budget to 2 MiB
-
-The 256 KiB cost-control budget rejected a roughly 691 KiB complete worktree diff
-before evidence execution or semantic review. Removing generated contract files
-still left about 458 KiB, so requiring a smaller scope could not preserve the
-requested review. This supersedes the patch capacity in the July 22 and September
-9 decisions; the 48 KiB prompt metadata budget remains unchanged.
-
-Restore the original 2 MiB patch budget under one runtime constant, including
-persisted initial artifact validation and closure deltas. Keep complete input,
-one independent reviewer, signed provenance, and explicit oversize rejection.
-No project exception, scope rewrite, configurable waiver, or additional review
-coordination mechanism is needed for this failure class. Existing untracked
-redaction and safe file-reading boundaries remain separate.
-
-Boundary regressions cover UTF-8 bytes, combined tracked/untracked input, signed
-artifact readback, closure deltas, and both host adapters at the full stdin
-budget. The larger ceiling allows higher review cost and is not a token-window
-guarantee. Revisit input packaging if real host context failures or review-quality
-evidence show that complete input at this ceiling is impractical.
-
-## 2026-10-01: Review Context Belongs to the Installed Runtime
-
-Decision: agents call the installed review entrypoint with user intent and
-explicit scope. The program resolves its host, project contract, managed task
-and a unique signed unresolved review continuation. This supersedes the manual
-host and artifact assembly in the 2026-07-20 entrypoint decision.
-
-The existing launcher, lease and signed lineage remain the authorities. A new
-orchestrator or state store would duplicate those owners. Ambiguous, invalid or
-missing authority blocks; mode and domain evidence requirements are not guessed.
-Automatic retries compare the lineage's latest candidate and contract, while
-the initial artifact remains closure provenance. Explicit artifact selection
-preserves deliberate environment retries.
-Newly changed files outside the initial artifact's signed scope block automatic
-closure; the closure host is restricted to original findings, so it cannot
-provide initial semantic coverage for those additional changes.
-The scope digest owner projects managed bindings to work and ticket IDs; mutable
-receipts, revisions and claim details cannot change that stable task identity.
-
-Installed Claude/Codex probes cover entrypoints, lease binding, signed closure,
-partial-closure deduplication and native permissions. Revisit this design if
-real projects cannot identify a unique continuation without manual selection.
+Why: a 256 KiB budget rejected complete worktree diffs that could not be split
+without losing the requested review. The ceiling allows higher review cost and
+is not a token-window guarantee; revisit input packaging if real host context
+failures show complete input at this size is impractical.
 
 ## 2026-10-11: Retire review evidence governance and closure authorization
 

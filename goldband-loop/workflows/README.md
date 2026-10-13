@@ -43,7 +43,13 @@ or the registry iteration cap is reached. A CLI cap may lower but never raise
 the registry cap.
 
 `review/code` supports one typed diff-collection and model-review pass with
-validated findings. It rejects `--loop`; `qa/app` currently provides a typed mock adapter.
+validated findings. It collects a bounded diff and related code context, loads
+the shared review rules, and calls one independent reviewer with the host's
+native read-only permissions. A defect names an exact location, a concrete code
+observation, the trigger and impact, and a suggested verification. The runtime
+writes a JSON result and a Markdown report; it does not execute project checks
+or mutate Work Map state, and no findings means only that this pass reported no
+concrete concerns. It rejects `--loop`; `qa/app` currently provides a typed mock adapter.
 Real browser QA runs through the active host's browser tool under the `qa/app`
 prompt contract and `manuals/browser.md`; the typed adapter does not claim it.
 
@@ -64,8 +70,8 @@ reviewed repository cannot replace the nested reviewer through `PATH`.
 The launcher forces real mode and defaults to the current worktree. The installed
 configuration supplies the host. The Codex executable pins its host and rejects
 an additional caller-supplied host. Each invocation is an independent semantic
-pass: it never resolves a review contract, resumes a lineage, authorizes closure,
-or advances a Work Map ticket. Repeat the same command after repairs.
+pass and never advances a Work Map ticket. Repeat the same command after
+repairs.
 
 The launcher rejects the removed `--specialists` flag and `--loop`, and marks the child as an
 active review to prevent recursion. Read-only tools, approval policy, output

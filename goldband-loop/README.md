@@ -32,24 +32,8 @@ not aliases.
 The generated [capability catalog](../docs/generated/capabilities.md) is the
 authoritative list of supported capability/action pairs and runtime status.
 
-`review/code` collects a bounded diff and related code context, loads the shared
-review rules, and calls one independent reviewer using the host's native read-only
-permissions. Findings must name an exact location, concrete code observation,
-trigger and impact, and suggested verification. The runtime validates and
-normalizes findings, rejects scope or policy drift, and writes a plain JSON result
-and Markdown report. It does not execute project checks or mutate Work Map state.
-
-The default scope is the current worktree. `--base`, `--staged`, and `--diff-file`
-select explicit scopes. After repairs, rerun the same entrypoint to inspect the
-current scope; failures and unchanged candidates do not create retry locks.
-Project tests, lint, typecheck, CI, and live checks remain separate responsibilities.
-No findings means only that this semantic pass reported no concrete concerns.
-
-Review manifests, providers, contract registries, acceptance lineage, signed
-review receipts, evidence repair, closure, and completion authorization are
-retired. The installer replaces obsolete runtime assets but preserves historical
-reports and external state. Retired CLI flags fail explicitly. Existing managed
-worktree project verification and Git integration safeguards remain in place.
+`review/code` runs one independent, read-only semantic review; see
+[workflows/README.md](workflows/README.md) for its contract.
 
 Managed parallel work uses two host commands:
 
@@ -147,29 +131,8 @@ should live under `.goldband`.
 
 ## Development
 
-From the repository root:
-
-```bash
-cd goldband-loop
-bun install
-bun run build
-bun run test:free
-```
-
-Before changing installed workflow entries, update [inventory.json](inventory.json)
-and run the root inventory gate:
-
-```bash
-node scripts/check-goldband-loop-inventory.mjs
-```
-
-The root repository also validates installer and integration behavior:
-
-```bash
-bash scripts/test-workflow-integration.sh
-node scripts/test-windows-platform-integration.mjs
-bash scripts/verify-decision-guidance.sh
-```
+Development setup, workflow changes, and installer verification are defined in
+[CONTRIBUTING.md](../CONTRIBUTING.md#goldband-loop-runtime).
 
 ## Documentation
 
@@ -178,7 +141,7 @@ bash scripts/verify-decision-guidance.sh
 | [Capability catalog](../docs/generated/capabilities.md) | Supported public capability/action pairs and runtime status |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Goldband Loop internals and runtime structure |
 | [docs/tutorial-document-generate.md](docs/tutorial-document-generate.md) | Documentation-generation tutorial |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Runtime development workflow |
+| [CONTRIBUTING.md](../CONTRIBUTING.md#goldband-loop-runtime) | Runtime development workflow |
 
 ## Privacy And Telemetry
 

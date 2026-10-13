@@ -74,7 +74,7 @@ See the [workflow catalog](docs/generated/capabilities.md) for other actions.
 
 `review/code` runs one independent, read-only semantic review of the current worktree. Use `--base <ref>`, `--staged`, or `--diff-file <file>` to narrow scope. Findings identify the code path, trigger, impact, and suggested verification. Repeat the same entrypoint after repairs; each run reviews the current scope.
 
-No review manifest, contract registry, signed receipt, lineage, or closure authorization is required. Retired governance flags are rejected. The reviewer does not execute project tests or change ticket status. Continue running project tests, lint, type checks, CI, and relevant live checks separately; no findings does not establish runtime correctness.
+The reviewer does not execute project tests or change ticket status. Continue running project tests, lint, type checks, CI, and relevant live checks separately; no findings does not establish runtime correctness.
 
 ## Update and Uninstall
 

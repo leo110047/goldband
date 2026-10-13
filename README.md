@@ -74,7 +74,7 @@ Codex:       $goldband system health
 
 `review/code` 預設對目前 worktree 執行一次獨立語意審查。reviewer 會讀取 diff、相關程式與規則，並回報具體觸發條件、影響和建議驗證方式；不執行專案測試，也不授權結案或變更工作票狀態。
 
-Claude 使用 `/goldband review code`，Codex 使用 `$goldband review code`。可用 `--base <ref>`、`--staged` 或 `--diff-file <file>` 指定範圍。修正後以相同入口重新審查；每次都檢查目前範圍，不需要 manifest、registry、lineage 或簽章憑證。舊治理參數會明確拒絕。
+Claude 使用 `/goldband review code`，Codex 使用 `$goldband review code`。可用 `--base <ref>`、`--staged` 或 `--diff-file <file>` 指定範圍。修正後以相同入口重新審查；每次都檢查目前範圍。
 
 專案原有的 test、lint、typecheck、CI 及需要的實際環境驗證仍須照常執行。報告中的「無 findings」不代表這些驗證已通過。
 

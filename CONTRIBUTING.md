@@ -28,8 +28,69 @@ npm run test:cross-review
 npm run lint:style
 ```
 
-For workflow runtime source changes, also follow
-[the runtime development guide](goldband-loop/README.md#development).
+
+## Goldband Loop Runtime
+
+Goldband Loop exposes one capability interface: Claude Code uses
+`/goldband <capability> <action>` and Codex uses `$goldband <capability> <action>`.
+`goldband.manifest.json` is the source of truth for capabilities, actions,
+prompt contracts, manual routing, and runtime metadata. Individual workflows do
+not get top-level skills or commands.
+
+Use a full clone so history-based review and debugging work. Build the runtime
+from `goldband-loop/`:
+
+```bash
+cd goldband-loop
+bun install
+bun run build
+```
+
+`bin/dev-setup` points a development checkout at the local runtime;
+`bin/dev-teardown` restores the normal installation. Compiled CLI changes
+(`design`, `make-pdf`) require `bun run build`.
+
+### Changing a workflow
+
+Edit the action in `goldband.manifest.json`. Its prompt contract states only the
+goal, relevant context, hard boundaries, and verification; deterministic
+execution, validation, state, and safety behavior belong in the runtime. Then
+regenerate the derived surfaces and run the workflow checks:
+
+```bash
+node scripts/generate-goldband-surfaces.mjs
+node scripts/test-workflow-contracts.mjs
+cd goldband-loop && bun run typecheck && bun run test:workflows
+```
+
+`goldband-loop/generated/workflow-contracts/`,
+`goldband-loop/generated/capability-actions.json`,
+`goldband-loop/workflows/capability-registry.generated.ts`, and
+`goldband-loop/SKILL.md` are generated and must not be edited by hand.
+`goldband-loop/SKILL.md.tmpl` is only the capability router.
+
+### Changing runtime code
+
+Host and provider details stay behind adapters. Required data is validated
+before side effects. Compatibility workflows fail closed when real execution is
+unsupported. Contract changes need deterministic regression tests. Run
+`bun run check:source` in `goldband-loop/` before handing off TypeScript
+changes.
+
+### Installer verification
+
+Installer checks run under a temporary `HOME` and never overwrite the active
+global runtime. Installed workflow entries are listed in
+`goldband-loop/inventory.json`; update it with the entries.
+
+```bash
+node scripts/check-goldband-loop-inventory.mjs
+bash scripts/test-workflow-integration.sh
+```
+
+The standard installer exposes the capability router and thin internal workflow
+contracts, and removes Goldband-managed top-level workflow entries left by older
+installs. Historical flat workflow names are not aliases.
 
 ## Plugin Distribution Changes
 
@@ -67,3 +128,9 @@ and verify the result:
 npm run sync:app-support
 npm run test:app-support
 ```
+
+## Pull Requests
+
+Generated surfaces change in the same commit as their source. Report the exact
+checks run, distinguish mock from real-host verification, and claim Claude and
+Codex parity only when both installation surfaces were exercised.

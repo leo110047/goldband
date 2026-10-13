@@ -4,24 +4,7 @@ This document explains **why** goldband is built the way it is. For setup and co
 
 ## Semantic review runtime
 
-`review/code` collects a bounded diff and related code context, loads the shared
-review rules, and calls one independent reviewer using the host's native read-only
-permissions. Findings must name an exact location, concrete code observation,
-trigger and impact, and suggested verification. The runtime validates and
-normalizes findings, rejects scope or policy drift, and writes a plain JSON result
-and Markdown report. It does not execute project checks or mutate Work Map state.
-
-The default scope is the current worktree. `--base`, `--staged`, and `--diff-file`
-select explicit scopes. After repairs, rerun the same entrypoint to inspect the
-current scope; failures and unchanged candidates do not create retry locks.
-Project tests, lint, typecheck, CI, and live checks remain separate responsibilities.
-No findings means only that this semantic pass reported no concrete concerns.
-
-Review manifests, providers, contract registries, acceptance lineage, signed
-review receipts, evidence repair, closure, and completion authorization are
-retired. The installer replaces obsolete runtime assets but preserves historical
-reports and external state. Retired CLI flags fail explicitly. Existing managed
-worktree project verification and Git integration safeguards remain in place.
+`review/code` is defined in [workflows/README.md](workflows/README.md).
 
 ## Browser work
 

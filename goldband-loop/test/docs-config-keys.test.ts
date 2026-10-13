@@ -9,7 +9,7 @@ const CONFIG_BIN = path.join(ROOT, 'bin', 'goldband-config');
 function scanDocsForConfigKeys(): { docPath: string; key: string; line: number }[] {
   const hits: { docPath: string; key: string; line: number }[] = [];
   // Recurse docs/ (skipping dotfiles) plus the top-level README, which documents
-  // the user-facing config commands. TODOS.md stays excluded.
+  // the user-facing config commands.
   const stack = [path.join(ROOT, 'docs'), path.join(ROOT, 'README.md')];
   while (stack.length) {
     const cur = stack.pop()!;
