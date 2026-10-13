@@ -288,11 +288,15 @@ run_workflow_setup() {
 # Browser QA needs a host browser tool; mcp/claude.mcp.json.template owns the
 # Playwright MCP command. Existing `playwright` entries are left untouched.
 playwright_mcp_helper() {
-    local action="$1"
+    local action="$1" goldband_home="${GOLDBAND_HOME:-$HOME/.goldband}"
     shift
+    # Native Windows processes need a Windows path, not an MSYS one.
+    if [ -n "${PLAYWRIGHT_MCP_WINDOWS:-}" ] && command -v cygpath >/dev/null 2>&1; then
+        goldband_home="$(cygpath -m "$goldband_home")"
+    fi
     "${CODEX_CONFIG_PYTHON[@]}" "$REPO_DIR/shell/install/mcp-config.py" "$action" \
         --template "$REPO_DIR/mcp/claude.mcp.json.template" --name playwright \
-        ${PLAYWRIGHT_MCP_WINDOWS:+--windows} "$@"
+        --goldband-home "$goldband_home" ${PLAYWRIGHT_MCP_WINDOWS:+--windows} "$@"
 }
 
 install_playwright_mcp() {

@@ -48,7 +48,7 @@ to enabled.
 Goldband no longer ships its own browser. For `qa/app` and other browser work,
 use the host's browser tool: Claude in Chrome, Codex's built-in browser, or the
 `playwright` entry in the templates. The template pins `@playwright/mcp@0.0.83`
-and adds two defaults:
+and adds three defaults:
 
 - `--isolated` keeps the browser profile in memory, so the agent never reuses
   your real sign-ins and nothing persists between sessions.
@@ -57,6 +57,11 @@ and adds two defaults:
   `;https://staging.example.com`) when you need it. Playwright documents this
   option as not a security boundary (it does not cover redirects), so treat it
   as protection against accidental browsing, not enforcement.
+- `--output-dir=/path/to/goldband-home/playwright-mcp` keeps page snapshots
+  and console logs out of the project. Without it, Playwright MCP writes a
+  `.playwright-mcp/` directory into whatever directory the agent runs in.
+  Replace the placeholder with an absolute path: the option does not expand
+  `~`, and a `~/...` value creates a literal `~` directory in the project.
 
 Page content returned by Playwright MCP is not wrapped or scanned for prompt
 injection. The protection against injected instructions is what the agent may
@@ -67,18 +72,23 @@ sites, prefer Claude in Chrome, which has its own prompt-injection safeguards.
 `./install.sh all-with-workflow` adds this entry to both hosts: Claude Code
 through `claude mcp add --scope user`, and Codex by appending an
 `[mcp_servers.playwright]` table to `~/.codex/config.toml` (a backup is kept).
-The installer reads the command from `claude.mcp.json.template`, leaves any
-existing `playwright` entry untouched, and wraps `npx` in `cmd /c` on Windows.
+The installer reads the command from `claude.mcp.json.template`, replaces the
+output-dir placeholder with `$GOLDBAND_HOME` (default `~/.goldband`) as an
+absolute path, leaves any existing `playwright` entry untouched, and wraps
+`npx` in `cmd /c` on Windows.
 Set `GOLDBAND_SKIP_PLAYWRIGHT_MCP=1` to skip it; `./install.sh status` reports
 whether each host has it. Other install targets and `auto-refresh` never add
 it, so a removed entry stays removed. The first use downloads the package from
-npm through `npx`.
+npm through `npx`. An entry installed before the output-dir default keeps its
+old arguments; remove it (`claude mcp remove playwright -s user`, and the
+`[mcp_servers.playwright]` table) and rerun the installer to pick it up.
 
 To add it by hand instead:
 
 ```bash
 claude mcp add --scope user playwright -- npx -y @playwright/mcp@0.0.83 --isolated \
-  "--allowed-origins=http://localhost:*;http://127.0.0.1:*"
+  "--allowed-origins=http://localhost:*;http://127.0.0.1:*" \
+  "--output-dir=$HOME/.goldband/playwright-mcp"
 ```
 
 ## Token-Backed Setup Flow

@@ -12,12 +12,17 @@ import {
   write,
 } from './lib/config-install-fixture.mjs';
 
-const TEMPLATE_ARGS = [
-  '-y',
-  '@playwright/mcp@0.0.83',
-  '--isolated',
-  '--allowed-origins=http://localhost:*;http://127.0.0.1:*',
-];
+// The template's output-dir placeholder resolves under the user's GOLDBAND_HOME,
+// so Playwright MCP never writes snapshots into the project directory.
+function templateArgs(context) {
+  return [
+    '-y',
+    '@playwright/mcp@0.0.83',
+    '--isolated',
+    '--allowed-origins=http://localhost:*;http://127.0.0.1:*',
+    `--output-dir=${context.env.GOLDBAND_HOME}/playwright-mcp`,
+  ];
+}
 
 // Load only the installer modules the MCP step needs, then run one function.
 const MODULE_PRELUDE = `
@@ -107,7 +112,7 @@ function testFreshInstall() {
     'playwright',
     '--',
     'npx',
-    ...TEMPLATE_ARGS,
+    ...templateArgs(context),
   ]);
   assert.equal(fs.realpathSync(calls[0].cwd), fs.realpathSync(context.home));
 
@@ -119,7 +124,7 @@ function testFreshInstall() {
   const parsed = toml(context, context.codexConfig);
   assert.deepEqual(parsed.mcp_servers.playwright, {
     command: 'npx',
-    args: TEMPLATE_ARGS,
+    args: templateArgs(context),
   });
   assert.equal(parsed.projects['/x'].trust_level, 'trusted');
   assert.equal(fs.readFileSync(`${context.codexConfig}.bak`, 'utf8'), original);
@@ -173,7 +178,7 @@ function testOptOutAndMissingCli() {
   assert.match(noCliOutput, /找不到 claude CLI/);
   assert.deepEqual(
     toml(noCli, noCli.codexConfig).mcp_servers.playwright.args,
-    TEMPLATE_ARGS,
+    templateArgs(noCli),
   );
   console.log(
     '[OK] Opt-out skips both hosts; a missing claude CLI still configures Codex',
@@ -187,11 +192,11 @@ function testWindowsAndInvalidConfig() {
     'cmd',
     '/c',
     'npx',
-    ...TEMPLATE_ARGS,
+    ...templateArgs(windows),
   ]);
   assert.deepEqual(toml(windows, windows.codexConfig).mcp_servers.playwright, {
     command: 'cmd',
-    args: ['/c', 'npx', ...TEMPLATE_ARGS],
+    args: ['/c', 'npx', ...templateArgs(windows)],
   });
 
   const invalid = setup('playwright-invalid');

@@ -14,11 +14,18 @@ from pathlib import Path
 ABSENT = 1
 INVALID = 2
 PRESENT = 3
+# Template placeholder for the per-user Goldband state root. Playwright MCP
+# does not expand "~", so the installer substitutes an absolute path.
+GOLDBAND_HOME_PLACEHOLDER = "/path/to/goldband-home"
 
 
-def server_argv(template, name, windows):
+def server_argv(template, name, windows, goldband_home):
     server = json.loads(template.read_text(encoding="utf-8"))["mcpServers"][name]
     argv = [server["command"], *server.get("args", [])]
+    if any(GOLDBAND_HOME_PLACEHOLDER in arg for arg in argv):
+        if not goldband_home:
+            raise ValueError("goldband home required")
+        argv = [arg.replace(GOLDBAND_HOME_PLACEHOLDER, goldband_home) for arg in argv]
     # Windows cannot spawn npx.cmd directly without a shell.
     return ["cmd", "/c", *argv] if windows else argv
 
@@ -60,9 +67,10 @@ def main():
     parser.add_argument("--name", required=True)
     parser.add_argument("--config", type=Path)
     parser.add_argument("--windows", action="store_true")
+    parser.add_argument("--goldband-home")
     args = parser.parse_args()
     try:
-        argv = server_argv(args.template, args.name, args.windows)
+        argv = server_argv(args.template, args.name, args.windows, args.goldband_home)
     except (OSError, ValueError, KeyError, TypeError):
         print("template-unsupported", file=sys.stderr)
         return INVALID

@@ -2796,4 +2796,8 @@ is not always connected. It reads the template, never modifies an existing
 `playwright` entry, and honors `GOLDBAND_SKIP_PLAYWRIGHT_MCP=1`. Only that
 explicit target adds it; `auto-refresh` replays component targets, so a user
 who removes the entry keeps it removed. `codex mcp add` was rejected because it
-re-renders the whole user config.
+re-renders the whole user config. The template also sets `--output-dir` to a
+`/path/to/goldband-home` placeholder that the installer resolves to an
+absolute `$GOLDBAND_HOME/playwright-mcp`: without it Playwright MCP writes a
+`.playwright-mcp/` directory into the project, and the option does not expand
+`~`.
