@@ -24,7 +24,8 @@ esac
 
 "$BUN_CMD" run gen:surfaces
 "$BUN_CMD" build --compile design/src/cli.ts --outfile design/dist/design
-"$BUN_CMD" build --compile make-pdf/src/cli.ts --outfile make-pdf/dist/pdf
+# Playwright loads chromium-bidi only for BiDi browsers; make-pdf drives Chromium over CDP.
+"$BUN_CMD" build --compile --external 'chromium-bidi/*' make-pdf/src/cli.ts --outfile make-pdf/dist/pdf
 "$BUN_CMD" build --compile bin/goldband-global-discover.ts --outfile bin/goldband-global-discover
 "$BUN_CMD" build --compile scripts/task-emission-schema.ts --outfile bin/goldband-task-emission
 bash scripts/write-version-files.sh design/dist/.version make-pdf/dist/.version
