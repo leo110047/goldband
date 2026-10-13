@@ -95,7 +95,7 @@ function printUsage(): void {
   lines.push("  make-pdf generate --watermark DRAFT memo.md draft.pdf");
   lines.push("  make-pdf preview letter.md");
   lines.push("");
-  lines.push("Run `make-pdf setup` to verify Chromium + pdftotext install.");
+  lines.push("Run `make-pdf setup` to verify the Chromium install.");
   console.error(lines.join("\n"));
 }
 

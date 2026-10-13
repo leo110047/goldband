@@ -939,19 +939,65 @@ describe('workflow runtime', () => {
       operation: 'upgrade',
       status: 'blocked',
     });
-    const source = readFileSync(resolve(ROOT, 'workflows/owned-runtime.ts'), 'utf8');
-    expect(source).toContain('authorization=native-host-required');
-    expect(source).toContain('"system-upgrade"');
-    expect(source).toContain('"preflight.json"');
-    expect(source).toContain('preflightId');
-    expect(source).not.toContain(
-      'commandResult("git", ["pull", "--ff-only"]',
-    );
     expect(readJsonl('system/upgrade').map((event) => event.step)).toEqual([
       'run-system-upgrade-owner',
       'safety-gate:system/upgrade:pending',
       'workflow-complete',
     ]);
+  });
+
+  test('system/upgrade preflight records pending commands without pulling', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'goldband-upgrade-home-'));
+    const upstream = mkdtempSync(join(tmpdir(), 'goldband-upgrade-upstream-'));
+    const source = join(home, 'source');
+    const oldHome = process.env.HOME;
+    const gitOk = (cwd: string, args: string[]) => {
+      const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    process.env.HOME = home;
+    try {
+      gitOk(upstream, ['init', '-q', '-b', 'main']);
+      gitOk(upstream, ['config', 'user.name', 'Goldband Test']);
+      gitOk(upstream, ['config', 'user.email', 'goldband@example.invalid']);
+      writeRuntimeFixture(upstream, 'upgrade-contract');
+      gitOk(upstream, ['add', '.']);
+      gitOk(upstream, ['commit', '-q', '-m', 'base']);
+      gitOk(home, ['clone', '-q', upstream, source]);
+      writeFileSync(join(upstream, 'VERSION'), '0.2.0\n');
+      gitOk(upstream, ['commit', '-q', '-am', 'next']);
+      const head = gitOk(source, ['rev-parse', 'HEAD']);
+      mkdirSync(join(home, '.codex', 'skills'), { recursive: true });
+      symlinkSync(source, join(home, '.codex', 'skills', 'goldband'));
+
+      const result = await runWorkflow(getWorkflow('system/upgrade'), {
+        mode: 'real',
+        host: 'codex',
+        cwd: ROOT,
+        goldbandHome: tmpHome,
+        inputFile: writeInput('upgrade-preflight.json', { phase: 'preflight' }),
+      });
+      const output = result.output as Record<string, any>;
+      expect(output).toMatchObject({ owner: 'goldband setup', status: 'blocked' });
+      expect(output.nextCommands).toContainEqual([
+        'git', '-C', realpathSync(source), 'pull', '--ff-only',
+      ]);
+      expect(output.artifacts).toHaveLength(1);
+      const state = JSON.parse(readFileSync(output.artifacts[0], 'utf8'));
+      expect(state).toMatchObject({
+        status: 'pending',
+        preflightId: output.preflightId,
+        oldVersion: '0.1.0',
+        oldHead: head,
+      });
+      expect(gitOk(source, ['rev-parse', 'HEAD'])).toBe(head);
+    } finally {
+      if (oldHome === undefined) delete process.env.HOME;
+      else process.env.HOME = oldHome;
+      rmSync(home, { recursive: true, force: true });
+      rmSync(upstream, { recursive: true, force: true });
+    }
   });
 
   test('iteration cap and repeated-blocker stop condition are enforced', async () => {

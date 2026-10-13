@@ -55,7 +55,6 @@ jobs:
             test/build-script-shell-compat.test.ts \
             test/docs-config-keys.test.ts \
             test/brain-sync-windows-paths.test.ts \
-            make-pdf/test/pdftotext.test.ts \
             make-pdf/test/cli.test.ts
 
   windows-setup-e2e:

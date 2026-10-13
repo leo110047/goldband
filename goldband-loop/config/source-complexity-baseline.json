@@ -26,12 +26,10 @@
         30,
         25,
         23,
-        18,
-        15
+        18
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
-        53,
-        51
+        53
       ]
     },
     "cross-review/core.cjs": {
@@ -145,8 +143,7 @@
     "lib/knowledge.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
         27,
-        22,
-        20
+        22
       ]
     },
     "lib/managed-worktree-boundary.ts": {
@@ -185,14 +182,14 @@
     "lib/verification-receipt.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
         22,
-        20,
         18,
         15,
+        14,
         13
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
         80,
-        68,
+        62,
         62,
         56
       ],
@@ -211,19 +208,6 @@
     "make-pdf/src/render.ts": {
       "lint/complexity/noExcessiveLinesPerFunction": [
         63
-      ]
-    },
-    "make-pdf/src/setup.ts": {
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        52
-      ]
-    },
-    "scripts/analytics.ts": {
-      "lint/complexity/noExcessiveCognitiveComplexity": [
-        28
-      ],
-      "lint/complexity/noExcessiveLinesPerFunction": [
-        53
       ]
     },
     "scripts/eval-watch.ts": {
@@ -324,9 +308,7 @@
       ],
       "lint/complexity/useMaxParams": [
         8,
-        7,
-        6,
-        5
+        6
       ]
     },
     "workflows/run.ts": {
@@ -364,20 +346,18 @@
     },
     "workflows/tracker-adapters/github.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        17,
-        16
+        14
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
-        80
+        79
       ]
     },
     "workflows/tracker-adapters/gitlab.ts": {
       "lint/complexity/noExcessiveCognitiveComplexity": [
-        19,
         16
       ],
       "lint/complexity/noExcessiveLinesPerFunction": [
-        92
+        88
       ]
     },
     "workflows/tracker-adapters/import.ts": {

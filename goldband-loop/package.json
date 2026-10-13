@@ -29,7 +29,6 @@
     "eval:compare": "bun run scripts/eval-compare.ts",
     "eval:summary": "bun run scripts/eval-summary.ts",
     "eval:watch": "bun run scripts/eval-watch.ts",
-    "analytics": "bun run scripts/analytics.ts",
     "slop": "npx slop-scan scan . 2>/dev/null || echo 'slop-scan not available (install with: npm i -g slop-scan)'",
     "slop:diff": "bun run scripts/slop-diff.ts"
   },
