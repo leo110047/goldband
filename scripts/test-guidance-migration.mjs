@@ -16,23 +16,29 @@ try {
   );
   const router = expanded.PreToolUse[0].hooks[0];
   const external = { type: 'command', command: 'echo user-hook' };
-  const oldPrompt = JSON.parse(
-    fs.readFileSync('hooks/claude-retired-hook-prompts.json', 'utf8'),
-  )[0];
+  const retired = JSON.parse(
+    fs.readFileSync('hooks/claude-retired-hooks.json', 'utf8'),
+  );
+  const oldCommands = retired.commands.map((command) => ({
+    type: 'command',
+    command: command.replaceAll('${HOOKS_DIR}', `${claude}/hooks`),
+  }));
   const existing = {
     SessionStart: [{ hooks: [router, external] }],
     CustomEvent: [{ hooks: [external] }],
-    SubagentStop: [{ hooks: [{ type: 'prompt', prompt: oldPrompt }] }],
+    SubagentStop: [{ hooks: [{ type: 'prompt', prompt: retired.prompts[0] }] }],
+    PostToolUse: [{ matcher: 'Edit', hooks: oldCommands }],
   };
-  function merge(value) {
+  function merge(value, newHooks = expanded, mode = 'install') {
     const result = spawnSync(
       'bash',
       [
         '-c',
-        'source shell/install/profiles.sh; merge_claude_hooks_json "$1" "$2"',
+        'source shell/install/profiles.sh; merge_claude_hooks_json "$1" "$2" "$3"',
         'test',
         JSON.stringify(value),
-        JSON.stringify(expanded),
+        JSON.stringify(newHooks),
+        mode,
       ],
       {
         cwd: root,
@@ -47,12 +53,108 @@ try {
   assert.deepEqual(merged.SessionStart, [{ hooks: [external] }]);
   assert.deepEqual(merged.CustomEvent, existing.CustomEvent);
   assert.deepEqual(merged.SubagentStop, expanded.SubagentStop);
+  assert.deepEqual(merged.PostToolUse, expanded.PostToolUse);
   assert.deepEqual(merge(merged), merged, 'reinstallation must be idempotent');
+  // Retiring removes only retired commands; user hooks, current hooks, retired
+  // prompts (replaced only by a hooks install), and empty entries stay.
+  const emptyEntry = { matcher: 'Write', hooks: [] };
+  assert.deepEqual(
+    merge(
+      { ...existing, PostToolUse: [...existing.PostToolUse, emptyEntry] },
+      {},
+      'retire',
+    ),
+    {
+      SessionStart: existing.SessionStart,
+      CustomEvent: existing.CustomEvent,
+      SubagentStop: existing.SubagentStop,
+      PostToolUse: [emptyEntry],
+    },
+  );
   assert.match(expanded.SubagentStop[0].hooks[0].prompt, /"ok": true/);
   assert.match(
     expanded.SubagentStop[0].hooks[0].prompt,
     /"ok": false, "reason"/,
   );
+  // Without jq, a retired command left in settings.json is reported, not
+  // silently kept, by both the skipped-refresh cleanup and a hooks install.
+  const nodeOnly = path.join(tmp, 'node-only-bin');
+  fs.mkdirSync(nodeOnly);
+  fs.symlinkSync(process.execPath, path.join(nodeOnly, 'node'));
+  const settingsFile = path.join(claude, 'settings.json');
+  function runSettings(settings, command, PATH = nodeOnly) {
+    fs.writeFileSync(settingsFile, settings);
+    return spawnSync(
+      '/bin/bash',
+      [
+        '-c',
+        `source shell/install/common.sh; source shell/install/profiles.sh; ${command}`,
+      ],
+      {
+        cwd: root,
+        env: { PATH, REPO_DIR: root, CLAUDE_DIR: claude },
+        encoding: 'utf8',
+      },
+    );
+  }
+  // The cleanup fails so auto-refresh records it; an install (under `set -e`)
+  // prints the hint and continues with its other components.
+  for (const [command, status] of [
+    ['retire_claude_hooks', 1],
+    ['set -e; merge_hooks_config; echo continued', 0],
+    ['GOLDBAND_AUTO_REFRESH=1 merge_hooks_config', 1],
+  ]) {
+    const stale = runSettings(JSON.stringify({ hooks: existing }), command);
+    assert.equal(stale.status, status, `${command} ${stale.stderr}`);
+    assert.match(stale.stdout, /claude-retired-hooks\.json/);
+    const current = runSettings(JSON.stringify({ hooks: merged }), command);
+    assert.equal(current.status, 0, `${command} ${current.stderr}`);
+  }
+  assert.match(
+    runSettings(
+      JSON.stringify({ hooks: existing }),
+      'set -e; merge_hooks_config; echo continued',
+    ).stdout,
+    /continued/,
+  );
+  // jq alone decides retirement; node is not required.
+  const jqOnlyBin = path.join(tmp, 'jq-only-bin');
+  fs.mkdirSync(jqOnlyBin);
+  for (const tool of ['jq', 'mktemp', 'cmp', 'cp', 'mv', 'rm']) {
+    const resolved = spawnSync('/bin/sh', ['-c', `command -v ${tool}`], {
+      encoding: 'utf8',
+    }).stdout.trim();
+    assert.ok(resolved, `${tool} must be installed`);
+    fs.symlinkSync(resolved, path.join(jqOnlyBin, tool));
+  }
+  const jqOnly = runSettings(
+    JSON.stringify({ hooks: existing }),
+    'retire_claude_hooks',
+    jqOnlyBin,
+  );
+  assert.equal(jqOnly.status, 0, jqOnly.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile, 'utf8')).hooks, {
+    SessionStart: existing.SessionStart,
+    CustomEvent: existing.CustomEvent,
+    SubagentStop: existing.SubagentStop,
+  });
+  // With nothing retired, settings.json is left byte-for-byte unchanged.
+  for (const settings of [
+    '',
+    '{"model": "x"}',
+    '{"hooks": {"Notification": []}}',
+    '{"hooks": {"PostToolUse": [{"matcher": "Edit", "hooks": []}]}}',
+  ]) {
+    const result = runSettings(
+      settings,
+      'retire_claude_hooks',
+      process.env.PATH,
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.readFileSync(settingsFile, 'utf8'), settings);
+  }
+  fs.rmSync(settingsFile);
+
   const legacy = path.join(claude, 'rules');
   function retire() {
     const result = spawnSync(

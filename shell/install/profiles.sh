@@ -210,6 +210,9 @@ merge_hooks_config() {
 
     if ! command -v jq &> /dev/null; then
         print_missing_jq_hooks_help "$hooks_dir"
+        # A manual install reports this as a hint and continues with other
+        # components; an auto-refresh records it as a failure.
+        retire_claude_hooks || [ "${GOLDBAND_AUTO_REFRESH:-}" != "1" ] || return 1
         return
     fi
 
@@ -224,10 +227,7 @@ merge_hooks_config() {
     local source="$settings_json"
     [ -e "$source" ] || source="/dev/null"
     local existing_hooks
-    existing_hooks=$(jq -s '
-        (if length == 0 then {} elif length == 1 and (.[0] | type) == "object"
-         then .[0] else error("settings must be a JSON object") end) | .hooks // {}
-    ' "$source") || return 1
+    existing_hooks="$(read_claude_settings_hooks "$source")" || return 1
     local merged_hooks
     merged_hooks="$(merge_claude_hooks_json "$existing_hooks" "$hooks_content")" || return 1
     local tmp
@@ -241,28 +241,95 @@ merge_hooks_config() {
     echo -e "  ${GREEN}[合併] Hooks 設定已自動合併到 settings.json${NC}"
 }
 
+read_claude_settings_hooks() {
+    jq -s '
+        (if length == 0 then {} elif length == 1 and (.[0] | type) == "object"
+         then .[0] else error("settings must be a JSON object") end) | .hooks // {}
+    ' "$1"
+}
+
 merge_claude_hooks_json() {
     local existing_hooks="$1"
     local hooks_content="$2"
     local mode="${3:-install}"
     local managed_command="node \"$CLAUDE_DIR/hooks/scripts/hooks/hook-router.js\""
     jq -n --argjson existing "$existing_hooks" --argjson new_hooks "$hooks_content" \
-        --arg router "$managed_command" --arg mode "$mode" \
-        --slurpfile retired "$REPO_DIR/hooks/claude-retired-hook-prompts.json" '
-        ($new_hooks | [ .[][] | .hooks[] | .command? // empty ] + [$router]) as $commands
-        | ($new_hooks | [ .[][] | .hooks[] | .prompt? // empty ] + $retired[0]) as $prompts
+        --arg router "$managed_command" --arg mode "$mode" --arg hooks_dir "$CLAUDE_DIR/hooks" \
+        --slurpfile retired "$REPO_DIR/hooks/claude-retired-hooks.json" '
+        ($retired[0].commands | map(gsub("\\$\\{HOOKS_DIR\\}"; $hooks_dir))) as $retired_commands
+        | (if $mode == "retire" then $retired_commands
+           else $new_hooks | [ .[][] | .hooks[] | .command? // empty ] + [$router] + $retired_commands end) as $commands
+        | (if $mode == "retire" then []
+           else $new_hooks | [ .[][] | .hooks[] | .prompt? // empty ] + $retired[0].prompts end) as $prompts
         | def owned:
             (.command? as $c | $commands | index($c)) != null
             or (.prompt? as $p | $prompts | index($p)) != null;
         ($existing | with_entries(.value |= map(
-            .hooks |= map(select(owned | not))
-            | select(.hooks | length > 0)
+            (.hooks | length) as $before
+            | .hooks |= map(select(owned | not))
+            | select((.hooks | length > 0) or ($mode == "retire" and $before == 0))
         ))) as $preserved
-        | if $mode == "remove" then $preserved | with_entries(select(.value | length > 0))
+        | if $mode == "retire" then $preserved
+            | with_entries(select((.value | length > 0) or ($existing[.key] | length == 0)))
+          elif $mode == "remove" then $preserved | with_entries(select(.value | length > 0))
           else reduce (($preserved + $new_hooks) | keys[]) as $phase ({};
             .[$phase] = (($preserved[$phase] // []) + ($new_hooks[$phase] // []))) end
         '
 
+}
+
+# Removes only retired Goldband hook commands, whose scripts no longer exist,
+# and adds nothing, so it is safe whenever a hooks refresh is skipped. Retired
+# prompts need no script and are replaced only by a hooks install.
+retire_claude_hooks() {
+    local settings_json="$CLAUDE_DIR/settings.json"
+    [ -f "$settings_json" ] || return 0
+    if ! command -v jq &> /dev/null; then
+        local found=0
+        settings_has_retired_hook_commands "$settings_json" || found=$?
+        [ "$found" -eq 1 ] && return 0
+        if [ "$found" -eq 0 ]; then
+            echo -e "  ${YELLOW}[提示] settings.json 仍有已退役的 hook 指令，請手動移除 hooks/claude-retired-hooks.json 列出的指令${NC}"
+        else
+            echo -e "  ${RED}[錯誤] 無法解析 ${settings_json}，未移除退役的 hook 指令${NC}" >&2
+        fi
+        return 1
+    fi
+    local existing_hooks retained tmp
+    if ! existing_hooks="$(read_claude_settings_hooks "$settings_json")"; then
+        echo -e "  ${RED}[錯誤] 無法解析 ${settings_json}，未移除退役的 hook 指令${NC}" >&2
+        return 1
+    fi
+    retained="$(merge_claude_hooks_json "$existing_hooks" '{}' retire)" || return 1
+    jq -en --argjson a "$existing_hooks" --argjson b "$retained" '$a != $b' > /dev/null || return 0
+    tmp="$(mktemp "${settings_json}.tmp.XXXXXX")" || return 1
+    if ! jq --argjson hooks "$retained" '.hooks = $hooks' "$settings_json" > "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    replace_claude_settings "$settings_json" "$tmp" || return 1
+    CLAUDE_HOOKS_RETIRED=1
+    echo -e "  ${GREEN}[退役] 已從 settings.json 移除退役的 hook 指令${NC}"
+}
+
+# Without jq, reports whether settings.json runs a retired command: exits 0
+# when it does, 1 when it does not or node is unavailable, and 2 when the file
+# cannot be read.
+settings_has_retired_hook_commands() {
+    command -v node &> /dev/null || return 1
+    node - "$1" "$REPO_DIR/hooks/claude-retired-hooks.json" "$CLAUDE_DIR/hooks" <<'NODE'
+const fs = require('fs');
+const [settingsFile, retiredFile, hooksDir] = process.argv.slice(2);
+try {
+  const retired = JSON.parse(fs.readFileSync(retiredFile, 'utf8')).commands
+    .map((command) => command.replaceAll('${HOOKS_DIR}', hooksDir));
+  const text = fs.readFileSync(settingsFile, 'utf8');
+  const hooks = (text.trim() ? JSON.parse(text) : {}).hooks ?? {};
+  const commands = Object.values(hooks).flat()
+    .flatMap((entry) => entry.hooks ?? []).map((hook) => hook.command);
+  process.exit(commands.some((command) => retired.includes(command)) ? 0 : 1);
+} catch { process.exit(2); }
+NODE
 }
 
 replace_claude_settings() {

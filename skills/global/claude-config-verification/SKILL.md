@@ -20,7 +20,7 @@ allowed-tools:
 
 ## When to Use
 
-- After changing hook router logic, hook policies, or worker behavior
+- After changing hook router logic or hook policies
 - After changing Claude/Codex global templates, execpolicy rules, or portable-skill install logic
 - After editing `hooks/hooks.json`, `skill-rules.json`, or `.claude-plugin/plugin.json`
 - After editing `.codex/config.toml`, `codex/config.toml`, `codex/rules/default.rules`, or `AGENTS.md`
@@ -52,7 +52,7 @@ use `skills/global/claude-config-verification/scripts/...`.
 - Do not assume `${CLAUDE_PLUGIN_DATA}` exists in every execution path. Claude Code `2.1.78` was live-verified to inject it inside a plugin `SessionStart` hook, but standalone script execution may still fall back.
 - Do not stop at JSON syntax validation; stale hook references and broken reference links are equally shipping blockers.
 - Do not claim Codex support is safe if `codex/rules/default.rules` has not been syntax-checked against real commands.
-- Do not claim router changes are safe without replay when policy or worker code changed.
+- Do not claim router changes are safe without replay when router policy code changed.
 - Do not add a new global skill without also updating installer profiles and inventory documentation.
 - Do not change shared policy text without checking both the Claude adapter (`rules/`, `hooks/`) and the Codex adapter (`AGENTS.md`, `codex/rules/`).
 - Do not add scripts or assets to a skill and forget to mention them in `SKILL.md`; undiscoverable files are almost as bad as missing files.

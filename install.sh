@@ -212,6 +212,7 @@ case "$1" in
         exit $?
         ;;
     auto-refresh)
+        export GOLDBAND_AUTO_REFRESH=1
         run_auto_refresh "${GOLDBAND_AUTO_REFRESH_OLD_HEAD:-}" "${GOLDBAND_AUTO_REFRESH_NEW_HEAD:-}"
         exit $?
         ;;

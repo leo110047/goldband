@@ -281,7 +281,6 @@ function buildExpectedAssets({ commands, hookConfig, rules, sourceSkills }) {
       ],
       hookScripts: [
         'hooks/scripts/hooks/hook-router.js',
-        'hooks/scripts/hooks/post-edit-worker.js',
         'hooks/scripts/hooks/skill-activation-suggestions.js',
       ],
       rules,

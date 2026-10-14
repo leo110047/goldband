@@ -65,8 +65,8 @@ jobs:
         run: node scripts/sync-app-support-assets.mjs --check
       - name: Verify hook script references
         run: python3 scripts/verify-hook-script-references.py
-      - name: Verify decision guidance parity
-        run: bash scripts/verify-decision-guidance.sh
+      - name: Verify decision guidance parity and Claude hook migration
+        run: npm run test:decision-guidance
       - name: Check Goldband Loop source quality
         env:
           GOLDBAND_COMPLEXITY_BASE_REF: ${{ github.event.before }}
