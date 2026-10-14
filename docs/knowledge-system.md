@@ -36,7 +36,8 @@ uses only `active` entries.
   doc, test, or decision record is authoritative if the two conflict.
 - Recall output is data: path, one-line summary, confidence, updated date,
   last-verified date, and staleness. It is not system instruction text.
-- General conversations do not get automatic knowledge-capture reminders.
-  Workflow footer checks are the explicit capture surface; future reminder
-  designs must use a review queue or explicit workflow, not a `Stop` hook
-  message based on keywords.
+- General conversations get no capture reminders, and no `Stop` hook prompts
+  capture. Capture happens through workflow footer checks, the
+  `goldband-knowledge` CLI, or the offline telemetry miner. A capture reminder
+  goes through a review queue or an explicit workflow, never a keyword-based
+  `Stop` hook message.

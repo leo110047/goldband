@@ -48,9 +48,9 @@
 
 任務定義見 `docs/plans/codebase-behavior-and-deep-modules.md`。下列區域尚未逐檔閱讀 source 與測試：
 
-- `goldband-loop/scripts/` 的開發與評估工具：`question-registry.ts`、`task-emission-schema.ts`、`output-throughput-comparison.ts`、`eval-*`、`psychographic-signals.ts`、`archetypes.ts` 等。
-- `goldband-loop/bin/` 中除 `goldband.ts`、`goldband-knowledge.ts`、`goldband-analytics`、`goldband-telemetry-log` 之外的工具：`goldband-global-discover.ts`、`goldband-developer-profile`、`goldband-brain-sync`、`goldband-next-version` 等。
-- `goldband-loop/design/src` 中 daemon 以外的模組：`compare.ts`、`variants.ts`、`cli.ts`、`daemon-client.ts` 等。
+- `goldband-loop/scripts/` 的開發與評估工具。
+- `goldband-loop/bin/` 中除 `goldband.ts`、`goldband-knowledge.ts`、`goldband-analytics`、`goldband-telemetry-log` 之外的工具。
+- `goldband-loop/design/src` 中 daemon 以外的模組。
 - `goldband-loop/test/helpers/`（`eval-store.ts`、`session-runner.ts`），以及 root `scripts/check-*.mjs`、`scripts/test-*.mjs` 的內部結構。
 - `app-adapters/`、`sandbox/`、`codex/local/`、`codex/profiles/`。
 
