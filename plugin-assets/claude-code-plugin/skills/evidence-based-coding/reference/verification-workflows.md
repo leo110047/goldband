@@ -8,9 +8,8 @@
 | An integration works | The actual producer/consumer boundary in the claimed environment |
 | A command or installation succeeded | Exit result plus the output or installed state required by the task |
 
-Use search to locate owners, then read enough context to establish the claim.
-A source declaration or dependency entry does not establish runtime wiring.
-Read tests when they clarify the contract; executing every test is not required
-to describe a static definition.
+Search locates owners; reading their context establishes the claim. A source
+declaration or dependency entry does not establish runtime wiring. Describing a
+static definition does not require executing tests.
 
 For evidence reuse and completion, see `completion-verification.md`.

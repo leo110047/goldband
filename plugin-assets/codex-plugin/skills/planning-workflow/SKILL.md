@@ -17,28 +17,25 @@ allowed-tools:
 
 # Planning Workflow
 
-This is a thin shared-policy entrypoint. Full planning belongs in `/goldband-plan` /
-workflow so Claude and Codex do not carry duplicate planning playbooks in
-portable skills.
+Shared planning policy. `/goldband-plan` and `$goldband plan create` own full
+planning.
 
 ## Gotchas
 
-- Do not hide multiple actions inside one task because they touch the same
-  feature.
-- Do not plan implementation steps before reading current files and constraints.
-- Do not use vague placeholders like "update config" or "fix the bug"; name the
-  file or evidence still needed.
-- Do not push verification to the end only. Every task needs its own proof.
-- Do not skip the decision-quality check when the plan recommends an architecture
-  or direction.
+- One task holds one action, even when several actions touch the same feature.
+- Read current files and constraints before planning implementation steps.
+- Each task names its file or artifact and the evidence still needed; generic
+  placeholders are not tasks.
+- Every task carries its own verification.
+- A plan that recommends an architecture or direction includes the
+  Decision-Quality Block.
 
 ## Workflow Handoff
 
-Use `/goldband-plan`, the `$goldband plan create` capability, or workflow planning skills when
-available for multi-file implementation, cross-host policy work, refactors,
-release plans, or work that needs reviewable phases.
-
-Use this skill directly only for small plans or when workflow is not installed.
+Use the planning workflow, when installed, for multi-file implementation,
+cross-host policy work, refactors, release plans, or work that needs reviewable
+phases. Use this skill alone for small plans or when the workflow is not
+installed.
 
 ## Decision-Quality Block
 

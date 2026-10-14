@@ -11,5 +11,5 @@
 - An agent's confident summary is not an independent result. Inspect the
   evidence; report its limitations rather than copying the verdict.
 
-Words such as "probably" are not themselves defects. Clearly distinguish a
-hypothesis from a verified result instead of policing conversational phrases.
+Hedging words are not defects; the defect is presenting a hypothesis as a
+verified result.

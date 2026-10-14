@@ -1,8 +1,8 @@
 ---
 name: testing-strategy
 description: |
-  Use when designing new tests, improving coverage, choosing test types/frameworks,
-  implementing TDD, or stabilizing flaky tests before they become debugging sessions.
+  Use when designing new tests, choosing test layers, improving coverage for a
+  concrete risk, or stabilizing flaky tests before they become debugging sessions.
 
   Best fit for test design and reliability, not investigating failing behavior.
   Prefer the Goldband qa workflow for browser, staging, or full workflow QA.
@@ -60,6 +60,3 @@ Before claiming testing work is complete, name:
 - the test layer chosen and why;
 - the command or manual evidence used;
 - any important path intentionally left untested.
-
-Detailed examples and framework-specific snippets live in `reference/`; load
-them only when implementation details are needed.

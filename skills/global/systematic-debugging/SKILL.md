@@ -15,16 +15,11 @@ allowed-tools:
 
 # Systematic Debugging
 
-This is a thin shared-policy entrypoint. The full investigation workflow belongs
-in the Goldband investigate workflow so Claude and Codex do not carry duplicate
-debugging playbooks in portable skills.
+Shared debugging policy. The Goldband investigate workflow owns full
+investigation.
 
-## The Iron Law
-
-No fixes without root-cause investigation first.
-
-If you cannot state the observed symptom, reproduction path, and evidence source,
-you are not ready to propose a fix.
+A fix requires a stated observed symptom, reproduction path, and evidence
+source.
 
 ## Scope
 
@@ -34,8 +29,6 @@ keyword does not authorize implementation or override the user's task.
 
 ## Gotchas
 
-- Do not propose a fix before you can state the observed symptom, reproduction
-  path, and evidence source.
 - A fix attempt is a completed corrective action based on a stated root-cause
   hypothesis, followed by relevant verification.
 - Inspection and reruns without a corrective action do not count; neither do
@@ -45,21 +38,17 @@ keyword does not authorize implementation or override the user's task.
   verification blocked by the same failure class, stop editing and return to
   diagnosis. Cosmetic output changes do not reset the count; a different
   failure class or new evidence-backed hypothesis does.
-- Do not stop at the first plausible cause; compare against working examples and
-  recent changes.
-- Do not treat a non-reproducible issue as permission to guess. Gather more
-  diagnostics until the pattern sharpens.
-- Do not let urgency override root-cause work. Time pressure is when thrashing is
-  most expensive.
+- The first plausible cause is a hypothesis; compare against working versions
+  and recent changes.
+- A non-reproducible issue requires more diagnostics, not a guess.
+- Urgency does not waive root-cause work.
 
 ## Workflow Handoff
 
-Use the Goldband investigate workflow when available for multi-component
-failures, production incidents, flaky tests, unclear ownership, or work that
-needs a written investigation record.
-
-Use this skill directly only for small local failures or when workflow is not
-installed.
+Use the investigate workflow, when installed, for multi-component failures,
+production incidents, flaky tests, unclear ownership, or work that needs a
+written investigation record. Use this skill alone for small local failures or
+when the workflow is not installed.
 
 ## Required Sequence
 

@@ -26,9 +26,7 @@ paths:
 
 # Frontend Design
 
-This is a thin shared-policy entrypoint. Full design review belongs in
-the Goldband design-review workflow so Claude and Codex do not carry duplicate
-frontend critique playbooks in portable skills.
+Shared UI design policy. The Goldband design-review workflow owns full design review.
 
 ## Source of Truth
 
@@ -45,11 +43,9 @@ Do not override an existing product system just to make the result more novel.
 
 ## Workflow Handoff
 
-Use the Goldband design-review workflow when available for new UI, visual QA, design
-iterations, screenshot-based critique, or production UI polish.
-
-Use this skill directly only for small design decisions or when workflow is not
-installed.
+Use the Goldband design-review workflow, when installed, for new UI, visual QA, design
+iteration, screenshot critique, and production polish. Use this skill alone for
+small design decisions or when the workflow is not installed.
 
 ## Required Design Contract
 

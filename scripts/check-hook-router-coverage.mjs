@@ -59,6 +59,7 @@ function main() {
     ...validateCoverageMatrix(fixtures),
     ...validatePretoolPolicyMetadata(),
     ...validateSecretAdvisoryAssertions(fixtures),
+    ...validateCarefulModeDescription(),
   ];
 
   if (failures.length > 0) {
@@ -75,6 +76,22 @@ function main() {
   for (const [category, count] of summary) {
     console.log(`  ${category}: ${count}`);
   }
+}
+
+// The careful-mode skill description is what users see when choosing the
+// mode, so it must name every guard the hook enforces.
+function validateCarefulModeDescription() {
+  const skill = fs.readFileSync(
+    path.join(ROOT_DIR, 'skills/global/careful-mode/SKILL.md'),
+    'utf8',
+  );
+  const description = skill.split(/^allowed-tools:/m)[0].replace(/\s+/g, ' ');
+  return CAREFUL_MODE_GUARDS.filter(
+    (guard) => !guard.summary || !description.includes(guard.summary),
+  ).map(
+    (guard) =>
+      `careful-mode description does not name guard ${guard.rule} (${guard.summary || 'no summary'})`,
+  );
 }
 
 function readFixtures() {

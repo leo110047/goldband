@@ -16,9 +16,8 @@ allowed-tools:
 
 # Security Checklist
 
-This is a thin shared-policy entrypoint. Deep security review belongs in
-`$goldband review code` with an explicit security scope so Claude and Codex do not carry duplicate OWASP and
-STRIDE playbooks in portable skills.
+Shared security policy. `$goldband review code` with an explicit security scope
+owns deep security review.
 
 ## Scope
 
@@ -32,12 +31,10 @@ Use this skill when changes touch:
 
 ## Workflow Handoff
 
-For an independent review of code changes, use `$goldband review code` with
-an explicit security scope when installed. For threat modeling without a code
-change, apply the baseline below within the user's requested scope.
-
-Use this skill directly only for local defensive checks or when workflow is not
-installed.
+Independent review of code changes uses `$goldband review code` with an
+explicit security scope when installed. Threat modeling without a code change,
+local defensive checks, and code-change review without the workflow apply the
+baseline below within the requested scope.
 
 ## Baseline Review
 
