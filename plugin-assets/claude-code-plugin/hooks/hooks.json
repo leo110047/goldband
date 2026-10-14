@@ -34,28 +34,6 @@
           }
         ],
         "description": "Unified router (context monitor + console warnings)"
-      },
-      {
-        "matcher": "Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hooks/post-edit-worker.js\" --task format",
-            "async": true
-          }
-        ],
-        "description": "Native async format worker with debounce"
-      },
-      {
-        "matcher": "Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hooks/post-edit-worker.js\" --task typecheck",
-            "async": true
-          }
-        ],
-        "description": "Native async typecheck worker with debounce"
       }
     ],
     "PostToolUseFailure": [

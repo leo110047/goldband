@@ -30,6 +30,8 @@ function run(host, input, extraEnv = {}) {
       ...process.env,
       GOLDBAND_DATA_DIR: dataDir,
       CLAUDE_PLUGIN_DATA: dataDir,
+      // Live style advice is out of scope; a missing checker writes no snapshots.
+      GOLDBAND_STYLE_GATE_SCRIPT: path.join(dataDir, 'no-style-checker'),
       ...extraEnv,
     },
   });
@@ -95,16 +97,27 @@ const secrets = fixtures.filter(
   (item) => item.coverage.category === 'secret-patterns',
 );
 assert.ok(secrets.length >= 34);
+function assertShellParity(command, expected, name) {
+  for (const host of ['claude', 'codex']) {
+    const result = run(host, { tool_name: 'Bash', tool_input: { command } });
+    assert.equal(result.decision, expected, `${host}: ${result.message}`);
+    if (name) assert.ok(result.message.includes(name), result.message);
+  }
+}
+
 for (const fixture of secrets) {
-  const { file_path: file } = fixture.input.tool_input;
+  const toolInput = fixture.input.tool_input;
+  const expected = fixture.coverage.expectedDecision;
+  const name =
+    fixture.coverage.variant === 'positive' ? fixture.coverage.policy : null;
+  if (fixture.input.tool_name === 'Bash') {
+    assertShellParity(toolInput.command, expected, name);
+    continue;
+  }
+  const file = toolInput.file_path ?? toolInput.notebook_path;
   const content =
-    fixture.input.tool_input.content ?? fixture.input.tool_input.new_string;
-  assertWriteParity(
-    file,
-    content,
-    fixture.coverage.expectedDecision,
-    fixture.coverage.variant === 'positive' ? fixture.coverage.policy : null,
-  );
+    toolInput.content ?? toolInput.new_string ?? toolInput.new_source;
+  assertWriteParity(file, content, expected, name);
 }
 
 for (const file of [

@@ -54,6 +54,9 @@ done
 for rel in "codex/AGENTS.md" "rules/session-handoff.md" "goldband.manifest.json"; do
   check_contains "$rel" "lasting architectural or process consequences" "durable decision threshold stays explicit in $rel"
 done
+for rel in "claude/CLAUDE.md" "codex/AGENTS.md"; do
+  check_contains "$rel" "illustrative examples, unless the project's" "documentation rule defers to project conventions in $rel"
+done
 check_contains "goldband.manifest.json" '"prohibitedSharedBoilerplate"' "manifest declares prohibited shared prompt boilerplate"
 check_contains "scripts/test-workflow-contracts.mjs" "legacy per-workflow prompt files remain" "workflow contract gate rejects legacy prompt files"
 

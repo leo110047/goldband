@@ -93,6 +93,26 @@ fi
   run('bash', ['-lc', script]);
 }
 
+// A hook whose script an update removed is retired even though the hooks
+// refresh itself is skipped.
+function addRetiredHook(home) {
+  const settingsFile = path.join(home, '.claude', 'settings.json');
+  const settings = readJson(settingsFile);
+  const installedHooks = structuredClone(settings.hooks);
+  const retiredCommand = JSON.parse(
+    fs.readFileSync(
+      path.join(root, 'hooks', 'claude-retired-hooks.json'),
+      'utf8',
+    ),
+  ).commands[0].replaceAll('${HOOKS_DIR}', path.join(home, '.claude', 'hooks'));
+  settings.hooks.PostToolUse.push({
+    matcher: 'Edit',
+    hooks: [{ type: 'command', command: retiredCommand }],
+  });
+  fs.writeFileSync(settingsFile, JSON.stringify(settings));
+  return { settingsFile, installedHooks };
+}
+
 function testInstallStateAndAutoRefresh() {
   const home = makeTempDir('goldband-auto-update-home');
   const env = {
@@ -125,6 +145,8 @@ function testInstallStateAndAutoRefresh() {
 
   writeAutoRefreshTargets(stateFile, state);
 
+  const { settingsFile, installedHooks } = addRetiredHook(home);
+
   run('bash', ['./install.sh', 'auto-refresh'], {
     env: {
       ...env,
@@ -141,6 +163,8 @@ function testInstallStateAndAutoRefresh() {
     /skipped unsafe: hooks,rules,codex-hooks,codex-rules,codex-requirements/,
   );
   assert.equal(fs.existsSync(env.CODEX_REQUIREMENTS_FILE), false);
+  assert.deepEqual(readJson(settingsFile).hooks, installedHooks);
+  assert.match(state.lastAutoRefresh.message, /hooks-retired/);
 
   const status = run('bash', ['./install.sh', 'status'], { env });
   assert.match(
@@ -148,6 +172,68 @@ function testInstallStateAndAutoRefresh() {
     /auto-update tracked targets: codex-prompts, hooks, rules, codex-hooks, codex-rules, codex-requirements/,
   );
   assert.match(status.stdout, /last auto-refresh: success/);
+
+  assertFailedRetireReported(env, stateFile, settingsFile);
+  assertNoJqRetireReported(env, stateFile, settingsFile);
+}
+
+// Every executable on PATH except jq, so the installer takes its no-jq path.
+function pathWithoutJq(home) {
+  const bin = path.join(home, 'no-jq-bin');
+  fs.mkdirSync(bin, { recursive: true });
+  for (const dir of process.env.PATH.split(path.delimiter)) {
+    let names = [];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      const link = path.join(bin, name);
+      // lstat, so a dangling link already created for this name is kept.
+      if (name !== 'jq' && !fs.lstatSync(link, { throwIfNoEntry: false })) {
+        fs.symlinkSync(path.join(dir, name), link);
+      }
+    }
+  }
+  return bin;
+}
+
+// An opted-in hooks refresh without jq records a retired command it could
+// not remove, whichever way auto-refresh was started.
+function assertNoJqRetireReported(env, stateFile, settingsFile) {
+  fs.writeFileSync(
+    settingsFile,
+    JSON.stringify({ hooks: { PostToolUse: [] } }),
+  );
+  addRetiredHook(env.HOME);
+  const result = run('bash', ['./install.sh', 'auto-refresh'], {
+    env: {
+      ...env,
+      PATH: pathWithoutJq(env.HOME),
+      GOLDBAND_AUTO_REFRESH: '',
+      GOLDBAND_AUTO_REFRESH_SECURITY_TARGETS: '1',
+    },
+    allowFailure: true,
+  });
+  assert.equal(result.status, 1, result.stderr);
+  const { lastAutoRefresh } = readJson(stateFile);
+  assert.equal(lastAutoRefresh.status, 'partial');
+  assert.match(lastAutoRefresh.message, /failed: (?:[^;]*,)?hooks(?:,|$)/);
+}
+
+// A hook retirement that cannot run leaves the refresh partial, not success.
+function assertFailedRetireReported(env, stateFile, settingsFile) {
+  fs.writeFileSync(settingsFile, '{ not json');
+  const result = run('bash', ['./install.sh', 'auto-refresh'], {
+    env,
+    allowFailure: true,
+  });
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(`${result.stdout}${result.stderr}`, /settings\.json/);
+  const { lastAutoRefresh } = readJson(stateFile);
+  assert.equal(lastAutoRefresh.status, 'partial');
+  assert.match(lastAutoRefresh.message, /failed: hooks-retire/);
 }
 
 function testWindowsRequirementsDefaultPath() {

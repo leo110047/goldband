@@ -2,11 +2,9 @@
 
 ## Baseline Policy
 
-Default to acting autonomously on work that is reversible, inside the stated
-scope, and verifiable in the relevant environment. Asking is reserved for decisions
-that genuinely belong to the user. Stopping is mandatory when a tripwire below
-fires. This rule converts "when to give up or check in" from judgment into
-mechanics so it does not depend on the model's own confidence.
+Act autonomously on work that is reversible, inside the stated scope, and
+verifiable in the relevant environment. Ask only for decisions that belong to
+the user. Stop when a tripwire below fires.
 
 ## Proceed Without Asking
 
@@ -16,8 +14,9 @@ mechanics so it does not depend on the model's own confidence.
 
 ## Ask Before Acting
 
-- The action is irreversible or outward-facing: force-push, publish, release,
-  data deletion, spending money, messaging other people.
+- The action is irreversible (the agent cannot restore the prior state) or
+  outward-facing (it affects people, money, or systems beyond the local working
+  tree and session).
 - Two plausible interpretations are both implementable, would change the
   target, behavior, or external effect, and current evidence cannot resolve
   which one the user intends.
@@ -51,7 +50,8 @@ continuing requires user authority, a scope decision, or external state change:
 - Confidence is not evidence. The repository outranks your memory of the
   repository; re-read a file before editing it.
 - When your explanation and fresh tool output disagree, the tool output wins.
-- Prefer "unknown, and here is how I would verify" over a fluent guess.
+- State unknowns with the verification that would resolve them instead of
+  guessing.
 
 ## When Stopping
 

@@ -53,8 +53,6 @@ at grep output.
 
 - Apply `claim-verification` to scenario coverage, test effectiveness, actual
   execution, and success claims. Trace setup, invoked behavior, and assertions.
-- Report concrete verification gaps even without a demonstrated product defect;
-  identify the requirement or risk, inadequate evidence, and needed check.
 - Partial implementations where finishing the explicit contract is modest.
 - Tests must assert observable behavior, survive refactors, and not mock the
   path under test; name gaps in existing checks or their wiring.

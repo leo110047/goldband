@@ -5,130 +5,80 @@ description: Use when asked to debug, fix a bug, investigate an error, or do roo
 
 # Systematic Debugging
 
-## Iron Law
-
-**NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST.**
-
-Fixing symptoms creates whack-a-mole debugging. Every fix that doesn't address root cause makes the next bug harder to find. Find the root cause, then fix it.
-
----
+A fix requires a confirmed root cause: a specific, testable claim about what is
+wrong and why, backed by evidence.
 
 ## Phase 1: Root Cause Investigation
 
-Gather context before forming any hypothesis.
+1. **Symptoms:** read error messages, stack traces, and reproduction steps. When
+   context is missing, ask one question at a time.
+2. **Code path:** trace from the symptom to candidate causes, reading every
+   relevant reference.
+3. **Recent changes:** `git log --oneline -20 -- <affected-files>`. A regression
+   places the cause in the diff since the last working state.
+4. **Reproduction:** trigger the failure deterministically, or gather more
+   evidence before continuing.
+5. **Memory:** check prior debugging sessions on the same area; recurring bugs
+   in the same files indicate an architectural cause.
 
-1. **Collect symptoms:** Read the error messages, stack traces, and reproduction steps. If the user hasn't provided enough context, ask ONE question at a time. Don't ask five questions at once.
-
-2. **Read the code:** Trace the code path from the symptom back to potential causes. Search for all references, read the logic around the failure point.
-
-3. **Check recent changes:**
-   ```bash
-   git log --oneline -20 -- <affected-files>
-   ```
-   Was this working before? What changed? A regression means the root cause is in the diff.
-
-4. **Reproduce:** Can you trigger the bug deterministically? If not, gather more evidence before proceeding.
-
-5. **Check memory** for prior debugging sessions on the same area. Recurring bugs in the same files are an architectural smell.
-
-Output: **"Root cause hypothesis: ..."** ... a specific, testable claim about what is wrong and why.
-
----
+Output: **"Root cause hypothesis: ..."**
 
 ## Phase 2: Pattern Analysis
 
-Check if this bug matches a known pattern:
+Compare the symptom with known failure classes: race conditions, null
+propagation, state corruption, integration failures, configuration drift
+between environments, and stale caches. Check the project's known issues and
+prior fixes in the same area.
 
-**Race condition** ... Intermittent, timing-dependent. Look at concurrent access to shared state.
-
-**Nil/null propagation** ... NoMethodError, TypeError. Missing guards on optional values.
-
-**State corruption** ... Inconsistent data, partial updates. Check transactions, callbacks, hooks.
-
-**Integration failure** ... Timeout, unexpected response. External API calls, service boundaries.
-
-**Configuration drift** ... Works locally, fails in staging/prod. Env vars, feature flags, DB state.
-
-**Stale cache** ... Shows old data, fixes on cache clear. Redis, CDN, browser cache.
-
-Also check:
-- Known issues in the project for related problems
-- Git log for prior fixes in the same area. Recurring bugs in the same files are an architectural smell, not a coincidence.
-
-**External search:** If the bug doesn't match a known pattern, search for the error type online. **Sanitize first:** strip hostnames, IPs, file paths, SQL, customer data. Search the error category, not the raw message.
-
----
+When no known class matches, search externally for the error category, never
+the raw message, after removing hostnames, IPs, file paths, SQL, and customer
+data.
 
 ## Phase 3: Hypothesis Testing
 
-Before writing ANY fix, verify your hypothesis.
+1. Confirm the hypothesis with temporary instrumentation at the suspected cause
+   and a reproduction run.
+2. A disproved hypothesis returns to Phase 1 with new evidence.
+3. After three disproved hypotheses, or when no evidence-backed hypothesis
+   remains, stop and report to the user with three options: a new hypothesis,
+   human escalation, or added instrumentation.
 
-1. **Confirm the hypothesis:** Add a temporary log statement, assertion, or debug output at the suspected root cause. Run the reproduction. Does the evidence match?
-
-2. **If the hypothesis is wrong:** Search for the error (sanitize sensitive data first). Return to Phase 1. Gather more evidence. Do not guess.
-
-3. **3-strike rule:** If 3 hypotheses fail, **STOP**. Tell the user:
-
-   "3 hypotheses tested, none match. This may be an architectural issue rather than a simple bug."
-
-   Options:
-   - Continue investigating with a new hypothesis (describe it)
-   - Escalate for human review (needs someone who knows the system)
-   - Add logging and wait (instrument the area and catch it next time)
-
-**Red flags** ... if you see any of these, slow down:
-- "Quick fix for now" ... there is no "for now." Fix it right or escalate.
-- Proposing a fix before tracing data flow ... you're guessing.
-- Each fix reveals a new problem elsewhere ... wrong layer, not wrong code.
-
----
+A temporary fix, a fix proposed before the data flow is traced, or fixes that
+each reveal a new problem elsewhere indicate the wrong layer.
 
 ## Phase 4: Implementation
 
-Once root cause is confirmed:
+1. Fix the root cause with the smallest change that eliminates it; no adjacent
+   refactoring.
+2. Add a regression test that fails without the fix and passes with it.
+3. Run the full test suite.
+4. A fix touching more than five files is reported to the user before
+   proceeding.
+5. After two fix attempts under the same hypothesis leave verification blocked
+   by the same failure class, stop editing and return to Phase 1.
 
-1. **Fix the root cause, not the symptom.** The smallest change that eliminates the actual problem.
+## Phase 5: Verification and Report
 
-2. **Minimal diff:** Fewest files touched, fewest lines changed. Resist the urge to refactor adjacent code.
-
-3. **Write a regression test** that:
-   - **Fails** without the fix (proves the test is meaningful)
-   - **Passes** with the fix (proves the fix works)
-
-4. **Run the full test suite.** No regressions allowed.
-
-5. **If the fix touches >5 files:** Flag the blast radius to the user before proceeding. That's large for a bug fix.
-
----
-
-## Phase 5: Verification & Report
-
-**Fresh verification:** Reproduce the original bug scenario and confirm it's fixed. This is not optional.
-
-Run the test suite.
-
-Output a structured debug report:
+Reproduce the original scenario to confirm the fix, run the test suite, and
+report:
 
 **DEBUG REPORT**
 - **Symptom:** what the user observed
-- **Root cause:** what was actually wrong
-- **Fix:** what was changed, with file references
-- **Evidence:** test output, reproduction showing fix works
+- **Root cause:** what was wrong
+- **Fix:** what changed, with file references
+- **Evidence:** test output and the reproduction showing the fix
 - **Regression test:** location of the new test
-- **Related:** prior bugs in same area, architectural notes
+- **Related:** prior bugs in the same area, architectural notes
 - **Status:** DONE | DONE_WITH_CONCERNS | BLOCKED
 
-Save the report to `memory/` with today's date so future sessions can reference it.
+Save the report to `memory/` with today's date.
 
----
+## Completion Status
 
-## Important Rules
+- DONE: root cause found, fix applied, regression test written, all tests pass.
+- DONE_WITH_CONCERNS: fix applied but not fully verifiable in the available
+  environment.
+- BLOCKED: root cause unconfirmed after investigation; escalated.
 
-- **3+ failed fix attempts: STOP and question the architecture.** Wrong architecture, not failed hypothesis.
-- **Never apply a fix you cannot verify.** If you can't reproduce and confirm, don't ship it.
-- **Never say "this should fix it."** Verify and prove it. Run the tests.
-- **If fix touches >5 files:** Flag to user before proceeding.
-- **Completion status:**
-  - DONE ... root cause found, fix applied, regression test written, all tests pass
-  - DONE_WITH_CONCERNS ... fixed but cannot fully verify (e.g., intermittent bug, requires staging)
-  - BLOCKED ... root cause unclear after investigation, escalated
+A fix that cannot be reproduced and verified is not shipped, and an unverified
+fix is not described as working.

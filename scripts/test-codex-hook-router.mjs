@@ -31,6 +31,9 @@ function runHook(input, options = {}) {
       ...process.env,
       GOLDBAND_DATA_DIR: telemetryDir,
       GOLDBAND_USAGE_FILE: usageFile,
+      // Only the style-advice cases opt in to the real checker; elsewhere a
+      // missing checker keeps results independent of checkout state.
+      GOLDBAND_STYLE_GATE_SCRIPT: path.join(telemetryDir, 'no-style-checker'),
       ...extraEnv,
     },
   });
@@ -285,13 +288,22 @@ function testPostToolUseStyleGateAdvisory() {
           ].join('\n'),
         },
       },
-      { cwd: projectDir },
+      {
+        cwd: projectDir,
+        env: {
+          GOLDBAND_STYLE_GATE_SCRIPT: path.join(
+            repoDir,
+            'scripts',
+            'check-code-style.mjs',
+          ),
+        },
+      },
     );
 
     assert.equal(output.hookSpecificOutput.hookEventName, 'PostToolUse');
     assert.match(
       output.hookSpecificOutput.additionalContext,
-      /^goldband style gate advisory: \[console-log\] fixture\.ts:1: .+ These warnings are advisory here; pre-commit enforces blocking rules\.$/,
+      /^goldband style gate advisory: \[console-log\] fixture\.ts:1: .+ These warnings are advisory; only an installed goldband style gate blocks commits\.$/,
     );
   } finally {
     fs.rmSync(projectDir, { recursive: true, force: true });

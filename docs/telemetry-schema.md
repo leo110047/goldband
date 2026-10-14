@@ -21,16 +21,16 @@ Every new usage event is normalized before append:
 | `event_id` | yes | Unique event identifier. Used as OTLP span ID source. |
 | `parent_event_id` | no | Parent event link. Used as OTLP parent span ID source. |
 | `sessionId` | compatibility | Legacy field retained for existing summary tools. |
-| `category` | yes | Event family, such as `workflow-entry` or `hook-decision`. |
+| `category` | yes | Event family; one of the v1 categories below. |
 | `name` | yes | Workflow, hook rule, advisory, mode, or trigger name. |
-| `action` | yes | Event action, such as `invoked`, `deny`, or `matched`. |
+| `action` | yes | Event action; one of the v1 actions below. |
 | `source` | yes | Adapter/script that produced the event. |
 | `host` | yes | `claude`, `codex`, or `unknown`. |
 | `confidence` | no | `confirmed` or `inferred` for workflow signals. |
 | `detail` | yes | Event-specific structured data. |
 | `recordedAt` | yes | ISO-8601 timestamp written by the append layer. |
 
-Current v1 categories:
+v1 categories:
 
 - `workflow-entry`
 - `hook-decision`
@@ -40,7 +40,7 @@ Current v1 categories:
 - `mode-enforcement`
 - `test`
 
-Current v1 actions:
+v1 actions:
 
 - `invoked`
 - `requested`
@@ -55,17 +55,16 @@ Current v1 actions:
 
 ## Existing Field Differences
 
-Claude workflow telemetry currently writes:
+Claude workflow telemetry writes:
 
 - `sessionId` from `input.session_id`, `input.sessionId`,
   `CLAUDE_SESSION_ID`, or `CODEX_SESSION_ID`.
-- `source` as the Claude hook script path, such as
-  `hooks/scripts/hooks/hook-router.js`.
+- `source` as the emitting Claude hook script path.
 - `host` as `claude`.
 - `detail.trigger`, `detail.hookEventName`, and `detail.toolName` for workflow
   entries.
 
-Codex telemetry currently writes:
+Codex telemetry writes:
 
 - `sessionId` from `input.session_id`, `input.sessionId`, or
   `CODEX_SESSION_ID`.
@@ -74,8 +73,8 @@ Codex telemetry currently writes:
 - `detail.host`, `detail.hookEventName`, `detail.toolName`, and
   `detail.startSource` for hook outcomes.
 
-`prompt-trigger` remains a valid category so older JSONL files still validate;
-current hooks no longer emit keyword skill suggestions. Mode toggles write
+`prompt-trigger` is valid only so older JSONL files validate; no hook emits
+it. Mode toggles write
 `mode` events from `hooks/scripts/lib/hook-router/mode-cli.js`.
 
 ## Run ID Rules
@@ -126,6 +125,5 @@ Exported traces use one trace per `run_id`; each JSONL event becomes one span.
 | `host=claude` | `gen_ai.provider.name=anthropic` |
 | `host=codex` | `gen_ai.provider.name=openai` |
 
-The GenAI semantic conventions checked on 2026-07-05 are marked Development,
-so Goldband keeps its own `goldband.*` attributes alongside `gen_ai.*`
-attributes.
+The OpenTelemetry GenAI semantic conventions are not stable, so Goldband keeps
+its own `goldband.*` attributes alongside `gen_ai.*` attributes.

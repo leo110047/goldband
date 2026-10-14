@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 type RuleRecord = {
@@ -199,24 +199,35 @@ function projectRulesForReview(
   const criteriaById = new Map(
     snapshot.manifest.rules.map((rule) => [rule.id, rule.reviewCriteria]),
   );
-  const rules = bundle.rules.map((rule) => {
-    const criteria = criteriaById.get(rule.id);
-    if (!criteria || criteria.length === 0 || criteria.some((item) => !item.trim())) {
-      throw new Error(`review Criteria missing for Rule ${rule.id}`);
-    }
-    const content = [
-      '# Review Criteria',
-      ...criteria.map((criterion) => `- ${criterion.trim()}`),
-      '',
-      `Read the full policy at ${rule.sourceFile} only when a finding depends on details not represented here.`,
-    ].join('\n');
-    const bytes = Buffer.byteLength(content);
-    if (bytes > MAX_REVIEW_CRITERIA_BYTES_PER_RULE) {
-      throw new Error(
-        `review Criteria exceeds budget for Rule ${rule.id}: actualBytes=${bytes} limit=${MAX_REVIEW_CRITERIA_BYTES_PER_RULE}`,
-      );
-    }
-    return { ...rule, content };
-  });
+  const rules = bundle.rules.map((rule) =>
+    projectRuleForReview(rule, criteriaById.get(rule.id)),
+  );
   return { ...bundle, rules };
+}
+
+function projectRuleForReview(
+  rule: RuleRecord,
+  criteria: string[] | undefined,
+): RuleRecord {
+  if (!criteria || criteria.length === 0 || criteria.some((item) => !item.trim())) {
+    throw new Error(`review Criteria missing for Rule ${rule.id}`);
+  }
+  const criteriaContent = (policyPath: string) => [
+    '# Review Criteria',
+    ...criteria.map((criterion) => `- ${criterion.trim()}`),
+    '',
+    `Read the full policy at ${policyPath} only when a finding depends on details not represented here.`,
+  ].join('\n');
+  const content = criteriaContent(rule.sourceFile);
+  // The budget is measured with the canonical `rules/<file>` reference so it
+  // does not depend on the install path the reviewer reads from.
+  const bytes = Buffer.byteLength(
+    criteriaContent(`rules/${basename(rule.sourceFile)}`),
+  );
+  if (bytes > MAX_REVIEW_CRITERIA_BYTES_PER_RULE) {
+    throw new Error(
+      `review Criteria exceeds budget for Rule ${rule.id}: canonicalBytes=${bytes} limit=${MAX_REVIEW_CRITERIA_BYTES_PER_RULE}`,
+    );
+  }
+  return { ...rule, content };
 }

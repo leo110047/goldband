@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const defaultRoot = path.resolve(moduleDir, '../../..');
 
-export const repoRoot = findRepoRoot(defaultRoot);
+const cwdRepoRoot = findCwdRepoRoot();
+export const cwdInGitRepo = cwdRepoRoot !== null;
+export const repoRoot = cwdRepoRoot ?? defaultRoot;
 
 export const config = {
   maxFileLines: parsePositiveInt('GOLDBAND_MAX_FILE_LINES', 600),
@@ -41,7 +43,7 @@ export function run(command, args, options = {}) {
   });
 }
 
-function findRepoRoot(fallback) {
+function findCwdRepoRoot() {
   const result = spawnSync('git', ['rev-parse', '--show-toplevel'], {
     cwd: process.cwd(),
     encoding: 'utf8',
@@ -49,7 +51,7 @@ function findRepoRoot(fallback) {
   if (result.status === 0 && result.stdout.trim()) {
     return result.stdout.trim();
   }
-  return fallback;
+  return null;
 }
 
 function parsePositiveInt(name, fallback) {

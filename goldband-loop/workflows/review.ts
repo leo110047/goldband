@@ -417,6 +417,7 @@ function buildReviewPolicyText(ctx: WorkflowContext, rules: ReturnType<typeof co
     'Inspect code, tests and existing verification results. Do not run candidate code, prepare dependencies, mutate the repository, or claim reproduced failures. State inaccessible context and unexecuted checks.',
     'Trace the original requirement and failure path, producers and consumers, registration, negative cases, concurrency and scaling where relevant. Require exact source locations, concrete triggers, expected versus actual results, and practical impact.',
     'Use the diff to define scope. Inspect repository context outside the diff when needed to verify wiring, authoritative ownership, consumers, registrations, and dead code.',
+    'Report every valid finding in this pass; there is no follow-up round. Report each instance of a recurring failure as its own finding.',
   ].join('\n');
 }
 

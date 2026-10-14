@@ -1975,5 +1975,776 @@
       "exitCode": 0,
       "decision": "allow"
     }
+  },
+  {
+    "id": "freeze-multiedit-blocked-positive",
+    "coverage": {
+      "category": "freeze-mode",
+      "policy": "no-file-edits",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "MultiEdit",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "file_path": "src/app.ts",
+        "edits": [
+          {
+            "old_string": "1",
+            "new_string": "2"
+          }
+        ]
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "freeze-mode allows inspection only",
+        "Tool: MultiEdit"
+      ]
+    }
+  },
+  {
+    "id": "freeze-notebookedit-blocked-positive",
+    "coverage": {
+      "category": "freeze-mode",
+      "policy": "no-file-edits",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "NotebookEdit",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "notebook_path": "a.ipynb",
+        "new_source": "x = 2"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "freeze-mode allows inspection only",
+        "Tool: NotebookEdit"
+      ]
+    }
+  },
+  {
+    "id": "freeze-unknown-mcp-write-blocked-positive",
+    "coverage": {
+      "category": "freeze-mode",
+      "policy": "no-file-edits",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "mcp__files__write_file",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "path": "src/app.ts",
+        "content": "x"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "freeze-mode allows inspection only",
+        "Tool: mcp__files__write_file"
+      ]
+    }
+  },
+  {
+    "id": "freeze-read-tool-allowed-negative",
+    "coverage": {
+      "category": "freeze-mode",
+      "policy": "no-file-edits",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Read",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "file_path": "src/app.ts"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "secret-bash-heredoc-positive",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "GitHub Token (classic)",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "cat > src/token.ts <<'EOF'\nconst token = \"\u0067hp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\nEOF"
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Potential secrets",
+        "GitHub Token (classic)"
+      ]
+    }
+  },
+  {
+    "id": "secret-bash-generic-assignment-negative",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "Generic password assignment",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "grep -n 'password = \"placeholder\"' README.md"
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "secret-notebookedit-positive",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "GitHub Token (classic)",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "NotebookEdit",
+      "tool_input": {
+        "notebook_path": "a.ipynb",
+        "new_source": "token = \"\u0067hp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Potential secrets",
+        "GitHub Token (classic)"
+      ]
+    }
+  },
+  {
+    "id": "secret-bash-git-push-url-positive",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "GitHub Token (classic)",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git push https://\u0067hp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@github.com/o/r.git main"
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Potential secrets",
+        "GitHub Token (classic)"
+      ]
+    }
+  },
+  {
+    "id": "review-read-only-mcp-write-blocked-positive",
+    "coverage": {
+      "category": "pretool-policy",
+      "policy": "review-read-only-tool-allowlist",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "mcp__files__write_file",
+      "session_id": "review-readonly-session",
+      "tool_input": {
+        "path": "src/a.ts",
+        "content": "x"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "review-readonly-session",
+        "modes": {
+          "review-read-only": {
+            "active": true,
+            "enabledAt": "2026-10-13T00:00:00.000Z",
+            "updatedAt": "2026-10-13T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "review-read-only allows source inspection only",
+        "Tool: mcp__files__write_file"
+      ]
+    }
+  },
+  {
+    "id": "review-read-only-read-tool-allowed-negative",
+    "coverage": {
+      "category": "pretool-policy",
+      "policy": "review-read-only-tool-allowlist",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Read",
+      "session_id": "review-readonly-session",
+      "tool_input": {
+        "file_path": "src/a.ts"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "review-readonly-session",
+        "modes": {
+          "review-read-only": {
+            "active": true,
+            "enabledAt": "2026-10-13T00:00:00.000Z",
+            "updatedAt": "2026-10-13T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "secret-bash-local-database-url-negative",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "Database URL with password",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "DATABASE_URL=postgres://postgres:postgres\u0040localhost:5432/app_test npm test"
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "secret-bash-psql-url-negative",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "Database URL with password",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "psql postgres://postgres:postgres\u0040localhost/dev -c 'select 1'"
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "freeze-task-output-allowed-negative",
+    "coverage": {
+      "category": "freeze-mode",
+      "policy": "no-file-edits",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "TaskOutput",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "task_id": "t1"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "freeze-agent-blocked-positive",
+    "coverage": {
+      "category": "freeze-mode",
+      "policy": "no-file-edits",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Agent",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "prompt": "x"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "freeze-mode allows inspection only",
+        "Tool: Agent"
+      ]
+    }
+  },
+  {
+    "id": "review-read-only-task-output-allowed-negative",
+    "coverage": {
+      "category": "pretool-policy",
+      "policy": "review-read-only-tool-allowlist",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "TaskOutput",
+      "session_id": "review-readonly-session",
+      "tool_input": {
+        "task_id": "t1"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "review-readonly-session",
+        "modes": {
+          "review-read-only": {
+            "active": true,
+            "enabledAt": "2026-10-13T00:00:00.000Z",
+            "updatedAt": "2026-10-13T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "secret-bash-pem-header-search-negative",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "Private Key",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "grep -c -- '\u002d----BEGIN PRIVATE KEY-----' bundle.pem"
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "secret-bash-local-jwt-negative",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "JWT Token",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "curl -H 'apikey: \u0065yJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.c2lnbmF0dXJl' http://localhost:54321/rest/v1/"
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "freeze-task-create-allowed-negative",
+    "coverage": {
+      "category": "freeze-mode",
+      "policy": "no-file-edits",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "TaskCreate",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "subject": "triage"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "secret-bash-slack-placeholder-negative",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "Slack Token",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "export SLACK_BOT_TOKEN=\u0078oxb-your-token-here && npm run dev"
+      }
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "secret-bash-private-key-material-positive",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "Private Key",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "cat > key.pem <<'EOF'\n\u002d----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\n\u002d----END PRIVATE KEY-----\nEOF"
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Potential secrets",
+        "Private Key"
+      ]
+    }
+  },
+  {
+    "id": "freeze-rg-pre-blocked-positive",
+    "coverage": {
+      "category": "freeze-mode",
+      "policy": "read-only-bash-only",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "command": "rg --pre ./convert.sh TODO src"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "freeze-mode allows only read-only Bash commands"
+      ]
+    }
+  },
+  {
+    "id": "freeze-uniq-output-blocked-positive",
+    "coverage": {
+      "category": "freeze-mode",
+      "policy": "read-only-bash-only",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "session_id": "freeze-session",
+      "tool_input": {
+        "command": "uniq notes.txt src/config.ts"
+      }
+    },
+    "setup": {
+      "modeState": {
+        "sessionId": "freeze-session",
+        "modes": {
+          "freeze-mode": {
+            "active": true,
+            "enabledAt": "2026-03-18T00:00:00.000Z",
+            "updatedAt": "2026-03-18T00:00:00.000Z"
+          }
+        }
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "freeze-mode allows only read-only Bash commands"
+      ]
+    }
+  },
+  {
+    "id": "secret-bash-indented-private-key-positive",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "Private Key",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "cat > s.yaml <<'EOF'\nkey.pem: |\n  \u002d----BEGIN PRIVATE KEY-----\n  MIIEvQIBADANBgkqhkiG9w0BAQEFAASC\nEOF"
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Potential secrets",
+        "Private Key"
+      ]
+    }
+  },
+  {
+    "id": "secret-pgp-private-key-block-positive",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "Private Key",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": "keys/signing.asc",
+        "content": "\u002d----BEGIN PGP PRIVATE KEY BLOCK-----\n\nlQOYBGXfake0BCADmaterialmaterialmaterial\n"
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Potential secrets",
+        "Private Key"
+      ]
+    }
+  },
+  {
+    "id": "secret-bash-pgp-armor-key-positive",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "Private Key",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "cat > keys/signing.asc <<'EOF'\n\u002d----BEGIN PGP PRIVATE KEY BLOCK-----\nVersion: test\n\nlQOYBGXabcdefghijklmnopqrstuv\nEOF"
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Potential secrets",
+        "Private Key"
+      ]
+    }
+  },
+  {
+    "id": "secret-bash-encrypted-pem-key-positive",
+    "coverage": {
+      "category": "secret-patterns",
+      "policy": "Private Key",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "bash-write-path-gate-audit"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "cat > key.pem <<'EOF'\n\u002d----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,ABC\n\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\nEOF"
+      }
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Potential secrets",
+        "Private Key"
+      ]
+    }
   }
 ]

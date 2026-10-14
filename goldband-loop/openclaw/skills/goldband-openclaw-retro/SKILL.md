@@ -5,7 +5,7 @@ description: "Weekly engineering retrospective. Analyzes commit history, work pa
 
 # Weekly Engineering Retrospective
 
-Generates a comprehensive engineering retrospective analyzing commit history, work patterns, and code quality metrics. Team-aware: identifies the user running the command, then analyzes every contributor with per-person praise and growth opportunities.
+Analyzes commit history, work patterns, and code quality metrics for the current user and every contributor.
 
 ## Arguments
 
@@ -19,7 +19,7 @@ Generates a comprehensive engineering retrospective analyzing commit history, wo
 
 Parse the argument to determine the time window. Default to 7 days. All times should be reported in the user's **local timezone**.
 
-**Midnight-aligned windows:** For day units, compute an absolute start date at local midnight. For example, if today is 2026-03-18 and the window is 7 days, the start date is 2026-03-11. Use `--since="2026-03-11T00:00:00"` for git log queries. For hour units, use `--since="N hours ago"`.
+**Midnight-aligned windows:** a day window starts at local midnight N days before today: `--since="<YYYY-MM-DD>T00:00:00"`. An hour window uses `--since="N hours ago"`.
 
 ---
 
@@ -85,29 +85,16 @@ Calculate and present these metrics in a summary:
 - **Detected sessions:** N
 - **Avg LOC/session-hour:** N
 
-Then show a **per-author leaderboard** immediately below:
-
-```
-Contributor         Commits   +/-          Top area
-You (alex)               32   +2400/-300   browse/
-alice                    12   +800/-150    app/services/
-bob                       3   +120/-40     tests/
-```
-
-Sort by commits descending. The current user always appears first, labeled "You (name)".
+Then a **per-author leaderboard** with columns Contributor, Commits, +/-, and
+Top area, sorted by commits descending. The current user is first, labeled
+"You (name)".
 
 ---
 
 ### Step 3: Commit Time Distribution
 
-Show hourly histogram in local time:
-
-```
-Hour  Commits  ████████████████
- 00:    4      ████
- 07:    5      █████
- ...
-```
+Show an hourly histogram in local time: one row per hour with commits, as a
+count and a proportional bar.
 
 Identify:
 - Peak hours
@@ -135,15 +122,10 @@ Calculate:
 
 ### Step 5: Commit Type Breakdown
 
-Categorize by conventional commit prefix (feat/fix/refactor/test/chore/docs). Show as percentage bar:
+Categorize by conventional commit prefix (feat/fix/refactor/test/chore/docs):
+one row per type with count, percentage, and proportional bar.
 
-```
-feat:     20  (40%)  ████████████████████
-fix:      27  (54%)  ███████████████████████████
-refactor:  2  ( 4%)  ██
-```
-
-Flag if fix ratio exceeds 50% ... signals a "ship fast, fix fast" pattern that may indicate review gaps.
+Flag a fix ratio above 50% as a possible review gap.
 
 ---
 
@@ -189,8 +171,8 @@ For each contributor (including the current user), compute:
 
 **For each teammate:** 2-3 sentences covering what they shipped and their pattern. Then:
 
-- **Praise** (1-2 specific things): Anchor in actual commits. Not "great work" ... say exactly what was good.
-- **Opportunity for growth** (1 specific thing): Frame as leveling-up, not criticism. Anchor in actual data.
+- **Praise** (1-2 items): each names the specific commit and what was good.
+- **Opportunity for growth** (1 item): framed as a next step and anchored in data.
 
 **If solo repo:** Skip team breakdown.
 
@@ -221,9 +203,8 @@ git log origin/main --format="%ad" --date=format:"%Y-%m-%d" | sort -u
 git log origin/main --author="<user_name>" --format="%ad" --date=format:"%Y-%m-%d" | sort -u
 ```
 
-Display both:
-- "Team shipping streak: 47 consecutive days"
-- "Your shipping streak: 32 consecutive days"
+Display both as "Team shipping streak: N consecutive days" and "Your shipping
+streak: N consecutive days".
 
 ---
 
@@ -231,17 +212,11 @@ Display both:
 
 Check for prior retro history in `memory/`:
 
-If prior retros exist, load the most recent one and calculate deltas:
+If prior retros exist, compare with the most recent one: test ratio, sessions,
+LOC/hour, and fix ratio, each with last value, current value, and delta
+direction.
 
-```
-                    Last        Now         Delta
-Test ratio:         22%    →    41%         ↑19pp
-Sessions:           10     →    14          ↑4
-LOC/hour:           200    →    350         ↑75%
-Fix ratio:          54%    →    30%         ↓24pp (improving)
-```
-
-If no prior retros exist, note "First retro recorded, run again next week to see trends."
+If none exist, state that this is the first recorded retro.
 
 ---
 
@@ -257,8 +232,8 @@ Save a JSON snapshot to `memory/retro-YYYY-MM-DD.json` with metrics, authors, ve
 
 Structure:
 
-**Tweetable summary** (first line):
-> Week of Mar 1: 47 commits (3 contributors), 3.2k LOC, 38% tests, 12 PRs, peak: 10pm | Streak: 47d
+**Tweetable summary** (first line): window start, commits, contributors, LOC,
+test percentage, PRs, peak hour, and team streak.
 
 Then sections:
 
@@ -295,5 +270,5 @@ When the user says "compare":
 - **Save history.** Every retro saves to `memory/` for trend tracking.
 - **Completion status:**
   - DONE ... retro generated, history saved
-  - DONE_WITH_CONCERNS ... generated but missing data (e.g., no prior retros for comparison)
+  - DONE_WITH_CONCERNS ... generated with missing data
   - BLOCKED ... not in a git repo or no commits in window

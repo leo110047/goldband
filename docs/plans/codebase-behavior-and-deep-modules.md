@@ -1,6 +1,6 @@
 # Goldband 行為測試與 Deep module：一次性唯讀審查任務
 
-**狀態：** 第一輪已執行並實作採納項目；未覆蓋範圍由 `docs/TODO.md` 追蹤，供下一輪使用。
+第一輪已完成；未覆蓋範圍由 `docs/TODO.md` 追蹤。
 
 使用者明確指派時，由既有唯讀 Reviewer 在 Host 內執行一次全 codebase 審查，回報有收益的責任整合候選與綁住內部寫法的測試。這是任務說明，不是新功能；日常審查以本次改動及相關模組為範圍，依 `goldband-loop/review/shared-rubric.md` 與 `checklist.md` 的判準執行。
 

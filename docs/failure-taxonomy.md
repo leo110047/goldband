@@ -35,8 +35,8 @@ Judgment basis:
 Recommended action: human-label the original context. If confirmed false
 positive volume clusters on one rule, adjust that rule and add replay coverage.
 
-Notes: false positive cannot be decided from telemetry alone because current
-deny events intentionally do not persist full tool payloads.
+Telemetry alone cannot decide a false positive: deny events do not persist the
+tool payload.
 
 ## true-deny
 
@@ -101,7 +101,6 @@ or overreached. Repeated overreach should become a mode-rule tuning candidate.
 
 ## needs-instrumentation
 
-Use this status in reports when a desired category cannot be supported by
-current fields. For example, confirmed false-positive and confirmed true-deny
-labels require human judgment because persisted hook deny events omit full
-payload context by design.
+Report status for a category that current fields cannot support. Confirmed
+`false-positive-deny` and `true-deny` labels are in this status: persisted deny
+events omit the tool payload, so they require human judgment.

@@ -50,8 +50,8 @@
         "promptHooks": 0
       },
       "PostToolUse": {
-        "entries": 3,
-        "commandHooks": 3,
+        "entries": 1,
+        "commandHooks": 1,
         "promptHooks": 0
       },
       "PostToolUseFailure": {
@@ -86,7 +86,6 @@
     ],
     "hookScripts": [
       "hooks/scripts/hooks/hook-router.js",
-      "hooks/scripts/hooks/post-edit-worker.js",
       "hooks/scripts/hooks/skill-activation-suggestions.js"
     ],
     "rules": [
@@ -117,6 +116,8 @@
       "codex/hooks/telemetry-schema.cjs",
       "codex/hooks/review-launch-advisory.js",
       "codex/hooks/secret-patterns.js",
+      "codex/hooks/style-gate-advisory.js",
+      "codex/hooks/freeze-mode-rules.js",
       "codex/hooks/shell-commands.js",
       "codex/hooks/shell-policy.js",
       "codex/hooks/shell-output.js",

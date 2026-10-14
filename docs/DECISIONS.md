@@ -84,8 +84,7 @@ Consequences:
 - Developers run one explicit bootstrap after clone, lockfile changes, or
   installer migrations; ordinary test reruns do not access the network or
   silently rewrite the checkout.
-- Bun 1.2.x is no longer advertised as supported. Environments pinned below
-  1.3.11 must upgrade before setup or the full runtime suite.
+- Bun below 1.3.11 is unsupported for setup and the full runtime suite.
 - macOS CI takes longer because it now owns the same runtime confidence expected
   from Linux instead of validating only installer and Playwright setup paths.
 
@@ -271,8 +270,8 @@ Why:
 ## 2026-07-12: Remove the Unity-Specific Skill Pack
 
 Decision: remove `skills/projects/unity/` and its installer surfaces completely.
-Goldband keeps portable engineering workflows, but no longer owns or distributes
-a Unity-specific project skill pack.
+Goldband keeps portable engineering workflows and owns no Unity-specific project
+skill pack.
 
 Implementation contract:
 
@@ -306,8 +305,8 @@ Implementation contract:
 - Codex materializes the review resolver at
   `~/.codex/review-runtime/rules-resolver.js`; this path is independent of
   whether `~/.codex/hooks` is a symlink or copied directory.
-- Semantic properties such as single authoritative truth, dead code, islands,
-  and architecture boundaries belong to independent code review. They are not
+- Semantic properties defined by `semantic-review-criteria` belong to
+  independent code review. They are not
   approximated by regex style gates or writer self-attestation.
 - PreToolUse and Stop do not load, classify, or audit Rules. Goldband does not
   infer workspace ownership from arbitrary shell commands and does not maintain
@@ -378,8 +377,8 @@ Why:
 - Goldband Loop is a heavier runtime with Playwright/browser/iOS dependencies;
   it remains installer-managed and is explicitly out of plugin scope.
 - Codex has a plugin ecosystem, but this Claude plugin packages Claude Code
-  assets. A Codex plugin could package a portable subset such as skills, MCP
-  config, or app/workflow integrations.
+  assets. A Codex plugin can package a portable subset, such as skills, MCP
+  config, and app or workflow integrations.
 - Goldband's Codex full setup also manages host-level assets:
   `codex/config.toml`, `codex/requirements.toml`, `codex/rules/`,
   `codex/hooks.json`, `codex/hooks/`, `codex/profiles/`,
@@ -648,8 +647,8 @@ Implementation contract:
   status message.
 - Context restore remains an explicit Goldband workflow. Starting or resuming
   an unrelated session does not imply that restoration is needed.
-- Prompt routing requires a capability-specific trigger. Generic words such as
-  `檢查` do not activate review guidance by themselves.
+- Prompt routing requires a capability-specific trigger; generic words do not
+  activate review guidance.
 - Hooks do not estimate context saturation; tool-call counts do not measure
   actual context usage.
 - Ordinary `Stop` events do not produce desktop notifications or repeat style
@@ -1191,16 +1190,12 @@ Assumptions:
 
 Consequences:
 
-- `$goldband review code` no longer enters a contradictory flow where the user
-  approves escalation but the session’s `approval_policy=never` rejects the
-  same request.
-- The browser session action (retired 2026-10-13 with `browse`) worked in Codex
-  CLI without an app-hosted browser provider. Inspection commands ran without
-  prompting; navigation required Codex's normal approval.
+- `$goldband review code` never requires an escalation that the session's
+  `approval_policy=never` rejects.
 - Updating Goldband must rebuild the trusted snapshot; source edits alone do
   not change the admitted executable until reinstall.
 - The install adds the bundled workflow entrypoints and review assets under
-  `~/.codex/goldband` (the browser client/server was removed on 2026-10-13).
+  `~/.codex/goldband`.
 
 Alternatives considered:
 
@@ -1670,10 +1665,10 @@ Assumptions:
 
 Consequences:
 
-- `knowledge` exposes only `recall`, and the supported host list no longer
-  includes GBrain.
-- Existing user-owned GBrain assets remain untouched but are no longer read,
-  written, installed, upgraded, health-checked, or uninstalled by Goldband.
+- `knowledge` exposes only `recall`, and the supported host list excludes
+  GBrain.
+- Goldband does not read, write, install, upgrade, health-check, or uninstall
+  user-owned GBrain assets.
 - Provider-neutral artifact queue, push, restore, and uninstall behavior
   remains available without provider hookup commands or transcript staging.
 - Historical changelog, archived documents, and earlier decisions remain as
@@ -1785,8 +1780,8 @@ verification and explicit Git integration; semantic reports do not gate or mutat
 it. Analysis-only delivery is recorded with its declared artifact. Historical
 state remains readable but retired review references confer no authority.
 
-The tradeoff is explicit: Goldband no longer enforces a signed proof chain or
-tracks unresolved review findings. Reviewers and implementers must still report
+The tradeoff is explicit: Goldband enforces no signed proof chain and does not
+track unresolved review findings. Reviewers and implementers must still report
 what was checked and what remains unverified. Installs replace obsolete runtime
 assets; historical external records are preserved.
 
@@ -1836,11 +1831,10 @@ denials rather than an unchecked hook error. Native permissions remain
 execution authority.
 Shared regression inputs state each host's expected result separately.
 
-The false-positive cost is explicit: even harmless input such as
-`echo "a\\tb" | bash` or `printf "%d\n" 1 | bash` is denied when its output
+The false-positive cost is explicit: harmless input is denied when its output
 transformation is unsupported. This affects Codex's default-on high-risk policy
-and Claude's opt-in careful mode. We accept that cost without adding more output
-formats or shell syntax. Parser capabilities are frozen at the documented scope;
+and Claude's opt-in careful mode. The cost is accepted instead of supporting
+more output formats or shell syntax. Parser capabilities are frozen at the documented scope;
 the hook is a bounded heuristic, not an authorization boundary.
 
 ## 2026-10-12: Preserve Shared Host Settings and Make Status Lines Optional
@@ -1854,7 +1848,7 @@ value ownership in the 2026-07-21 Codex config freshness decision.
   do not propagate automatically; no per-machine ownership registry is introduced.
 - Status validates TOML rather than equality with a template. It separately advises
   manual review of `shell_environment_policy` differences. This table (including
-  `exclude`) is a recommendation, not enforced policy. Our optional requirements
+  `exclude`) is a recommendation, not enforced policy. The optional requirements
   install constrains only approval policies/reviewers, sandbox modes, and web search
   modes; it does not enforce environment-variable exclusions. Native rules and hooks
   remain separately installed controls, not a substitute for that missing boundary.
@@ -1887,14 +1881,13 @@ validation, real execpolicy checks, and independent review remain separate evide
 ## 2026-10-12: Hosts Own Skill Selection
 
 Claude Code and Codex select skills and the `goldband` capability router from
-each `SKILL.md` description. Goldband prompt hooks no longer match prompt
-keywords to suggest portable skills or `$goldband` capabilities. This removes
+each `SKILL.md` description. Goldband prompt hooks do not match prompt keywords
+to suggest portable skills or `$goldband` capabilities. This removes
 `activation-rules.js`, the generated `capability-routing.generated.json` files,
 the Codex suggestion session state, and the manifest `triggers` field.
 
 Why: the keyword matcher duplicated native routing, added context, and missed
-cases it claimed to cover (for example, "debug and optimize performance" did
-not suggest `performance-optimization`). Description quality is the single
+cases it claimed to cover. Description quality is the single
 routing input to maintain.
 
 The Claude `UserPromptSubmit` hook keeps cross-review arming, the knowledge
@@ -1932,8 +1925,8 @@ share the name.
 `goldband-loop/browse` (the persistent Chromium daemon, its Chrome extension and
 side panel, browser skills, the macOS browser app, `chrome-cdp`, and the
 prompt-injection classifier) is removed. The `browser/session` action and its
-`browser/cookies` safety gate are retired; the Codex launcher no longer stages a
-browser client or auto-admits browser commands. Browser work, including real
+`browser/cookies` safety gate do not exist; the Codex launcher stages no browser
+client and auto-admits no browser commands. Browser work, including real
 `qa/app` QA, uses the active host's browser tool under `manuals/browser.md`.
 `mcp/` templates define a Playwright MCP entry pinned to
 `@playwright/mcp@0.0.83` with `--isolated` and a localhost-only

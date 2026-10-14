@@ -1,8 +1,8 @@
 ---
 name: subagent-development
 description: |
-  Use when a task can be isolated into a fresh-context subagent, parallelized safely,
-  or reviewed in two stages for spec compliance and code quality.
+  Use when a task can be isolated into a fresh-context subagent or parallelized
+  safely, and its result needs review against the original requirements.
 
   Best fit for self-contained work, not shared-context debugging.
 allowed-tools:
@@ -15,50 +15,46 @@ allowed-tools:
 
 # Subagent Development
 
-Use subagents only when the host surface and current task policy allow
-delegation. A subagent is useful when the work is independent, bounded, and can
-be specified without relying on hidden conversation context.
+Delegate only when the host surface and task policy allow it and the work is
+independent, bounded, and specifiable without hidden conversation context.
 
 ## Use When
 
 - The subtask has a clear owner, files, and expected output.
-- It can run in parallel without touching shared state or blocking your next
-  local step.
-- Fresh context is likely to improve focus, review quality, or search breadth.
-- The result can be verified from files, commands, or tests after it returns.
+- It runs without touching shared state or blocking the next local step.
+- Fresh context improves focus, review quality, or search breadth.
+- The result is verifiable from files, commands, or tests.
 
 ## Avoid When
 
-- The task is shared-context debugging, ambiguous architecture, or an active
+- The task is shared-context debugging, unresolved architecture, or an active
   incident whose next step depends on the current investigation.
-- The subtask would edit the same files as another worker.
-- The prompt would need long unstated context to be safe.
-- The only reason is habit, not a measurable speed or quality benefit.
+- Another worker edits the same files.
+- Safe execution needs long unstated context.
+- No measurable speed or quality benefit exists.
 
 ## Dispatch Contract
 
-A good subagent prompt includes only the material needed to act:
+The prompt contains only what the worker needs:
 
 - Goal: one sentence.
 - Scope: exact files, module, or responsibility.
-- Context: specific files to read and patterns to follow.
+- Context: files to read and patterns to follow.
 - Deliverable: what to change or report.
 - Boundaries: files, side effects, and scope expansions to avoid.
-- Verification: commands or evidence expected before reporting completion.
+- Verification: commands or evidence required before reporting completion.
 
-Tell workers they are not alone in the codebase, must not revert others'
-changes, and must adapt to concurrent work.
+Workers share the codebase with others: they must not revert others' changes and
+must adapt to concurrent work.
 
 ## Review Contract
 
-Do not trust a subagent completion report by itself. Before accepting it:
+A completion report is not evidence. Before accepting it:
 
-- Read every changed file or every cited evidence path.
-- Map the result back to the original requirements.
+- Read every changed file or cited evidence path.
+- Map the result to the original requirements.
 - Rerun or inspect the relevant verification.
 - Check for unrequested scope expansion.
 
-If the result is incomplete, diagnose what was missing from the prompt before
-re-dispatching. Expanded prompt templates live in
-`reference/prompt-templates.md`; load them only when drafting a substantial
-worker or reviewer prompt.
+When the result is incomplete, identify what the prompt omitted before
+re-dispatching.

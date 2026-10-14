@@ -1,6 +1,6 @@
 # Shared Finding Shape
 
-Independent `review/code` output use this shape:
+Independent `review/code` output uses this shape:
 
 ```json
 {

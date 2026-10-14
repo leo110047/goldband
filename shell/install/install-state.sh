@@ -262,6 +262,15 @@ auto_refresh_target() {
         [ -n "$normalized" ] || continue
         if ! auto_refresh_safe_target "$normalized"; then
             skipped+=("$normalized")
+            # Hooks whose scripts an update removed must not keep running.
+            if [ "$normalized" = "hooks" ]; then
+                CLAUDE_HOOKS_RETIRED=0
+                if ! retire_claude_hooks; then
+                    failed+=("hooks-retire")
+                elif [ "$CLAUDE_HOOKS_RETIRED" = "1" ]; then
+                    refreshed+=("hooks-retired")
+                fi
+            fi
             continue
         fi
         if auto_refresh_install_target "$normalized"; then

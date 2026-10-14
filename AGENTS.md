@@ -19,7 +19,7 @@ Keep shared engineering policy portable across tools while keeping tool-specific
 - For UI, frontend, and visual work in this repo, treat [`DESIGN.md`](DESIGN.md) as the project design source of truth.
 - Before implementing new UI, explicitly decide typography, color, spacing, layout, and motion rather than jumping straight to components.
 - Prefer the `frontend-design` skill for UI generation when available.
-- Do not ship generic AI aesthetics such as gray card mosaics, default-looking UI with weak hierarchy, trend-driven styling used as a shortcut, or pill-heavy layouts with no clear focal point.
+- Every visual choice follows `DESIGN.md` or an explicit product decision; default styling, trend styling, and layouts without a focal point are not decisions.
 
 ## Preferred Portable Skills and Workflow Entrypoints
 
@@ -34,7 +34,7 @@ If the portable goldband skills are installed for Codex, prefer:
 For full review, investigation, planning, security review, design review, QA,
 benchmarking, and skill-authoring flows, prefer the workflow selectors:
 Claude uses `/goldband <capability> <action>`; Codex uses `$goldband <capability> <action>`. `/goldband-plan` remains the
-direct planning command. The matching portable skills are thin policy/defer
-entrypoints, not duplicate workflow manuals.
+direct planning command. The matching portable skills define shared policy
+and defer full workflows to these selectors.
 
 Use repo-specific skills only when the task is actually about maintaining goldband itself.

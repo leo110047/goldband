@@ -12,6 +12,8 @@ function optionsBeforeTerminator(words) {
 const CAREFUL_MODE_GUARDS = [
   {
     rule: 'rm-rf',
+    // Named in the careful-mode skill description; checked for drift.
+    summary: 'recursive force deletes',
     commands: ['rm'],
     detail: 'rm -rf / recursive force delete',
     matches(words) {
@@ -29,6 +31,7 @@ const CAREFUL_MODE_GUARDS = [
   },
   {
     rule: 'git-force-push',
+    summary: 'Git force-push',
     commands: ['git'],
     detail: 'git push --force / --force-with-lease / -f',
     matches(words) {
@@ -42,6 +45,7 @@ const CAREFUL_MODE_GUARDS = [
   },
   {
     rule: 'git-reset-hard',
+    summary: 'hard reset',
     commands: ['git'],
     detail: 'git reset --hard',
     matches(words) {
@@ -53,6 +57,7 @@ const CAREFUL_MODE_GUARDS = [
   },
   {
     rule: 'terraform-destroy',
+    summary: 'Terraform destroy',
     commands: ['terraform'],
     detail: 'terraform destroy',
     matches(words) {
@@ -61,6 +66,7 @@ const CAREFUL_MODE_GUARDS = [
   },
   {
     rule: 'kubectl-delete',
+    summary: 'kubectl delete',
     commands: ['kubectl'],
     detail: 'kubectl delete',
     matches(words) {
@@ -69,6 +75,7 @@ const CAREFUL_MODE_GUARDS = [
   },
   {
     rule: 'helm-uninstall',
+    summary: 'Helm uninstall',
     commands: ['helm'],
     detail: 'helm uninstall',
     matches(words) {
@@ -77,6 +84,7 @@ const CAREFUL_MODE_GUARDS = [
   },
   {
     rule: 'destructive-sql',
+    summary: 'destructive SQL through database clients',
     commands: ['psql', 'mysql', 'sqlite3', 'sqlcmd', 'pscale', 'prisma'],
     detail:
       'destructive SQL via psql/mysql/sqlite3/sqlcmd/pscale/prisma db execute',

@@ -162,6 +162,9 @@ try {
           GOLDBAND_DATA_DIR: temp,
           CLAUDE_PLUGIN_DATA: temp,
           HOOK_ROUTER_METRICS_DISABLED: '1',
+          // Live style advice is out of scope; a missing checker keeps the
+          // silence assertions independent of checkout state.
+          GOLDBAND_STYLE_GATE_SCRIPT: path.join(temp, 'no-style-checker'),
         },
       });
     const launched = run(event);

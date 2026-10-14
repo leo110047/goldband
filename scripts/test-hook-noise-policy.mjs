@@ -187,6 +187,10 @@ const posttoolPolicyPath = path.join(
   repoDir,
   'hooks/scripts/lib/hook-router/posttool-policy.js',
 );
+const styleAdvisoryPath = path.join(
+  repoDir,
+  'hooks/scripts/lib/hook-router/style-gate-advisory.js',
+);
 
 function testClaudeStyleAdvisoryPresentation() {
   const projectDir = fs.mkdtempSync(path.join(tmpDir, 'style-advisory-'));
@@ -199,18 +203,23 @@ function testClaudeStyleAdvisoryPresentation() {
   process.chdir(projectDir);
   try {
     const { evaluatePostToolUse } = require(posttoolPolicyPath);
-    const { logs } = evaluatePostToolUse({
+    const { logs, outputJson } = evaluatePostToolUse({
       hook_event_name: 'PostToolUse',
       tool_name: 'Edit',
       tool_input: { file_path: 'notes.md' },
     });
-    assert.deepEqual(logs, [
-      [
-        '[Hook] WARNING: goldband style gate advisory:',
-        '[merge-conflict] notes.md:1: merge conflict marker block found',
-        'These warnings are advisory here; pre-commit enforces blocking rules.',
-      ].join('\n'),
-    ]);
+    // Exit-0 stderr never reaches the model; the advice must be context.
+    assert.deepEqual(logs, []);
+    assert.deepEqual(outputJson, {
+      hookSpecificOutput: {
+        hookEventName: 'PostToolUse',
+        additionalContext: [
+          'goldband style gate advisory:',
+          '[merge-conflict] notes.md:1: merge conflict marker block found',
+          'These warnings are advisory; only an installed goldband style gate blocks commits.',
+        ].join('\n'),
+      },
+    });
   } finally {
     process.chdir(originalCwd);
   }
@@ -221,19 +230,22 @@ function testClaudeStyleAdvisoryLaunchFailure() {
   const originalSpawnSync = childProcess.spawnSync;
   delete require.cache[posttoolPolicyPath];
   childProcess.spawnSync = () => ({ error: new Error('spawn EACCES') });
+  delete require.cache[styleAdvisoryPath];
   try {
     const { evaluatePostToolUse } = require(posttoolPolicyPath);
-    const { logs } = evaluatePostToolUse({
+    const { outputJson } = evaluatePostToolUse({
       hook_event_name: 'PostToolUse',
       tool_name: 'Write',
       tool_input: { file_path: 'notes.md' },
     });
-    assert.deepEqual(logs, [
-      '[Hook] WARNING: style gate advisory failed: spawn EACCES',
-    ]);
+    assert.equal(
+      outputJson.hookSpecificOutput.additionalContext,
+      'goldband style gate advisory failed: spawn EACCES',
+    );
   } finally {
     childProcess.spawnSync = originalSpawnSync;
     delete require.cache[posttoolPolicyPath];
+    delete require.cache[styleAdvisoryPath];
   }
 }
 

@@ -1,8 +1,7 @@
 # Machine-local Codex overlays
 
-Files in this directory are intentionally ignored except for this README and
-example files. Use them for machine-specific Codex state that should not become
-part of goldband's portable baseline.
+Machine-specific Codex state outside goldband's portable baseline. Git ignores
+everything here except this README and `*.example` templates.
 
 Supported local files:
 
@@ -10,9 +9,9 @@ Supported local files:
   `~/.codex/config.toml` does not exist. Existing files are never merged.
 - `rules/*.rules`: linked into `~/.codex/rules` alongside portable rules.
 
-Keep reusable machine defaults and one-off command approvals here. Codex App
-runtime state and later preference changes stay in `~/.codex/config.toml` and
-are preserved by installation and updates.
+Machine defaults and one-off command approvals belong here. Codex App runtime
+state and later preference changes stay in `~/.codex/config.toml`, which
+installation and updates preserve.
 
 `rules/default.rules` is the preferred writable overlay. The installer links the
 portable baseline as the reserved `~/.codex/rules/goldband.rules` (updated even
@@ -36,9 +35,8 @@ upstream defaults do not reappear, and ordinary updates preserve the entire file
 Invalid installed TOML is left unchanged and reported as an error. Bundle installs
 continue independent components and return nonzero if any component failed.
 
-`shell_environment_policy` is a recommended initial value, not an enforced
-requirement. `install.sh status` reports differences from the portable recommendation
-for manual review; neither requirements nor status silently applies that policy.
+`shell_environment_policy` is a recommended initial value, not a requirement.
+`install.sh status` reports differences from it without applying them.
 
 Goldband's Codex status line is applied only by `./install.sh codex-statusline`.
 It changes only `tui.status_line`, including in an otherwise empty config, but this

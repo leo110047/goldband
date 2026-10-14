@@ -1,94 +1,41 @@
 # Global Skills Operations
 
-這份文件專注於「怎麼使用」與「怎麼手動操作 mode / telemetry」。
+## 選用
 
-## 常見使用方式
+- bug 或 test failure：`systematic-debugging`；review-only 任務只查證並回報，不修復。
+- 架構、方向或設計決策：`planning-workflow`，完整規劃用 `/goldband-plan`。
+  recommendation 應附：assumptions、failure modes、warning signals、best alternative、unknowns。
+- 安全、效能、測試設計：`security-checklist`、`performance-optimization`、`testing-strategy`。
+- prompt、system prompt、agent handoff 等交付前撰寫：`prompt-hygiene`。
 
-### bug / test failure
+## On-Demand Modes
 
-- 先用 `systematic-debugging`
-- 再視需要補 `testing-strategy`
-- 若任務只要求 review，查證並回報問題；不要自行切換成修復
-
-### 架構 / 方向 / 設計決策
-
-- 用 `planning-workflow`，需要完整規劃時走 `/goldband-plan`
-- recommendation 應附：assumptions、failure modes、warning signals、best alternative、unknowns
-
-### 安全 / 效能 / 測試策略
-
-- 安全：`security-checklist`
-- 效能：`performance-optimization`
-- 測試設計：`testing-strategy`
-
-### Prompt / agent instruction authoring
-
-- 寫 prompt、system prompt、cron prompt、Discord/report prompt、design-tool prompt 或交給另一個 AI agent 的 handoff prompt 時，用 `prompt-hygiene`
-- 這是產出前的 authoring skill；重點是先用正確工作模式寫出 prompt
-- prompt 應優先寫正向目標、可見背景、硬邊界與成果標準；不要補沒有根據的 negative rules 或固定 SOP
-
-## On-Demand Modes（僅 Claude Code hooks 安裝）
-
-### `careful-mode`
-
-用途：
-- 高風險 shell window
-- force-push / hard reset / destroy / delete 類操作前
-
-平常：
-- 直接用 skill / mode flow，不必手動跑 script
-
-若要從 repo root 手動檢查：
+僅 Claude Code hooks 安裝提供。從 repo root 操作時使用完整路徑：
 
 ```bash
 node skills/global/careful-mode/scripts/careful-mode.js status
 node skills/global/careful-mode/scripts/careful-mode.js enable
 node skills/global/careful-mode/scripts/careful-mode.js disable
-```
-
-### `freeze-mode`
-
-用途：
-- read-only investigation
-- incident triage / audit / evidence collection
-
-若要從 repo root 手動檢查：
-
-```bash
 node skills/global/freeze-mode/scripts/freeze-mode.js status
 node skills/global/freeze-mode/scripts/freeze-mode.js enable
 node skills/global/freeze-mode/scripts/freeze-mode.js disable
 ```
 
+mode 狀態以 `status` 輸出為準。
+
 ## Telemetry
 
-目前會記錄的主要類型：
-
-- code-backed skill script execution
-- on-demand mode enable / disable
-- mode enforcement block 事件
-
-彙總查看：
+記錄 code-backed skill script 執行、mode 啟用與停用、mode enforcement block。
+彙總：
 
 ```bash
 node hooks/scripts/tools/report-usage-summary.js --days 30
 ```
 
-限制：
-
-- 舊資料可能含有已退役的 prompt-trigger 推薦事件，不代表 skill 實際採用
-- 純 markdown skill 是否真的被採用，無法只靠目前 hook data 完整判定
+純 markdown skill 的實際採用無法由 hook 資料判定。舊資料中的 prompt-trigger
+推薦事件來自已退役機制，不代表採用。
 
 ## 故障排除
 
-### skill 沒有觸發
-
-- Skill 由 host 依 `SKILL.md` 的 `description` 選擇；先檢查 description 是否清楚
-  寫出適用與不適用的情境
-- 必要時直接手動指定 skill
-
-### mode 狀態不確定
-
-- 不要靠記憶
-- 先跑 `status`
-- 再決定要不要 enable / disable
+Skill 由 host 依 `SKILL.md` 的 `description` 選擇。未觸發時，確認 description
+寫明適用與不適用情境，或直接指定 skill。

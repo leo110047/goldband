@@ -65,7 +65,7 @@ If no frontend files changed: skip silently, no output.
 
 ### 1. AI Slop Detection (6 items) — highest priority
 
-These are the telltale signs of AI-generated UI that no designer at a respected studio would ship.
+Default patterns of generated UI.
 
 - **[MEDIUM]** Purple/violet/indigo gradient backgrounds or blue-to-purple color schemes. Look for `linear-gradient` with values in the `#6366f1`–`#8b5cf6` range, or CSS custom properties resolving to purple/violet.
 

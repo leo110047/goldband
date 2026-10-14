@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 /**
- * List eval runs from ~/.goldband-dev/evals/
+ * List eval runs in the project eval directory
  *
  * Usage: bun run eval:list [--branch <name>] [--tier e2e|llm-judge] [--limit N]
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getProjectEvalDir } from '../test/helpers/eval-store';
+import { getProjectEvalDir, listEvalRunFiles } from '../test/helpers/eval-store';
 
 const EVAL_DIR = getProjectEvalDir();
 
@@ -26,7 +26,7 @@ for (let i = 0; i < args.length; i++) {
 // Read eval files
 let files: string[];
 try {
-  files = fs.readdirSync(EVAL_DIR).filter(f => f.endsWith('.json'));
+  files = listEvalRunFiles(EVAL_DIR);
 } catch {
   console.log('No eval runs yet. Run: EVALS=1 bun run test:evals');
   process.exit(0);

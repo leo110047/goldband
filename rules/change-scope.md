@@ -6,8 +6,7 @@ Choose the smallest sufficient solution that fully addresses the current
 requirement, root-cause class, authoritative ownership, and required safety
 boundaries. This is not the smallest diff: symptom patches, special cases,
 fallbacks, duplicated authority, and weakened safeguards remain invalid. If
-you cannot name the cause or boundary, you are not ready to edit; investigate
-first.
+the cause or boundary cannot be named, investigate before editing.
 
 ## Pre-Implementation Proportionality
 
@@ -53,6 +52,9 @@ enforcement and backstop.
   the requirement is one isolated instance or a recurring class. Name the
   authoritative owner, the expected change it must survive, and whether the
   proposal would create a second source of truth.
+- A failure class is every location with the same root cause or violated
+  contract; a review finding reports one instance of it. Fix every instance of
+  the class within the change scope, and report instances outside it.
 - Do not introduce an abstraction, option, or indirection only for hypothetical
   future users. A single current call site is justified when it creates a real
   ownership boundary, external adapter, test seam, or stable domain concept;
@@ -63,8 +65,7 @@ enforcement and backstop.
   update the policy text and regression coverage in the same change.
 - Do not reformat, rename, or refactor code outside the task in the same
   change. Note the opportunity for the user instead of taking it.
-- Delete dead code outright rather than commenting it out or keeping it "just
-  in case"; version control already remembers it.
+- Delete dead code instead of commenting it out or retaining it.
 - When the smallest sufficient solution and a heavier structural option diverge,
   prefer the smaller option unless current evidence identifies what it cannot
   cover. Present both with their permanent costs when the evidence leaves a

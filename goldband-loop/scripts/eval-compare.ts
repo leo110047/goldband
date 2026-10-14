@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Compare two eval runs from ~/.goldband-dev/evals/
+ * Compare two eval runs in the project eval directory
  *
  * Usage:
  *   bun run eval:compare                    # compare two most recent of same tier
@@ -15,6 +15,7 @@ import {
   compareEvalResults,
   formatComparison,
   getProjectEvalDir,
+  listEvalRunFiles,
 } from '../test/helpers/eval-store';
 import type { EvalResult } from '../test/helpers/eval-store';
 
@@ -54,8 +55,7 @@ if (args.length === 2) {
   // No args — find two most recent of the same tier
   let files: string[];
   try {
-    files = fs.readdirSync(EVAL_DIR)
-      .filter(f => f.endsWith('.json'))
+    files = listEvalRunFiles(EVAL_DIR)
       .sort()
       .reverse();
   } catch {

@@ -68,6 +68,40 @@ function collectJsonFiles(dir) {
   return out;
 }
 
+function readJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function testNames(run) {
+  return Array.isArray(run?.tests) ? run.tests.map((test) => test?.name) : [];
+}
+
+// A `_partial-*` snapshot repeats its run's cost once that run's final file is
+// written, but it is the only cost record of a run that never finalized. It is
+// skipped only when a final run in the same directory is that run: the same
+// tier, at or after the snapshot, containing every test the snapshot recorded.
+function coveredPartial(file, files) {
+  if (!path.basename(file).startsWith('_partial')) return false;
+  const partial = readJson(file);
+  const recorded = testNames(partial);
+  if (!partial?.timestamp || recorded.length === 0) return false;
+  return files.some((other) => {
+    if (path.dirname(other) !== path.dirname(file)) return false;
+    if (path.basename(other).startsWith('_partial')) return false;
+    const run = readJson(other);
+    const finished = new Set(testNames(run));
+    return (
+      run?.tier === partial.tier &&
+      run.timestamp >= partial.timestamp &&
+      recorded.every((name) => finished.has(name))
+    );
+  });
+}
+
 function readCost(file) {
   try {
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -80,7 +114,8 @@ function readCost(file) {
 }
 
 const { max, roots } = parseArgs(process.argv.slice(2));
-const files = roots.flatMap(collectJsonFiles);
+const candidates = roots.flatMap(collectJsonFiles);
+const files = candidates.filter((file) => !coveredPartial(file, candidates));
 const total = files.reduce((sum, file) => sum + readCost(file), 0);
 
 console.log(

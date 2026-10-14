@@ -14,33 +14,42 @@ allowed-tools:
 
 # CI/CD Integration
 
-Shape CI/CD changes before editing workflows. Keep this entrypoint to ownership,
-gates, permissions, and verification; load YAML recipes from `reference/` only
-after the runtime and deploy model are known.
+Settle ownership, gates, permissions, and verification before editing
+workflows.
 
 ## Gotchas
 
-- Do not collapse build, test, release, and deploy into one opaque job when
-  failures need different owners or rollback paths.
-- Do not trust green local scripts as CI proof; clean-environment runs matter.
-- Do not leak secrets through logs, artifacts, caches, debug output, or PR
-  workflows.
+- Split build, test, release, and deploy jobs when their failures need
+  different owners or rollback paths.
+- Green local scripts are not CI proof; clean-environment runs are.
+- Secrets must not reach logs, artifacts, caches, debug output, or workflows
+  triggered by untrusted pull requests.
 
 ## Decision Checks
 
 - Outcome: name the affected build, test, release, deploy, cache, permission,
   secret, artifact, or branch-protection behavior.
-- Ownership: split stages when failures need different responders or rollback.
 - Environment: verify dependencies, services, credentials, and platform versions.
-- Security: keep permissions least-privilege.
-- Rollback: deploy changes need promotion, health checks, and rollback behavior.
+- Security: workflow and token permissions are least-privilege.
+- Rollback: a deploy change defines promotion, health checks, and rollback.
 
-## References
+## Cache and Release Contracts
 
-- `reference/github-actions-recipes.md`: workflow templates, matrices,
-  composite actions, caching, and PR automation.
-- `reference/deployment-strategies.md`: blue-green, canary, rolling, and
-  rollback details.
+- Cache keys include the lockfile or dependency manifest hash, and workflows
+  triggered by untrusted pull requests cannot write shared caches.
+- Releases run only from protected tags or branches, and the released artifact
+  is the one the gated build produced.
+
+## Deploy Contracts
+
+Long-running service deploys meet these contracts:
+
+- Database migrations stay compatible with the version still serving traffic.
+- New instances pass health checks and smoke tests before receiving traffic.
+- Shutdown handles SIGTERM and drains in-flight requests.
+- Progressive rollout compares the new version's error rate and latency with
+  the stable version and rolls back automatically past defined thresholds.
+- Environment swaps account for session state and DNS propagation.
 
 ## Completion Check
 

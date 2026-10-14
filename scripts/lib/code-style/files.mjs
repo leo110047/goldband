@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { config, repoRoot, run, ToolError } from './config.mjs';
+import { config, cwdInGitRepo, repoRoot, run, ToolError } from './config.mjs';
 import { CODE_EXTENSIONS } from './constants.mjs';
 
 export function toRepoRelative(filePath) {
@@ -9,11 +9,28 @@ export function toRepoRelative(filePath) {
   const absolute = path.isAbsolute(filePath)
     ? path.normalize(filePath)
     : path.resolve(repoRoot, filePath);
-  const relative = path.relative(repoRoot, absolute);
+  // Git-provided relative paths are already canonical index paths.
+  const resolved = path.isAbsolute(filePath)
+    ? path.join(realPathOf(path.dirname(absolute)), path.basename(absolute))
+    : absolute;
+  const relative = path.relative(repoRoot, resolved);
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
     return null;
   }
   return relative.split(path.sep).join('/');
+}
+
+// `repoRoot` comes from Git with symlinks resolved, so the directories of an
+// absolute path are resolved the same way before comparing. The final component
+// stays as given: a staged symlink is checked as itself, not as its target.
+function realPathOf(absolute) {
+  try {
+    return fs.realpathSync(absolute);
+  } catch {
+    const parent = path.dirname(absolute);
+    if (parent === absolute) return absolute;
+    return path.join(realPathOf(parent), path.basename(absolute));
+  }
 }
 
 export function uniqueFiles(files) {
@@ -25,7 +42,53 @@ export function listFilesForMode(mode, explicitFiles) {
   if (mode === 'files') {
     return explicitFiles.map(toRepoRelative).filter(Boolean);
   }
+  if (mode === 'worktree') return listWorktreeFiles();
   return listRepoFiles();
+}
+
+// Live hook candidates: staged, unstaged, and untracked paths that still exist
+// in the working tree, before style exclusions. Outside a Git repository there
+// is nothing to inspect.
+export function listWorktreeFiles() {
+  if (!cwdInGitRepo) return [];
+  // Hooks run this beside the user's own Git commands; never take index.lock.
+  const result = run('git', [
+    '--no-optional-locks',
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all',
+    '--no-renames',
+  ]);
+  if (result.status !== 0) {
+    throw new ToolError('failed to list working-tree changes', result.stderr);
+  }
+  const files = result.stdout
+    .split('\0')
+    .filter(Boolean)
+    .map((entry) => toRepoRelative(entry.slice(3)))
+    .filter(Boolean);
+  return [...new Set(files)].filter(
+    (file) => workingTreeFileSize(file) !== null,
+  );
+}
+
+// Cheap change identity for snapshot comparison; content is read only for
+// files whose identity changed.
+export function workingTreeFingerprint(relativePath) {
+  try {
+    const stats = fs.statSync(path.join(repoRoot, relativePath), {
+      bigint: true,
+    });
+    if (!stats.isFile()) return null;
+    return `${stats.size}:${stats.mtimeNs}:${stats.ctimeNs}:${stats.ino}`;
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw new ToolError(
+      `failed to inspect working-tree file: ${relativePath}`,
+      error.message,
+    );
+  }
 }
 
 export function fileContent(relativePath, mode) {

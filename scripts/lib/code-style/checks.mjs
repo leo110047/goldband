@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { runBiome } from './biome.mjs';
-import { config, run } from './config.mjs';
+import { config, run, ToolError } from './config.mjs';
 import {
   JS_EXTENSIONS,
   PY_EXTENSIONS,
@@ -26,6 +26,7 @@ const require = createRequire(import.meta.url);
 const {
   detectSecrets,
   isSecretScanExcluded,
+  matchSecrets,
 } = require('../../../hooks/scripts/lib/hook-router/secret-patterns.js');
 
 const TS_IGNORE = '@ts-' + 'ignore';
@@ -50,13 +51,31 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function checkFiles(files, mode) {
+// Paths excluded from style checks still receive the secret scan; a write
+// there reaches disk the same way. Oversized and binary files are skipped.
+// Dependency and Git internals are never committed through this path and can
+// hold tens of thousands of files.
+const SECRET_SCAN_SKIP = /(?:^|\/)(?:node_modules|\.git)\//;
+
+export function checkSecretsOnly(files, mode) {
+  const issues = [];
+  for (const file of files) {
+    if (SECRET_SCAN_SKIP.test(file)) continue;
+    const size = fileSize(file, mode);
+    if (size === null || size > config.maxTextBytes) continue;
+    const text = decodeText(fileContent(file, mode));
+    if (text !== null) checkSecrets(file, text, mode, issues);
+  }
+  return issues;
+}
+
+export function checkFiles(files, mode, options = {}) {
   const issues = [];
   const generatedTextPolicy = loadLargeGeneratedTextPolicy(mode);
   for (const file of files) {
     checkFile(file, mode, issues, generatedTextPolicy);
   }
-  runBiome(files, issues, mode);
+  runBiome(files, issues, mode, options);
   return issues;
 }
 
@@ -87,7 +106,7 @@ function checkFile(file, mode, issues, generatedTextPolicy) {
 
   const text = decodeText(buffer);
   if (text === null) return;
-  checkSecrets(file, text, issues);
+  checkSecrets(file, text, mode, issues);
   checkLineCount(file, text, issues);
   checkFullTextRules(file, text, mode, issues);
   checkDeltaRules(file, text, mode, issues);
@@ -171,9 +190,39 @@ function checkLineCount(file, text, issues) {
   }
 }
 
-function checkSecrets(file, text, issues) {
-  if (isSecretScanExcluded(file)) return;
-  for (const item of detectSecrets(text)) {
+// Path exemptions belong to the Git style gate and repository scans; live
+// checks of tool and shell writes (`files`, `worktree`) never exempt a path.
+const LIVE_MODES = new Set(['files', 'worktree']);
+
+function indexedSecretValues(file) {
+  try {
+    const text = decodeText(fileContent(file, 'staged'));
+    return new Set(matchSecrets(text).map((item) => item.value));
+  } catch {
+    return new Set();
+  }
+}
+
+// Live checks report a signature only for values the write introduced: a value
+// already in the indexed version (synthetic test data, an earlier finding) is
+// not new, but a second, different value of the same signature is.
+function newSecretFindings(file, text) {
+  const matches = matchSecrets(text);
+  if (matches.length === 0) return [];
+  const known = indexedSecretValues(file);
+  const findings = new Map();
+  for (const match of matches) {
+    if (!known.has(match.value)) findings.set(match.name, match);
+  }
+  return [...findings.values()];
+}
+
+function checkSecrets(file, text, mode, issues) {
+  if (!LIVE_MODES.has(mode) && isSecretScanExcluded(file)) return;
+  const found = LIVE_MODES.has(mode)
+    ? newSecretFindings(file, text)
+    : detectSecrets(text);
+  for (const item of found) {
     const message = `${item.severity === 'high' ? 'potential secret' : 'credential-shaped text'} detected: ${item.name}`;
     issues.push(
       item.severity === 'high'

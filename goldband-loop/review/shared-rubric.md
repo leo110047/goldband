@@ -45,8 +45,8 @@ Use the lowest severity supported by concrete evidence.
 - `medium`: real issue that should be fixed, but no normal workflow or protected
   boundary is broken.
 - `low`: minor maintainability, naming, docs, or performance follow-up.
-- `info`: skipped/degraded coverage, useful context, or an unverified issue that
-  is not supported enough to stay high severity.
+- `info`: skipped/degraded coverage, useful context, or an issue without
+  evidence for a higher severity.
 
 Without concrete evidence, downgrade high/critical findings to `info`.
 Insufficient evidence requiring human judgment is `info` in `/review` and

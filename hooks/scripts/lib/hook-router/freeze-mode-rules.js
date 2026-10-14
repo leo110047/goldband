@@ -11,7 +11,7 @@ const FREEZE_MODE_PROTECTIONS = [
   },
   {
     rule: 'no-file-edits',
-    detail: 'blocks Edit and Write tool calls while freeze-mode is active',
+    detail: 'blocks every tool outside the read-only tool allowlist',
   },
 ];
 
@@ -31,7 +31,10 @@ const FREEZE_MODE_ALLOWED_BASH = [
   {
     rule: 'rg',
     matches(command) {
-      return /^rg(?:\s|$)/.test(command);
+      // `--pre` runs a program on every searched file.
+      return (
+        /^rg(?:\s|$)/.test(command) && !/(?:^|\s)--pre(?:=|\s|$)/.test(command)
+      );
     },
   },
   {
@@ -62,12 +65,6 @@ const FREEZE_MODE_ALLOWED_BASH = [
     rule: 'wc',
     matches(command) {
       return /^wc(?:\s|$)/.test(command);
-    },
-  },
-  {
-    rule: 'uniq',
-    matches(command) {
-      return /^uniq(?:\s|$)/.test(command);
     },
   },
   {

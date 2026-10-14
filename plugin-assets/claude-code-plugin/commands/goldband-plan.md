@@ -13,21 +13,13 @@ Use the programmatic path for mock smoke tests and structured evidence:
 cd goldband-loop && bun run workflows/run.ts plan create --mode mock
 ```
 
-The compatibility runtime reads this legacy command source and writes step
-evidence to:
+The runtime reads this command source and writes step evidence to
+`${GOLDBAND_HOME:-$HOME/.goldband}/workflow-runs/plan.jsonl`. Live planning
+follows the command flow below.
 
-```bash
-${GOLDBAND_HOME:-$HOME/.goldband}/workflow-runs/plan.jsonl
-```
-
-Live planning still uses the markdown command flow below until typed migration
-is complete.
-
-When this command is invoked, create a comprehensive implementation plan before
-writing code for the requested implementation.
-
-This command owns both plan creation and the bounded engineering review stage;
-do not route a draft through a second public action.
+This command creates the implementation plan before any code is written and owns
+its bounded engineering review; a draft is not routed through a second public
+action.
 
 ## Process
 

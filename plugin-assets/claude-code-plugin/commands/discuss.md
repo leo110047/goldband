@@ -68,9 +68,8 @@ Discuss one gray area at a time. Wait for the user's decision before moving to t
 ### Step 4: Scope Guardrail
 
 If discussion reveals a new feature or significant scope expansion:
-- **Do NOT** expand the current task's scope
-- **Do** record it as a backlog item
-- Say: "That's a great idea but separate from the current goal. I'll note it as a follow-up."
+- Keep it out of the current task's scope.
+- State that it is separate from the current goal and record it as a backlog item.
 
 ### Step 5: Output Structured Decisions
 
@@ -101,8 +100,8 @@ BACKLOG (new ideas surfaced during discussion)
 
 ## CRITICAL Rules
 
-- **One gray area at a time** — do not overwhelm with all questions at once
-- **Always provide a recommendation** — the user can override, but don't force them to think from scratch
+- **One gray area at a time.**
+- **Every gray area has a recommendation** — the user may override it.
 - **Every recommendation needs a short pre-mortem** — include assumptions, failure modes, switch criteria, best alternative, and unknowns to verify
 - **Scope guardrail is mandatory** — new features go to backlog, never to the current task
 - **Decisions are final** — once locked, do not revisit unless the user explicitly asks

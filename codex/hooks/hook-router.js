@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 
 const MAX_STDIN_BYTES = 1024 * 1024;
-const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { requireFirst } = require('./module-loader');
 const {
   classifyHighRiskToolUse,
@@ -13,6 +11,11 @@ const {
 } = require('./high-risk-policy');
 const { recordHookTelemetry } = require('./telemetry');
 const { reviewLaunchAdvisory } = require('./review-launch-advisory');
+const {
+  snapshotWorktreeBeforeShell,
+  styleAdvisoryAfterShell,
+  styleAdvisoryForFiles,
+} = require('./style-gate-advisory');
 function loadCrossReviewGate() {
   return requireFirst([
     path.resolve(
@@ -154,60 +157,53 @@ function buildPostToolUseFailureContext(input) {
   return null;
 }
 
-function buildPostToolUsePatchContext(input) {
-  const command = input.tool_input?.command || '';
-  if (input.tool_name !== 'apply_patch') return null;
-
-  const files = parseApplyPatchFiles(command);
-  if (files.length === 0) return null;
-
-  const message = runStyleGateAdvisory(files);
-  if (!message) return null;
-  return resultAdditionalContext('PostToolUse', message);
+function buildPostToolUseStyleContext(input) {
+  const toolName = input.tool_name || '';
+  let message = null;
+  if (toolName === 'apply_patch') {
+    // Patch paths are relative to the session cwd, not the Git top level.
+    ({ message } = styleAdvisoryForFiles(
+      parseApplyPatchFiles(input.tool_input?.command || '').map((file) =>
+        path.resolve(input.cwd || process.cwd(), file),
+      ),
+    ));
+  } else if (toolName === 'Bash') {
+    ({ message } = styleAdvisoryAfterShell(input));
+  }
+  return message ? message.split('\n').join(' ') : null;
 }
 
+// A failed shell command may still have written files, so its guidance and the
+// post-command scan are reported together. A review launch failure replaces
+// the generic non-zero guidance.
 function evaluatePostToolUseResult(input) {
   const reviewAdvice = reviewLaunchAdvisory(input);
-  if (reviewAdvice) return resultAdditionalContext('PostToolUse', reviewAdvice);
-  return (
-    buildPostToolUseFailureContext(input) || buildPostToolUsePatchContext(input)
-  );
+  const failureAdvice = reviewAdvice
+    ? null
+    : buildPostToolUseFailureContext(input)?.hookSpecificOutput
+        ?.additionalContext;
+  const context = [
+    reviewAdvice,
+    failureAdvice,
+    buildPostToolUseStyleContext(input),
+  ].filter(Boolean);
+  if (context.length === 0) return null;
+  return resultAdditionalContext('PostToolUse', context.join(' '));
 }
 
+// Files that exist after the patch: added, updated, and move destinations.
 function parseApplyPatchFiles(command) {
-  const files = [];
-  for (const line of String(command || '').split(/\r?\n/)) {
-    const match = line.match(/^\*\*\* (?:Add|Update) File: (.+)$/);
-    if (match) files.push(match[1].trim());
-  }
-  return [...new Set(files)];
+  const sections = String(command || '').split(
+    /^(?=\*\*\* (?:Add|Update|Delete) File: )/m,
+  );
+  return [...new Set(sections.map(patchSectionResultFile).filter(Boolean))];
 }
 
-function runStyleGateAdvisory(files) {
-  const repoRoot = path.resolve(__dirname, '..', '..');
-  const scriptPath = path.join(repoRoot, 'scripts', 'check-code-style.mjs');
-  if (!fs.existsSync(scriptPath)) return null;
-
-  const result = spawnSync(
-    process.execPath,
-    [scriptPath, '--files', ...files, '--format', 'advisory'],
-    {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-      maxBuffer: 5 * 1024 * 1024,
-      env: { ...process.env, GOLDBAND_STYLE_GATE_HOST: '1' },
-    },
-  );
-
-  if (result.error) {
-    return `goldband style gate advisory failed: ${result.error.message}`;
-  }
-  if (result.status === 2) {
-    return ['goldband style gate advisory could not run.', result.stderr.trim()]
-      .filter(Boolean)
-      .join(' ');
-  }
-  return result.stdout.trim().split('\n').join(' ') || null;
+function patchSectionResultFile(section) {
+  const header = section.match(/^\*\*\* (Add|Update) File: (.+)$/m);
+  if (!header) return null;
+  const move = section.match(/^\*\*\* Move to: (.+)$/m);
+  return (header[1] === 'Update' && move ? move[1] : header[2]).trim();
 }
 
 function evaluateStopResult(input) {
@@ -268,6 +264,8 @@ function evaluatePreToolUseResult(input) {
       'This MCP tool name looks mutating. Verify authorization and expected side effects before proceeding.',
     );
   }
+
+  if (toolName === 'Bash') snapshotWorktreeBeforeShell(input);
 
   if (contexts.length === 0) return null;
   return resultAdditionalContext('PreToolUse', contexts.join(' '));

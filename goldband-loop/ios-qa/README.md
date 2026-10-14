@@ -43,7 +43,7 @@ connected device), `GOLDBAND_IOS_TARGET_BUNDLE_ID`, and `GOLDBAND_IOS_DAEMON_POR
 | `GET /screenshot` | PNG of the active window | Bearer |
 | `GET /elements` | Accessibility-tree snapshot | Bearer |
 | `GET /state/snapshot` | All `@Snapshotable` fields as JSON | Bearer |
-| `POST /state/restore` | Atomic restore of a full snapshot | Bearer, session, `mutate` tier |
+| `POST /state/restore` | Atomic restore of a full snapshot | Bearer, session, `restore` tier |
 | `POST /tap` | Synthesized touch at window coordinates | Bearer, session, `interact` tier |
 | `POST /swipe` | Scrolls the nearest enclosing scroll view | Bearer, session, `interact` tier |
 | `POST /type` | Sets text on the first responder | Bearer, session, `interact` tier |
@@ -64,9 +64,13 @@ start; the loopback listener keeps running.
 - Only the Mac owner grants access, with `goldband-ios-qa-mint`; remote callers
   are never added automatically. Grants live in
   `~/.goldband/ios-qa-allowlist.json` (mode 0600) and are read on every mint.
+- Allowlist identities are canonical WhoIs forms: a lowercase login email,
+  `tag:<name>`, or `node:<key>`.
 - `POST /auth/mint` resolves the caller through tailscaled WhoIs, checks the
   allowlist, and returns a session token valid for one hour by default and at
-  most 24 hours.
+  most 24 hours. Each identity may mint 10 tokens per sliding 60 seconds; the
+  next request returns 429.
+- Tailnet request bodies above 1 MiB return 413.
 - Authenticated mutating requests are logged to
   `~/.goldband/security/ios-qa-audit.jsonl`; rejected requests to
   `~/.goldband/security/attempts.jsonl`.

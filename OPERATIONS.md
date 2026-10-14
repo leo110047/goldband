@@ -37,7 +37,7 @@ Use a managed worktree when an agent needs an isolated working copy. Run
 `create` from a clean source worktree on a normal branch:
 
 ```bash
-goldband worktree create task-name
+goldband worktree create <name>
 ```
 
 This opens a managed shell in a detached worktree. Inside that shell, start one
@@ -58,7 +58,7 @@ After the agent finishes, exit the managed shell, then integrate from the source
 worktree:
 
 ```bash
-goldband worktree finish task-name -m "feat: integrate task"
+goldband worktree finish <name> -m "<commit message>"
 ```
 
 `finish` validates and integrates the candidate, creates the commit, and removes
@@ -114,10 +114,8 @@ explicitly when you want the machine-wide hook. The pre-commit hook checks only
 staged files. Biome checks run only when the target repo has `biome.json`;
 otherwise the hook keeps the zero-dependency checks and emits an advisory. If
 the recorded Goldband source script or `node` is unavailable, the hook warns
-and allows the commit so one broken goldband checkout does not block every repo
-on the machine. The hooks themselves are materialized outside the checkout so
-Git LFS or another hook manager cannot write generated hooks into Goldband
-source. Re-running `./install.sh style-gate` refreshes the materialized runtime
+and allows the commit. The hooks are materialized outside the checkout so no
+hook manager writes generated hooks into Goldband source. Re-running `./install.sh style-gate` refreshes the materialized runtime
 and migrates the legacy source-checkout `core.hooksPath`. The commit-msg
 Conventional Commits gate is installed but enforced only when the repo has
 `.goldband-git-workflow.json` or `GOLDBAND_GIT_WORKFLOW_GATE=1`.
@@ -153,10 +151,8 @@ command with `GOLDBAND_STYLE_GATE=0`.
 Temporary bypasses print a warning and write a local log under
 `${XDG_STATE_HOME:-$HOME/.local/state}/goldband/style-gate-bypass.log`.
 
-If a repo uses Husky or another local `core.hooksPath`, git uses the local value
-instead of the global goldband hook. That is expected; in that setup, the
-project hook owns the chain and must invoke goldband explicitly if it wants both
-checks.
+A repository-local `core.hooksPath` replaces the global goldband hook; that
+project hook owns the chain and must invoke goldband to run both checks.
 
 ## Plugin and Installer Distribution
 
@@ -188,11 +184,8 @@ green state; status reports active sources, duplicate names, remediation, and
 exits non-zero.
 
 The installer is POSIX-only (`./install.sh help` lists its targets). On Windows, use Git Bash or WSL. Native PowerShell install, status, uninstall,
-and self-update wrappers are retired. If an older install left
-`~/.claude/bin/goldband-self-update.ps1`,
-`~/.claude/shell/goldband-launchers.ps1`, or
-`~/.claude/.goldband-windows-state.json`, rerun `./install.sh launchers` from
-Git Bash to back up the stale files and remove the old PowerShell profile block.
+and self-update wrappers do not exist. `./install.sh launchers` from Git Bash
+backs up stale PowerShell launcher files and removes their profile block.
 
 `./install.sh codex-requirements` manages `/etc/codex/requirements.toml` on
 POSIX hosts and `%ProgramData%\OpenAI\Codex\requirements.toml` when run from
@@ -261,11 +254,9 @@ can be disabled with `HOOK_ROUTER_METRICS_ENABLED=0`.
 entries were used and how often, separated into `confirmed` and `inferred`
 signals, plus hook deny and advisory counts. `confirmed` means a hook payload
 explicitly reported a `Skill` tool invocation with a `goldband-*` skill name.
-`inferred` is used for slash-command prompts and Bash wrapper commands such as
-`goldband-review`; do not treat inferred signals as real workflow completion.
-Future keep/delete decisions should use confirmed workflow counts as the primary
-signal. Inferred workflow signals and hook advisories are secondary triage data
-and can be noisy.
+`inferred` covers slash-command prompts and `goldband-*` Bash wrapper commands
+and does not establish workflow completion. Keep/delete decisions use confirmed
+counts; inferred signals and hook advisories are secondary triage data.
 
 `node scripts/mine-telemetry.mjs <summary|classify|extract-fixtures|extract-evals> --days <n>`
 mines local telemetry; the extract commands also take `--out-dir`. The miner never rewrites source telemetry. It reads the usage JSONL base file
@@ -282,7 +273,7 @@ OTLP trace export is opt-in and offline-first. JSONL remains the source of
 truth; `scripts/export-telemetry-otlp.mjs` reads the usage file and sends a
 derived traces payload to `--endpoint` only when explicitly run. It supports `--usage-file`, `--cursor-file`, `--dry-run`, and
 `--limit`. `--since` is dry-run only because formal exports advance a cursor. See
-[docs/observability.md](docs/observability.md) for the local Jaeger demo and
+[docs/observability.md](docs/observability.md) for exporter options and miner commands, and
 [docs/telemetry-schema.md](docs/telemetry-schema.md) for the v1 schema.
 
 ## Regression Gates and Failure Taxonomy

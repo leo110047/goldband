@@ -1,4 +1,7 @@
-const { classifySecretContent } = require('./secret-patterns');
+const {
+  classifySecretContent,
+  classifyShellSecretContent,
+} = require('./secret-patterns');
 const {
   commandInput,
   commandWords,
@@ -441,6 +444,12 @@ function classifyHighRiskPatch(command) {
   return null;
 }
 
+// Shell text is not file content; only high-confidence signatures act there.
+function classifyHighRiskSecretCommand(command) {
+  const secret = classifyShellSecretContent(String(command || ''));
+  return secret ? highRiskDecision(secret.message, 'secret-detector') : null;
+}
+
 function findHighRiskPatch(command) {
   return classifyHighRiskPatch(command)?.reason || null;
 }
@@ -449,7 +458,11 @@ function classifyHighRiskToolUse(input) {
   const toolName = input.tool_name || '';
   const command = input.tool_input?.command || '';
 
-  if (toolName === 'Bash') return classifyHighRiskBash(command);
+  if (toolName === 'Bash') {
+    return (
+      classifyHighRiskSecretCommand(command) || classifyHighRiskBash(command)
+    );
+  }
   if (toolName === 'apply_patch') return classifyHighRiskPatch(command);
   return null;
 }

@@ -17,9 +17,8 @@ allowed-tools:
 
 # Skill Developer
 
-This is a thin shared-policy entrypoint. Full skill creation and extraction
-belongs in the host-native `skill-creator` skill when installed so Claude and Codex do not carry
-duplicate skill-scaffold tooling in portable skills.
+Shared skill-authoring policy. The host-native `skill-creator` skill, when
+installed, owns skill creation and extraction.
 
 ## When to Use
 
@@ -31,29 +30,27 @@ duplicate skill-scaffold tooling in portable skills.
 
 ## Workflow Handoff
 
-Use the host-native `skill-creator` skill when installed for new skills, scaffold
-generation, workflow extraction, or larger skill refactors.
-
-Use this skill directly only for small metadata or trigger changes, or when
-the creator is not installed.
+Use `skill-creator`, when installed, for new skills, scaffolds, workflow
+extraction, and larger refactors. Use this skill alone for metadata or trigger
+changes, or when `skill-creator` is not installed.
 
 ## Gotchas
 
-- Do not add broad trigger descriptions that activate for every task in the
-  domain. Name the positive and negative trigger boundary.
-- Do not put long reference material in `SKILL.md`; keep it focused and use
-  references only when progressive disclosure genuinely helps.
-- Do not add scripts without mentioning when to run them from `SKILL.md`.
-- Skill selection belongs to the host, driven by the `description` field. Do not
-  add prompt hooks that suggest skills by keyword; improve the description.
-- Do not add, remove, or merge a global skill without updating installer profile
-  docs and inventory.
+- A trigger description names its positive and negative boundary; it does not
+  activate for every task in the domain.
+- `SKILL.md` stays focused; long material moves to references only when
+  progressive disclosure helps.
+- `SKILL.md` states when to run each bundled script.
+- The host selects skills from the `description` field; keyword-suggestion
+  prompt hooks are not added.
+- Adding, removing, or merging a global skill updates installer profile docs and
+  inventory.
 
 ## Required Checks
 
 1. Read the target skill's current `SKILL.md` before editing.
 2. Confirm the `name` matches the directory.
 3. Confirm the `description` names when to use and when to defer.
-4. Keep the main file at or below the `portableSkillBytes` prompt surface budget in `scripts/lib/prompt-surface-budget.mjs` (16 KiB by default); run `./scripts/check-skills.sh` to verify the hard gate.
+4. Keep the main file within the `portableSkillBytes` budget in `scripts/lib/prompt-surface-budget.mjs`.
 5. Verify referenced files exist.
 6. Run `./scripts/check-skills.sh`.

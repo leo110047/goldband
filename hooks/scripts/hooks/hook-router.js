@@ -6,12 +6,6 @@
  * reducing process spawn and repeated JSON parsing.
  */
 
-const { evaluatePreToolUse } = require('../lib/hook-router/pretool-policy');
-const { evaluatePostToolUse } = require('../lib/hook-router/posttool-policy');
-const {
-  evaluateStop,
-  evaluateNotification,
-} = require('../lib/hook-router/stop-policy');
 const { appendMetric } = require('../lib/hook-router/metrics');
 const {
   appendUsageEvent,
@@ -101,29 +95,30 @@ function defaultOutcome() {
   };
 }
 
-function dispatchByEvent(input) {
-  const hookEventName = input.hook_event_name || '';
-
+// Each event loads only its own policy; every tool call starts a new process,
+// so unused modules would be paid for on every call. Loading happens before
+// timing starts, so the metric measures policy evaluation only.
+function evaluatorForEvent(hookEventName) {
   if (hookEventName === 'PreToolUse') {
-    return evaluatePreToolUse(input);
+    return require('../lib/hook-router/pretool-policy').evaluatePreToolUse;
   }
 
   if (
     hookEventName === 'PostToolUse' ||
     hookEventName === 'PostToolUseFailure'
   ) {
-    return evaluatePostToolUse(input);
+    return require('../lib/hook-router/posttool-policy').evaluatePostToolUse;
   }
 
   if (hookEventName === 'Stop') {
-    return evaluateStop(input);
+    return require('../lib/hook-router/stop-policy').evaluateStop;
   }
 
   if (hookEventName === 'Notification') {
-    return evaluateNotification(input);
+    return require('../lib/hook-router/stop-policy').evaluateNotification;
   }
 
-  return defaultOutcome();
+  return defaultOutcome;
 }
 
 function writeLogs(lines) {
@@ -168,8 +163,9 @@ async function main() {
   const rawInput = await readStdinRaw();
   const input = parseInput(rawInput);
 
+  const evaluate = evaluatorForEvent(input.hook_event_name || '');
   const startNs = process.hrtime.bigint();
-  const rawOutcome = dispatchByEvent(input);
+  const rawOutcome = evaluate(input);
   const outcome = {
     ...defaultOutcome(),
     ...rawOutcome,

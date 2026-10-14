@@ -12,6 +12,5 @@ Start with the requested outcome and trace the evidence needed to establish it.
    wiring alone does not prove a user workflow or provider integration works.
 
 Report a missing or incomplete path with concrete evidence and practical impact.
-Do not declare a goal verified solely because a function exists, has many lines,
-or contains no TODO markers. Reuse valid evidence as described in
-`completion-verification.md` rather than running a second completion ceremony.
+A function existing, being long, or lacking TODO markers does not verify a goal.
+Evidence reuse follows `completion-verification.md`.

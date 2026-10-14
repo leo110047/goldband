@@ -6,14 +6,14 @@ Shared reference for fetching, filtering, and classifying Greptile review commen
 
 ## Fetch
 
-Run these commands to detect the PR and fetch comments. Both API calls run in parallel.
+Detect the PR, then fetch both comment endpoints in parallel.
 
 ```bash
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 PR_NUMBER=$(gh pr view --json number --jq '.number' 2>/dev/null)
 ```
 
-**If either fails or is empty:** Skip Greptile triage silently. This integration is additive — the workflow works without it.
+**If either fails or is empty:** skip Greptile triage silently; the workflow does not depend on it.
 
 ```bash
 # Fetch line-level review comments AND top-level PR comments in parallel
@@ -90,7 +90,7 @@ gh api repos/$REPO/issues/$PR_NUMBER/comments \
   -f body="<reply text>"
 ```
 
-**If a reply POST fails** (e.g., PR was closed, no write permission): warn and continue. Do not stop the workflow for a failed reply.
+**If a reply POST fails:** warn and continue. A failed reply does not stop the workflow.
 
 ---
 
@@ -98,7 +98,7 @@ gh api repos/$REPO/issues/$PR_NUMBER/comments \
 
 Use these templates for every Greptile reply. Always include concrete evidence — never post vague replies.
 
-### Tier 1 (First response) — Friendly, evidence-included
+### Tier 1 (First response)
 
 **For FIXES (user chose to fix the issue):**
 
@@ -128,14 +128,13 @@ Use these templates for every Greptile reply. Always include concrete evidence �
 
 **Evidence:**
 - <specific code reference showing the pattern is safe/correct>
-- <e.g., "The nil check is handled by `ActiveRecord::FinderMethods#find` which raises RecordNotFound, not nil">
 
 **Suggested re-rank:** This appears to be a `<style|noise|misread>` issue, not a `<what Greptile called it>`. Consider lowering severity.
 ```
 
-### Tier 2 (Greptile re-flags after prior reply) — Firm, overwhelming evidence
+### Tier 2 (Greptile re-flags after a prior reply)
 
-Use Tier 2 when escalation detection (below) identifies a prior Goldband Loop reply on the same thread. Include maximum evidence to close the discussion.
+Use Tier 2 when escalation detection (below) finds a prior Goldband Loop reply on the same thread. Include the full evidence chain.
 
 ```
 **This has been reviewed and confirmed as [intentional/already-fixed/not-a-bug].**
@@ -199,12 +198,8 @@ Format:
 <YYYY-MM-DD> | <owner/repo> | <type> | <file-pattern> | <category>
 ```
 
-Example entries:
-```
-2026-03-13 | example-owner/myapp | fp | app/services/auth_service.rb | race-condition
-2026-03-13 | example-owner/myapp | fix | app/models/user.rb | null-check
-2026-03-13 | example-owner/myapp | already-fixed | lib/payments.rb | error-handling
-```
+`<type>` is `fp`, `fix`, or `already-fixed`; `<category>` is one of the fixed
+categories above.
 
 ---
 

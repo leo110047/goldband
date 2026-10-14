@@ -1,9 +1,8 @@
 # Coding Style
 
-This rule file is split into enforceable checks and advisory engineering
-guidance. Enforceable checks are implemented by `scripts/check-code-style.mjs`
-and may block commits only when the optional goldband global git hooks are
-installed explicitly with `./install.sh style-gate`.
+Enforceable checks are implemented by `scripts/check-code-style.mjs` and block
+commits only when the global git hooks are installed with
+`./install.sh style-gate`. The remaining guidance is advisory.
 
 ## Enforceable Gate
 
@@ -38,23 +37,10 @@ Currently blocked escape hatches:
 
 ### Large generated text contract
 
-The 1 MB text limit remains the default. A repository may declare a larger
-generated text artifact in a tracked `.goldband-style.json` file:
-
-```json
-{
-  "schemaVersion": 1,
-  "largeGeneratedTextFiles": [
-    {
-      "path": "api/openapi-snapshot.json",
-      "generator": "scripts/generate-openapi.mjs",
-      "maxBytes": 8388608
-    }
-  ]
-}
-```
-
-This is a narrow ownership exception, not a general size bypass:
+A repository may raise the 1 MB text limit for a generated artifact in a
+tracked `.goldband-style.json`: `schemaVersion` is `1`, and
+`largeGeneratedTextFiles` lists objects with `path`, `generator`, and `maxBytes`.
+The exception names an owner; it is not a size bypass:
 
 - `path` and `generator` are exact normalized repo-relative paths; globs are
   rejected.
@@ -67,7 +53,7 @@ This is a narrow ownership exception, not a general size bypass:
   checks and must compare regenerated output when the project requires that
   guarantee.
 
-Advisory-only checks for now:
+Advisory-only checks:
 
 - shell and Python function length heuristics
 - explicit `any`
@@ -92,10 +78,10 @@ Advisory-only checks for now:
   explicitly activates and enforces all three rules. The vector is identity-free:
   simultaneous repairs can offset another function's regression, so reviewers
   must inspect baseline reductions until stable function identity is available.
-- Claude and Codex PostToolUse checks are advisory; they do not block edits.
-- `.goldband-no-style-gate` is a visible repository opt-out.
+- Claude and Codex PostToolUse checks, including shell writes, are advisory.
+- `.goldband-no-style-gate` is a visible repository opt-out for the gate and live advice.
   `GOLDBAND_STYLE_GATE=0` is a logged temporary bypass.
-- A repository-local `core.hooksPath`, such as Husky, overrides the global hook.
+- A repository-local `core.hooksPath` overrides the global hook.
 
 ## Advisory Engineering Guidance
 
@@ -118,6 +104,8 @@ Prefer:
   historical incident
 - comments that state the invariant and why it exists instead of narrating a
   dated incident, temporary state, or one triggering example
+- documentation that defines the current contract precisely and concisely,
+  without filler, history, or illustrative examples
 
 Before marking work complete, verify that the relevant gate, test, or command
 actually ran and covered the changed behavior.
