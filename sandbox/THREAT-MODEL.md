@@ -2,39 +2,15 @@
 
 This sandbox is a second line of defense for local agent runs. It does not
 replace the hook router, Codex permissions, Claude permissions, or human review.
-It gives goldband a documented container-first execution story with a small,
-testable filesystem boundary.
+It provides a small, testable filesystem boundary for container execution.
 
-## Relationship to Official Options
+## Scope
 
-Anthropic documents several Claude Code isolation options: the built-in
-sandboxed Bash tool, a sandbox runtime, development containers, custom
-containers, virtual machines, and Claude Code on the web. Their docs state that
-the Bash sandbox constrains only Bash commands, while containers or VMs put the
-whole Claude Code process, hooks, MCP servers, and file tools inside the
-boundary. Anthropic also documents dev containers as a way to run Claude Code
-inside Docker, with warnings that mounted workspaces remain writable and network
-egress can still leak data.
-
-OpenAI's Codex manual documents OS-enforced local sandboxing for Codex CLI and
-IDE runs, with `workspace-write` as the common local default and network access
-off unless enabled. It also documents cloud/container behavior separately:
-Codex cloud runs in isolated OpenAI-managed containers, setup can use network,
-and the agent phase is offline by default unless internet access is enabled for
-that environment.
-
-goldband's sandbox is intentionally narrower than a managed VM or remote sandbox:
-it is a local Docker/Podman container that bakes goldband into the image,
-installs goldband into a clean container HOME at build time, and bind-mounts only
-the declared target project at run time.
-
-Sources:
-
-- Anthropic Claude Code development containers: https://code.claude.com/docs/en/devcontainer
-- Anthropic Claude Code sandbox environments: https://code.claude.com/docs/en/sandbox-environments
-- Anthropic Claude Code network configuration: https://code.claude.com/docs/en/network-config
-- OpenAI Codex manual, `Sandbox`, `Agent approvals & security`, and
-  `Agent internet access` sections: https://developers.openai.com/codex/codex-manual.md
+The sandbox is a local Docker or Podman container, narrower than a managed VM or
+remote sandbox: goldband is baked into the image and installed into a clean
+container HOME at build time, and only the declared target project is
+bind-mounted at run time. Host-native Claude Code and Codex sandboxing are
+separate, independently enforced mechanisms.
 
 ## Mount Contract
 
@@ -49,12 +25,11 @@ at `/opt/goldband`. `run` does not bind-mount the host goldband checkout and
 does not rerun `install.sh`, so container-side Linux build artifacts do not
 overwrite the macOS host checkout.
 
-`/opt/goldband` is intentionally read-only at runtime. Runtime state is expected
-to live under `/home/goldband`, including installed Claude/Codex skills,
-goldband telemetry, and workflow state. The automated test exercises installed
-Goldband Loop helper commands with a separate `GOLDBAND_HOME` and verifies that
-their writes land in container HOME rather than `/opt/goldband`. It is still not
-a provider-backed end-to-end Claude or Codex agent task.
+`/opt/goldband` is read-only at runtime. Runtime state, including installed
+Claude and Codex skills, telemetry, and workflow state, is expected under
+`/home/goldband`. `scripts/test-sandbox.sh` verifies this only for installed
+Goldband Loop helper commands; it does not run a provider-backed Claude or
+Codex agent task.
 
 It does not mount:
 
@@ -73,31 +48,24 @@ from that baked install.
 
 The Docker build context is the goldband repository root, not the user's target
 project. `.dockerignore` excludes known host overlays, generated state, Git
-history, local Codex configuration, and common secret file patterns before
-local log files, and common secret file patterns before `COPY . /opt/goldband`
-runs.
+history, local Codex configuration, local log files, and common secret file
+patterns before `COPY . /opt/goldband` runs.
 
-This is a deny-list, not a proof that every future secret-like filename is
-excluded. A newly named local secret inside the goldband repo can still enter an
-image layer if it does not match the ignore rules. Keep credentials out of the
-repo tree, pass needed runtime credentials explicitly with `--env` or
-`--env-file`, and treat image rebuilds as a point where local untracked files
-must be considered.
+The deny-list does not exclude secret files whose names match no rule; such a
+file inside the goldband repo enters an image layer. Credentials stay out of the
+repo tree and reach the container only through `--env` or `--env-file`; local
+untracked files are reviewed before an image rebuild.
 
 ## Network Posture
 
-The first version does not implement a network allowlist. It uses the default
-Docker or Podman egress behavior of the host runtime. That means containerized
-Claude Code, Codex, package managers, hooks, MCP servers, and shell commands can
-reach the network unless the runtime or host network is configured separately.
+No network allowlist exists. The container uses the host runtime's default
+egress, so every process inside it can reach the network unless the runtime or
+host network restricts it. `scripts/test-sandbox.sh` has no network test because
+no network policy is enforced.
 
-This is documented posture, not network isolation. There is no allow/deny
-network test in `scripts/test-sandbox.sh` because no network allowlist is
-enforced by this implementation.
-
-Use `--env-file` or explicit `--env KEY=VALUE` only for credentials that are
-safe to expose to processes inside the container. Do not mount host credential
-files. Prefer repository-scoped or short-lived tokens.
+`--env-file` and `--env KEY=VALUE` carry only credentials safe to expose to
+every process in the container, preferably repository-scoped or short-lived.
+Host credential files are never mounted.
 
 ## What It Helps With
 

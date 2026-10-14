@@ -1,7 +1,6 @@
 # MCP Templates
 
-These templates provide dual-host MCP starting points without enabling any
-server by default.
+Dual-host MCP templates. No server is enabled by default.
 
 ## Files
 
@@ -45,32 +44,24 @@ to enabled.
 
 ## Playwright MCP for Browser QA
 
-Goldband no longer ships its own browser. For `qa/app` and other browser work,
-use the host's browser tool: Claude in Chrome, Codex's built-in browser, or the
-`playwright` entry in the templates. The template pins `@playwright/mcp@0.0.83`
+Goldband ships no browser. `qa/app` and other browser work use the host's
+browser tool or the `playwright` entry in the templates. The template pins `@playwright/mcp@0.0.83`
 and adds four defaults:
 
 - `--isolated` keeps the browser profile in memory, so the agent never reuses
   your real sign-ins and nothing persists between sessions.
 - `--allowed-origins=http://localhost:*;http://127.0.0.1:*` limits navigation to
-  local development servers; append other origins, separated by `;`, when
-  needed. Playwright documents this
-  option as not a security boundary (it does not cover redirects), so treat it
-  as protection against accidental browsing, not enforcement.
+  local development servers; further origins are appended with `;`. It does not
+  cover redirects and is not a security boundary.
 - `--output-dir=/path/to/goldband-home/playwright-mcp` keeps page snapshots
-  and console logs out of the project. Without it, Playwright MCP writes a
-  `.playwright-mcp/` directory into whatever directory the agent runs in.
-  Replace the placeholder with an absolute path: the option does not expand
-  `~`, and a `~/...` value creates a literal `~` directory in the project.
-- `--output-max-size=5242880` sets a 5 MB eviction threshold, not a hard cap.
-  After each tool response, Playwright MCP deletes the oldest earlier output
-  files until the directory is back under 5 MB; files written by that response
-  are never deleted, so one oversized response can leave the directory above
-  the threshold, and a failed delete is only logged at debug level. Earlier
-  files from the same session can be evicted too. This bounds growth but does
-  not erase recent output: snapshots hold page text in plain form, so after
-  testing a system with real or sensitive data, delete
-  `$GOLDBAND_HOME/playwright-mcp` (default `~/.goldband/playwright-mcp`).
+  and console logs out of the project; without it, Playwright MCP writes
+  `.playwright-mcp/` into the agent's working directory. The value must be an
+  absolute path; `~` is not expanded.
+- `--output-max-size=5242880` sets a 5 MB eviction threshold, not a hard cap:
+  after each tool response, the oldest earlier output files are deleted until
+  the directory is under 5 MB, never files from that response. Snapshots hold
+  page text in plain form; delete `$GOLDBAND_HOME/playwright-mcp` (default
+  `~/.goldband/playwright-mcp`) after testing with sensitive data.
 
 Page content returned by Playwright MCP is not wrapped or scanned for prompt
 injection. The protection against injected instructions is what the agent may
@@ -88,9 +79,9 @@ absolute path, leaves any existing `playwright` entry untouched, and wraps
 Set `GOLDBAND_SKIP_PLAYWRIGHT_MCP=1` to skip it; `./install.sh status` reports
 whether each host has it. Other install targets and `auto-refresh` never add
 it, so a removed entry stays removed. The first use downloads the package from
-npm through `npx`. An entry installed before the output-dir or size-cap
-defaults keeps its old arguments; remove it (`claude mcp remove playwright -s user`, and the
-`[mcp_servers.playwright]` table) and rerun the installer to pick it up.
+npm through `npx`. The installer never updates an existing entry; to apply the
+current defaults, remove it (`claude mcp remove playwright -s user` and the
+`[mcp_servers.playwright]` table) and rerun the installer.
 
 A manual entry uses the same command and arguments as the `playwright` entry
 in `claude.mcp.json.template`, with the output-dir placeholder replaced by an
@@ -98,7 +89,7 @@ absolute path.
 
 ## Token-Backed Setup Flow
 
-Token-backed servers are still opt-in. Do not commit credentials.
+Token-backed servers are opt-in. Credentials are never committed.
 
 1. Copy `codex/local/mcp.env.example` to `codex/local/mcp.env`.
 2. Fill only the local env file, or export the same variables in the shell that
@@ -119,5 +110,5 @@ node scripts/check-mcp-token-status.mjs --mcp-env-file codex/local/mcp.env --pri
 
 `scripts/check-json-toml-syntax.py` checks template syntax. A server is
 documented as supported only after an MCP Inspector smoke test shows that it
-starts and exposes the expected tool list. Token-backed servers such as GitHub
-or Sentry require user-provided credentials and are never enabled by default.
+starts and exposes the expected tool list. Token-backed servers require
+user-provided credentials and are never enabled by default.

@@ -10,9 +10,7 @@ Claude Code 與 Codex 的本機工程配套，集中管理開發守則、工具�
 - 管理 Claude Code／Codex 的本機設定，提供安裝狀態檢查與移除入口。
 - 選裝 Goldband Loop，使用程式碼審查、問題調查、規劃、QA 等工作流程。
 
-Claude／Codex 共用 secret 分類；文件建立與開發伺服器使用操作指引，不再由 hook 依檔名或是否使用 tmux 阻擋。其他刻意保留的工具差異與驗證方式見[hook 分工](ARCHITECTURE.md#shared-hook-policy-and-host-adapters)。
-
-Review 失敗時，Claude／Codex hook 會提示讀取既有啟動契約；環境證據未完成則提示查看該次報告，不自動重跑。
+Claude 與 Codex 的 hook 分工與刻意保留的差異見[hook 分工](ARCHITECTURE.md#shared-hook-policy-and-host-adapters)。Review 啟動失敗時，hook 提示讀取已安裝的啟動契約；環境證據未完成時提示查看該次報告，不自動重跑。
 
 ## 安裝前
 
@@ -70,7 +68,7 @@ Codex:       $goldband system health
 
 其他用途與指令見[工作流程清單](docs/generated/capabilities.md)。
 
-一般實作涉及大量處理、資料實體化、快取、平行執行或效能改善宣稱時，Claude／Codex 的指引會導向共用 `performance-optimization` skill，檢查有研究案例支持的 agent 陷阱，不需先跑 planning。Review 會檢查改善證據與實際路徑；這些指引不代表自動量測 CPU／RAM，也不要求所有修改都跑 benchmark。
+涉及大量處理、資料實體化、快取、平行執行或效能改善宣稱的實作，套用共用 `performance-optimization` skill。它不自動量測 CPU／RAM，也不要求每次修改都跑 benchmark。
 
 `review/code` 預設對目前 worktree 執行一次獨立語意審查。reviewer 會讀取 diff、相關程式與規則，並回報具體觸發條件、影響和建議驗證方式；不執行專案測試，也不授權結案或變更工作票狀態。
 
@@ -88,7 +86,7 @@ git pull --ff-only
 
 接著依原本的安裝方式更新：
 
-- **Installer**：重跑上表中原本使用的安裝指令，例如 Codex 使用者執行 `./install.sh codex-full`。
+- **Installer**：重跑上表中原本使用的安裝指令；已安裝 Goldband Loop 時，同時重跑原本的工作流程安裝指令以更新其 runtime 副本。
 - **Claude plugin**：執行 `claude plugin update goldband@goldband`。
 
 更新後執行 `./install.sh status`，再重新啟動工具。

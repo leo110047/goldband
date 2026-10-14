@@ -4,9 +4,7 @@ Local engineering tools for Claude Code and Codex, with shared development rules
 
 English | [中文](README.md)
 
-Claude and Codex share secret classification. Documentation and development
-servers follow operational guidance without filename or tmux hook blockers.
-See [hook ownership and host differences](ARCHITECTURE.md#shared-hook-policy-and-host-adapters).
+See [hook ownership and host differences](ARCHITECTURE.md#shared-hook-policy-and-host-adapters) for Claude and Codex hook behavior.
 
 ## What It Does
 
@@ -14,7 +12,7 @@ See [hook ownership and host differences](ARCHITECTURE.md#shared-hook-policy-and
 - Manages local Claude Code and Codex configuration, with installation checks and uninstall commands.
 - Optionally adds Goldband Loop for code review, investigation, planning, QA, and other workflows.
 
-On review failure, Claude/Codex hooks point to the installed launch contract; incomplete environment evidence points to that run's report. Hooks do not retry automatically.
+When a review fails to launch, the hooks point to the installed launch contract; incomplete environment evidence points to that run's report. Hooks do not retry.
 
 ## Before Installing
 
@@ -72,6 +70,8 @@ Codex:       $goldband system health
 
 See the [workflow catalog](docs/generated/capabilities.md) for other actions.
 
+Implementation involving bulk processing, materialization, caching, parallel execution, or performance claims applies the shared `performance-optimization` skill. It does not measure CPU or memory and does not require a benchmark for every change.
+
 `review/code` runs one independent, read-only semantic review of the current worktree. Use `--base <ref>`, `--staged`, or `--diff-file <file>` to narrow scope. Findings identify the code path, trigger, impact, and suggested verification. Repeat the same entrypoint after repairs; each run reviews the current scope.
 
 The reviewer does not execute project tests or change ticket status. Continue running project tests, lint, type checks, CI, and relevant live checks separately; no findings does not establish runtime correctness.
@@ -86,7 +86,7 @@ git pull --ff-only
 
 Then update using your original installation method:
 
-- **Installer**: rerun the command you originally selected from the table above, such as `./install.sh codex-full` for Codex.
+- **Installer**: rerun the command originally selected from the table above; with Goldband Loop installed, also rerun the original workflow install command to refresh its runtime copy.
 - **Claude plugin**: run `claude plugin update goldband@goldband`.
 
 Run `./install.sh status` afterward and restart your tool.
@@ -122,5 +122,3 @@ claude plugin uninstall goldband@goldband    # Remove the Claude plugin
 ## License
 
 [MIT License](LICENSE).
-
-Claude and Codex global guidance is generated from one compact policy. Full policies live in each host’s `goldband-rules/` directory for task-specific reading. Upgrades retire Goldband’s old Claude autoload link while preserving custom rules. The Codex plugin follows the installer catalog with 13 compatible skills; Claude provides 17. If Goldband Loop is installed, also rerun the original workflow install command to refresh its copied runtime and review rubric.

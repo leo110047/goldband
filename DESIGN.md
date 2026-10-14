@@ -1,114 +1,92 @@
 # goldband Design Guidance
 
-This file is the project design source of truth for UI, frontend, visual, and presentation work in this repo.
-
-Use it when:
-- designing or implementing pages, components, dashboards, landing pages, mockups, posters, or other visual artifacts
-- restyling existing UI
-- generating design directions before coding
-
-If a task is purely backend, infrastructure, docs-only, or non-visual, this file does not apply.
+Design source of truth for UI, frontend, visual, and presentation work in this
+repo. It does not apply to backend, infrastructure, or non-visual work. An
+existing product design system takes precedence; this file applies where none
+exists.
 
 ## Design Intent
 
-goldband should feel:
-- sharp, deliberate, and high-signal
-- tool-like without looking like an internal admin panel
-- opinionated without becoming noisy or gimmicky
-- polished enough to look designed, not merely assembled
+The interface is tool-like, deliberate, and high-signal: one clear point of
+view, executed with discipline, distinct from internal admin panels and
+template SaaS layouts.
 
-The target is not "pretty SaaS." The target is a clear point of view with disciplined execution.
+## Baseline Stance
 
-## Baseline Visual Stance
+Without a product-specific system:
 
-When there is no stronger product-specific system, default to:
-- editorial + utilitarian rather than generic dashboard chrome
-- strong hierarchy and composition before components
-- restrained palette with one assertive accent
-- expressive typography with a clear display/body split
-- intentional motion used sparingly for emphasis
+- Editorial and utilitarian composition, not dashboard chrome.
+- Hierarchy and composition are decided before components.
+- A restrained palette with one assertive accent.
+- A distinctive display face paired with a quieter body face.
+- Motion only where it carries meaning.
+- Light or dark mode chosen for the product context.
 
-Do not choose light or dark mode by habit alone. Pick the mode that best serves the product context and execute it with conviction.
+## Required Decisions Before Coding
 
-## Required Design Decisions Before Coding
+- Typography: display face, body face, and the reason for each.
+- Color: base palette, accent, and excluded colors.
+- Spacing: the density model.
+- Layout: the first-viewport anchor and the main visual rhythm.
+- Motion: where movement carries meaning and where it is absent.
 
-Before writing UI code, lock these five items:
-- Typography: what is the display face, what is the body face, and why
-- Color: what is the base palette, what is the accent, and what should never appear
-- Spacing: what density model this interface uses
-- Layout: what creates the first impression and the main visual rhythm
-- Motion: where movement adds meaning and where it should stay absent
-
-If these are still vague, stop generating components and decide them first.
+Components are not generated until these are decided.
 
 ## Low-Originality Signals
 
-Treat these as low-originality signals unless the existing product already uses
-them, the product context justifies them, or the execution is strong enough to
-make them feel deliberate:
-- generic gray card-grid SaaS layouts
-- default-looking system-font or Inter-first aesthetics
-- trend-driven styling used as a shortcut instead of a real hierarchy or point of view
-- pills everywhere with no hierarchy
-- icon-in-colored-circle decoration as filler
-- flat pages with no focal point, no depth, and no compositional risk
-- random animation scattered across the page without a choreographed moment
+These require justification from the existing product, the product context, or
+deliberate execution:
+
+- Gray card grids as the default layout.
+- System-font or Inter-first styling without typographic hierarchy.
+- Trend styling in place of hierarchy or a point of view.
+- Uniform pills, chips, and badges without hierarchy.
+- Decoration that serves no hierarchy, identity, or comprehension purpose.
+- Pages without a focal point.
+- Animation without a choreographed purpose.
 
 ## Typography
 
-- Prefer type with character. Use a distinctive display face and a quieter body face.
-- Common fonts are allowed, but they must not become an excuse for default-looking UI with no hierarchy or identity.
-- Establish obvious contrast between display text, navigation, body text, metadata, and code/data.
-- Avoid making every text style feel equally important.
+- Display text, navigation, body text, metadata, and code or data have visibly
+  distinct roles.
+- Common fonts are allowed when they still produce hierarchy and identity.
 
 ## Color
 
-- Use a limited palette with clear roles: background, foreground, surface, accent, and muted support tones.
-- One confident accent is better than several weak accents.
-- Popular palettes are allowed, but they must still create hierarchy, clarity, and a deliberate mood.
-- If using dark mode, build depth with layered tones rather than near-black boxes on black.
+- Each color has one role: background, foreground, surface, accent, or muted
+  support.
+- One accent, used with confidence.
+- Dark mode builds depth from layered tones, not near-black boxes on black.
 
-## Layout And Composition
+## Layout and Composition
 
-- Start from composition, not from a pile of cards.
-- Every screen should have a visual anchor in the first viewport.
-- Use asymmetry, overlap, framing, scale shifts, or aggressive whitespace when appropriate.
-- If the interface is dense, make the density feel intentional and structured rather than cramped.
-- Repeated components should create rhythm, not wallpaper.
-
-## Components
-
-- Components must support the page's hierarchy instead of flattening it.
-- Do not treat cards as the default answer. Use them when they improve clarity, grouping, or rhythm.
-- Buttons, chips, tags, and panels should not all share the same radius, weight, and contrast.
-- Decorative elements need a job. If they do not improve hierarchy, identity, or comprehension, cut them.
+- Composition precedes components; cards are used only where they improve
+  clarity, grouping, or rhythm.
+- Every screen has a visual anchor in the first viewport.
+- Dense interfaces are structured, not cramped.
+- Repeated components create rhythm.
+- Buttons, chips, tags, and panels differ in radius, weight, and contrast
+  according to their role.
 
 ## Motion
 
-- Use a few meaningful motion beats instead of many small effects.
-- Good defaults: staged entrance, hover state with intent, scroll reveal when it aids reading order.
-- Respect reduced motion. Motion should degrade cleanly.
+- Few motion beats, each with a purpose.
+- Reduced-motion preferences are respected and motion degrades cleanly.
 
-## Accessibility And Responsiveness
+## Accessibility and Responsiveness
 
-- High design quality includes accessibility and responsive behavior.
-- Preserve contrast, keyboard affordance, focus visibility, and readable type scales.
-- Mobile layouts must feel designed, not merely stacked.
-
-## Existing Systems
-
-- If the repo or target product already has a design system, match it instead of imposing this file blindly.
-- If there is a conflict between an existing product system and this file, the existing product system wins.
-- Use this file as the fallback and anti-slop guardrail when no stronger system exists.
+- Contrast, keyboard access, visible focus, and readable type scales are
+  preserved.
+- Mobile layouts are designed for the viewport, not stacked desktop layouts.
 
 ## Review Standard
 
-Before considering UI work complete, check:
-- Design quality: does the screen have a coherent goldband mood?
-- Originality: are there product-specific visual decisions rather than template defaults?
-- Craft: do typography, spacing, color, states, and responsive behavior hold up?
-- Functionality: can the user understand the screen, find the primary action, and complete the task?
-- Verification: were browser, screenshot, responsive, or interaction checks run when applicable?
+UI work is complete when:
 
-If the work fails one of these dimensions, revise the design or report what
-remains unverified.
+- The screen has a coherent goldband mood.
+- Visual decisions are product-specific, not template defaults.
+- Typography, spacing, color, states, and responsive behavior hold up.
+- The user can understand the screen, find the primary action, and complete
+  the task.
+- Applicable browser, screenshot, responsive, or interaction checks ran; the
+  rest is reported as unverified.

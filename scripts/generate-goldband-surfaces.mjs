@@ -40,7 +40,6 @@ const ALL_HOSTS = [
 const CAPABILITY_INVOCATION_ROOTS = [
   'README.md',
   'README.en.md',
-  'examples/CLAUDE.md',
   'commands',
   'skills/global',
   'plugin-assets/claude-code-plugin/commands',
