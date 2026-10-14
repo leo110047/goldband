@@ -21,16 +21,15 @@ reliable cross-session storage.
   and the next step that cannot be recovered from code, tests, or git history,
   using an existing repo record or authorized memory. Do not invent a handoff
   location.
-- Nothing the repo already records (git history, code structure, past fixes):
-  do not duplicate it into memory or decision logs.
+- Facts the repository already records are not duplicated into memory or
+  decision logs.
 
 ## Required Behavior
 
 - Before ending work another session must continue, leave the shortest useful
   handoff: what was tried, what is verified versus suspected, and the single
   next step.
-- Convert relative dates ("yesterday", "next sprint") to absolute dates before
-  persisting anything.
+- Convert relative dates to absolute dates before persisting anything.
 - When a new decision reverses an earlier record, update or mark the old
   record as superseded. Never leave two conflicting records live.
 - Treat recalled memory as a point-in-time observation: verify that files,

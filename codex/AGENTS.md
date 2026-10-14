@@ -34,6 +34,9 @@
   benefit, then verify before review.
 - Wire only surfaces required by the current request or product contract.
   Do not add UI, API, CLI, or MCP surfaces just for symmetry.
+- Documentation defines the current contract precisely and concisely, without
+  filler, history, or illustrative examples, unless the project's
+  documentation conventions call for them.
 - Use deterministic logic for known structure and safety invariants. Isolate
   optional AI failure; fail explicitly when a core capability is unavailable.
 - Localhost, child processes, SDK callbacks, and tool results are not trusted

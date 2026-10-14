@@ -96,7 +96,7 @@
         "Localhost, child processes, SDK callbacks, tool output, and machine-generated content are not trusted merely because they are local or structured.",
         "Validate the actual untrusted data or authority before privileged state or side effects; authenticate identity and authorize the requested action separately.",
         "Preserve native permission authority, fail closed on missing or malformed values, and never expose secrets in output.",
-        "Add only controls matched to an actual boundary and threat, such as safe paths, argument arrays, parameterized queries, origin checks, or size limits."
+        "Add only controls matched to an actual boundary and threat; code without the threat gets no control for it."
       ]
     },
     {

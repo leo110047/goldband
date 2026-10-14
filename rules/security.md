@@ -16,10 +16,8 @@ structured.
 - Preserve the permission authority of the owning runtime or platform. Do not
   bypass approval, widen allowed decisions, or infer permission from a tool name
   without validating the correlated operation and target.
-- Add only controls matched to a corresponding boundary and threat, such as
-  parameterized queries, argument arrays, safe path resolution, output
-  escaping, origin checks, CSRF protection, rate limits, or request-size
-  limits. Do not add irrelevant security ceremony to code with no such threat.
+- Add only controls matched to a threat present at that boundary; code without
+  the threat gets no control for it.
 - Do not hardcode credentials, tokens, passwords, private keys, or authorization
   headers. Load required secrets from an approved environment or secret manager,
   fail clearly when they are missing, and never print them in errors or logs.

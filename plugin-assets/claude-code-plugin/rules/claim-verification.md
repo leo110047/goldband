@@ -3,7 +3,7 @@
 ## Baseline Policy
 
 - Treat repository facts as unverified until they are checked against files, commands, tests, or logs that cover the current candidate and relevant environment.
-- Treat current external facts as unverified until they are backed by a cited source. This includes latest versions, docs, prices, rules, and news.
+- Treat facts that can change outside the repository as unverified until they are backed by a cited current source.
 - Completion claims need valid evidence for the requested outcome. Reuse inspected results while the candidate, inputs, relevant environment, and requirements are unchanged; a new conversational turn alone does not invalidate them. Repeat or broaden checks only after relevant changes, failures, or unresolved concerns, while completing required repository checks.
 - Brainstorming is allowed, but assumptions must be labeled as hypotheses instead of stated as confirmed facts.
 
@@ -13,7 +13,7 @@
   In user-facing output, include the evidence needed to support the conclusion;
   do not attach a path or line number to every sentence when it adds no value.
 - If evidence is missing, say `unknown`, `not yet verified`, or ask to verify before concluding.
-- Do not turn uncertainty into hedged factual language such as "probably", "likely", or "should work" when making completion or correctness claims.
+- State completion and correctness as verified, unverified, or unknown; hedged phrasing does not substitute for that status.
 - Match the proof method to the claim: use code and configuration inspection
   for static structure, and live execution for runtime behavior. Neither is a
   substitute for the other.
