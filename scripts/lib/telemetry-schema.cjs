@@ -1,4 +1,9 @@
-const crypto = require('crypto');
+// Loaded on first id: most hook calls emit no usage event.
+let cryptoModule = null;
+function crypto() {
+  cryptoModule ??= require('crypto');
+  return cryptoModule;
+}
 const fs = require('fs');
 const path = require('path');
 
@@ -36,7 +41,7 @@ function safeString(value) {
 }
 
 function stableIdFrom(value, prefix) {
-  const hash = crypto
+  const hash = crypto()
     .createHash('sha256')
     .update(String(value || ''))
     .digest('hex')
@@ -45,8 +50,8 @@ function stableIdFrom(value, prefix) {
 }
 
 function randomEventId() {
-  if (typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
+  if (typeof crypto().randomUUID === 'function') {
+    return crypto().randomUUID();
   }
   return stableIdFrom(`${Date.now()}:${Math.random()}`, 'evt');
 }
@@ -76,7 +81,7 @@ function persistentRunId(filePath) {
       return safeString(fs.readFileSync(resolvedPath, 'utf8'));
     }
     fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
-    const runId = crypto.randomUUID();
+    const runId = crypto().randomUUID();
     fs.writeFileSync(resolvedPath, `${runId}\n`, { flag: 'wx' });
     return runId;
   } catch {

@@ -1,12 +1,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 
 const MANAGED_MARKER = 'goldband-managed-worktree.json';
 const GIT_WRITE_COMMAND =
   /(?:^|[\s;&|()])(?:\/usr\/bin\/|\/usr\/local\/bin\/|\/opt\/homebrew\/bin\/)?git(?:\s+-C\s+(?:"[^"]+"|'[^']+'|\S+))*\s+(?:add|am|checkout|checkout-index|cherry-pick|commit|commit-tree|fetch|gc|merge|mv|pack-refs|pull|push|read-tree|rebase|reset|restore|revert|rm|stash|switch|update-index|update-ref|write-tree)(?:\s|$)/i;
 
 function resolveManagedWorktreeMarker(cwd = process.cwd()) {
+  // Loaded on use: most hook calls never reach a Git write command.
+  const { spawnSync } = require('node:child_process');
   const result = spawnSync('git', ['rev-parse', '--git-dir'], {
     cwd,
     encoding: 'utf8',
