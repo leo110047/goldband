@@ -170,6 +170,21 @@ export function extractToolSummary(transcript: any[]): Record<string, number> {
   return counts;
 }
 
+/** Live E2E run logs sit next to the project eval directory. */
+export function e2eRunDir(evalDir: string, runId: string): string {
+  return path.join(path.dirname(evalDir), 'e2e-runs', runId);
+}
+
+/**
+ * Final eval run files in a directory. A `_partial-*` snapshot is a run's
+ * incremental save, not a run of its own.
+ */
+export function listEvalRunFiles(evalDir: string): string[] {
+  return fs
+    .readdirSync(evalDir)
+    .filter(f => f.endsWith('.json') && !f.startsWith('_partial'));
+}
+
 /**
  * Find the most recent prior eval file for comparison.
  * Prefers same branch, falls back to any branch.
@@ -182,7 +197,7 @@ export function findPreviousRun(
 ): string | null {
   let files: string[];
   try {
-    files = fs.readdirSync(evalDir).filter(f => f.endsWith('.json'));
+    files = listEvalRunFiles(evalDir);
   } catch {
     return null; // dir doesn't exist
   }

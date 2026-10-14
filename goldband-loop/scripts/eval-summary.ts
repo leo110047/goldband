@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Aggregate summary of all eval runs from ~/.goldband-dev/evals/
+ * Aggregate summary of all eval runs in the project eval directory.
  *
  * Usage: bun run eval:summary
  */
@@ -8,13 +8,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { EvalResult } from '../test/helpers/eval-store';
-import { getProjectEvalDir } from '../test/helpers/eval-store';
+import { getProjectEvalDir, listEvalRunFiles } from '../test/helpers/eval-store';
 
 const EVAL_DIR = getProjectEvalDir();
 
 let files: string[];
 try {
-  files = fs.readdirSync(EVAL_DIR).filter(f => f.endsWith('.json'));
+  files = listEvalRunFiles(EVAL_DIR);
 } catch {
   console.log('No eval runs yet. Run: EVALS=1 bun run test:evals');
   process.exit(0);

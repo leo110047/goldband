@@ -9,14 +9,14 @@ Shared reference for the canonical TODOS.md format used by planning and release 
 ```markdown
 # TODOS
 
-## <Skill/Component>     ← e.g., ## Browse, ## Ship, ## Review, ## Infrastructure
+## <Skill/Component>
 <items sorted P0 first, then P1, P2, P3, P4>
 
 ## Completed
 <finished items with completion annotation>
 ```
 
-**Sections:** Organize by skill or component (`## Browse`, `## Ship`, `## Review`, `## QA`, `## Retro`, `## Infrastructure`). Within each section, sort items by priority (P0 at top).
+**Sections:** one per skill or component; items sorted by priority, P0 first.
 
 ---
 
@@ -31,7 +31,7 @@ Each item is an H3 under its section:
 
 **Why:** The concrete problem it solves or value it unlocks.
 
-**Context:** Enough detail that someone picking this up in 3 months understands the motivation, the current state, and where to start.
+**Context:** The motivation, current state, and starting point, sufficient without the original conversation.
 
 **Effort:** S / M / L / XL
 **Priority:** P0 / P1 / P2 / P3 / P4

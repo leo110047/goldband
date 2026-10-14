@@ -49,7 +49,7 @@ native read-only permissions. A defect names an exact location, a concrete code
 observation, the trigger and impact, and a suggested verification. The runtime
 writes a JSON result and a Markdown report; it does not execute project checks
 or mutate Work Map state, and no findings means only that this pass reported no
-concrete concerns. It rejects `--loop`; `qa/app` currently provides a typed mock adapter.
+concrete concerns. It rejects `--loop`. `qa/app` provides only a typed mock adapter.
 Real browser QA runs through the active host's browser tool under the `qa/app`
 prompt contract and `manuals/browser.md`; the typed adapter does not claim it.
 
@@ -73,8 +73,8 @@ an additional caller-supplied host. Each invocation is an independent semantic
 pass and never advances a Work Map ticket. Repeat the same command after
 repairs.
 
-The launcher rejects the removed `--specialists` flag and `--loop`, and marks the child as an
-active review to prevent recursion. Read-only tools, approval policy, output
+The launcher rejects `--specialists` and `--loop` before starting a child
+process and marks the child as an active review to prevent recursion. Read-only tools, approval policy, output
 schema, and timeout remain adapter-owned. Launcher or runtime failures are
 reported explicitly and do not prevent a later retry. Project verification is
 separate from the semantic report.
@@ -100,10 +100,8 @@ For Codex, the installer-owned exact `allow` rule admits the trusted launcher
 outside the parent command sandbox without a prompt, so nested `codex exec` can
 initialize Codex state and app-server resources. The non-interactive child
 reviewer remains `read-only` with approval set to `never`.
-Every `review/code` run launches exactly one core reviewer. The public launcher
-rejects `--specialists` (including the former `off` no-op) before starting a
-child process, the internal CLI treats it as an unknown argument, and the
-production review owner has no parallel dispatch path.
+Every `review/code` run launches exactly one core reviewer; the production
+review owner has no parallel dispatch path.
 
 Before host dispatch, `review/code` collects changed paths with the diff; Git
 scopes use NUL-delimited path output, while a supplied patch derives paths from

@@ -93,8 +93,9 @@ The `parseNDJSON()` function is pure — no I/O, no side effects — making it i
   │  on failure:
   │  {name}-failure.json
   │
-  │  ALL files in ~/.goldband-dev/
-  │  Run dir: e2e-runs/{runId}/
+  │  Heartbeat: ~/.goldband-dev/
+  │  Run dir and partial: project dir
+  │  (e2e-runs/{runId}/, evals/)
   │
   │         eval-watch.ts
   │              │
@@ -110,19 +111,18 @@ The `parseNDJSON()` function is pure — no I/O, no side effects — making it i
 
 **Non-fatal everything:** All observability I/O is wrapped in try/catch. A write failure never causes a test to fail. The tests themselves are the source of truth; observability is best-effort.
 
-**Machine-readable diagnostics:** Each test result includes `exit_reason` (success, timeout, error_max_turns, error_api, exit_code_N), `timeout_at_turn`, and `last_tool_call`. This enables `jq` queries like:
-```bash
-jq '.tests[] | select(.exit_reason == "timeout") | .last_tool_call' ~/.goldband-dev/evals/_partial-e2e.json
-```
+**Machine-readable diagnostics:** Each test result includes `exit_reason` (success, timeout, error_max_turns, error_api, exit_code_N), `timeout_at_turn`, and `last_tool_call`.
 
 ### Eval persistence (`test/helpers/eval-store.ts`)
 
-The `EvalCollector` accumulates test results and writes them in two ways:
+The `EvalCollector` writes to the eval directory from `getProjectEvalDir()`:
+`~/.goldband/projects/$SLUG/evals/`, or `~/.goldband-dev/evals/` when slug
+detection fails.
 
-1. **Incremental:** `savePartial()` writes `_partial-e2e.json` after each test (atomic: write `.tmp`, `fs.renameSync`). Survives kills.
-2. **Final:** `finalize()` writes a timestamped eval file (e.g. `e2e-20260314-143022.json`). The partial file is never cleaned up — it persists alongside the final file for observability.
+1. **Incremental:** `savePartial()` atomically writes `_partial-e2e.json` after each test, so results survive kills.
+2. **Final:** `finalize()` writes `{version}-{branch}-{tier}-{timestamp}.json`. The partial file persists alongside it. Run listings and comparisons skip it; the eval budget cap counts it unless a final run in the same directory, of the same tier, at or after its timestamp, contains every test it recorded.
 
-`eval:compare` diffs two eval runs. `eval:summary` aggregates stats across all runs in `~/.goldband-dev/evals/`.
+`eval:compare` diffs two eval runs; `eval:summary` aggregates all runs in the eval directory.
 
 ### Test tiers
 
@@ -132,4 +132,4 @@ The `EvalCollector` accumulates test results and writes them in two ways:
 | 2 — E2E via `claude -p` | Spawn real Claude session, run each skill, scan for errors | ~$3.85 | ~20min |
 | 3 — LLM-as-judge | Sonnet scores docs on clarity/completeness/actionability | ~$0.15 | ~30s |
 
-Tier 1 runs on every `bun test`. Tiers 2+3 are gated behind `EVALS=1`. The idea: catch 95% of issues for free, use LLMs only for judgment calls and integration testing.
+Tier 1 runs on every `bun test`. Tiers 2 and 3 call paid models and run only with `EVALS=1`.
