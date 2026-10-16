@@ -467,7 +467,7 @@ describe("verification receipt", () => {
 		).toThrow("manual step exceeds 1024 byte limit");
 	});
 
-	test("canonical candidate diff skips secret-like and oversized untracked files", () => {
+	test("canonical candidate diff redacts secret-like spans and skips oversized untracked files", () => {
 		const command = [process.execPath, "-e", "process.exit(0)"];
 		const fixture = createFixture("existing-tests", command);
 		const lease = createManagedWorktree({
@@ -478,7 +478,7 @@ describe("verification receipt", () => {
 		});
 		fs.writeFileSync(
 			path.join(lease.worktreePath, "credentials.txt"),
-			`${["API_TOKEN", "super-secret-value"].join("=")}\n`,
+			`const before = 1;\n${["API_TOKEN", "super-secret-value"].join("=")}\nconst after = 2;\n`,
 		);
 		fs.writeFileSync(
 			path.join(lease.worktreePath, "oversized.txt"),
@@ -490,7 +490,10 @@ describe("verification receipt", () => {
 		);
 		const diff = computeCandidateReviewDiff(lease);
 		expect(diff).not.toContain("super-secret-value");
-		expect(diff).toContain("secret-like content (credential-assignment)");
+		expect(diff).toContain(
+			"@@ -0,0 +1,3 @@\n+const before = 1;\n+API_TOKEN=[redacted]\n+const after = 2;",
+		);
+		expect(diff).not.toContain("skipped untracked file: secret-like content");
 		expect(diff).toContain("file exceeds 131072 byte limit");
 		expect(diff).toContain("diff --git a/control-bytes.bin b/control-bytes.bin");
 		expect(diff).toContain("skipped untracked file: binary file");
@@ -531,6 +534,48 @@ describe("verification receipt", () => {
 		});
 		expect(refreshed.candidate.treeDigest).not.toBe(initial.candidate.treeDigest);
 		expect(computeCandidateReviewDiff(lease)).toContain("new file mode 100755");
+	});
+
+	test("canonical candidate diff redacts secret-like spans in tracked changes", () => {
+		const fixture = createFixture("existing-tests", [
+			process.execPath,
+			"-e",
+			"process.exit(0)",
+		]);
+		const lease = createManagedWorktree({
+			name: "tracked-redaction",
+			repoRoot: fixture.repo,
+			stateRoot: fixture.state,
+			ticketId: "ticket-a",
+		});
+		fs.writeFileSync(
+			path.join(lease.worktreePath, "tracked.txt"),
+			`base\n${["API_TOKEN", "tracked-secret-value"].join("=")}\nreviewed\n`,
+		);
+		const diff = computeCandidateReviewDiff(lease);
+		expect(diff).not.toContain("tracked-secret-value");
+		expect(diff).toContain(" base\n+API_TOKEN=[redacted]\n+reviewed");
+	});
+
+	test("redaction keeps line numbering and the code after a private key block", () => {
+		const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "goldband-redact-"));
+		const keyHeader = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");
+		const keyFooter = ["-----END", "PRIVATE KEY-----"].join(" ");
+		fs.writeFileSync(
+			path.join(fixture, "fixture.ts"),
+			`const pem = \`${keyHeader}\nMIIBVgIBADANBg\n${keyFooter}\`;\nexport const reviewed = true;\n`,
+		);
+		const diff = materializeReviewUntrackedFile(
+			fixture,
+			fs.realpathSync(fixture),
+			"fixture.ts",
+			{ includedBytes: 0 },
+		);
+		expect(diff).not.toContain("MIIBVgIBADANBg");
+		expect(diff).toContain(
+			"@@ -0,0 +1,4 @@\n+const pem = `[redacted]\n+\n+`;\n+export const reviewed = true;",
+		);
+		fs.rmSync(fixture, { recursive: true, force: true });
 	});
 
 	test("the secret scanner can review its own implementation and tests", () => {

@@ -20,7 +20,11 @@ import {
 	type WorkTicket,
 } from "../workflows/work-map";
 import { WorkMapStore } from "../workflows/work-map-store";
-import { detectSecretLikeContent, SECRET_CONTENT_RULES } from "./secret-content";
+import {
+	detectSecretLikeContent,
+	redactSecretLikeContent,
+	redactSecretLikeDiff,
+} from "./secret-content";
 import { readStableRegularFile } from "./stable-file-read";
 
 type VerificationStage = "red" | "green" | "check" | "manual";
@@ -499,7 +503,7 @@ export function computeCandidateReviewDiff(
 		],
 		32 * 1024 * 1024,
 	).toString("utf8");
-	if (tracked) chunks.push(tracked);
+	if (tracked) chunks.push(redactSecretLikeDiff(tracked));
 	const untracked = gitOutput(
 		lease,
 		["ls-files", "--others", "--exclude-standard", "-z"],
@@ -579,12 +583,9 @@ export function materializeReviewUntrackedFile(
 		);
 	}
 	if (isLikelyBinary(content)) return skippedReviewFile(relative, "binary file");
-	const text = content.toString("utf8");
-	if (text.includes("\uFFFD")) return skippedReviewFile(relative, "non-UTF-8 content");
-	const secretMatch = detectSecretLikeContent(text);
-	if (secretMatch) {
-		return skippedReviewFile(relative, `secret-like content (${secretMatch})`);
-	}
+	const raw = content.toString("utf8");
+	if (raw.includes("\uFFFD")) return skippedReviewFile(relative, "non-UTF-8 content");
+	const text = redactSecretLikeContent(raw);
 	state.includedBytes += content.length;
 	const leftPath = gitPatchPath("a", relative);
 	const rightPath = gitPatchPath("b", relative);
@@ -908,13 +909,7 @@ function readReceiptIfPresent(
 }
 
 function redactSummary(output: string): string {
-	let redacted = output;
-	for (const { pattern } of SECRET_CONTENT_RULES) {
-		redacted = redacted.replace(
-			new RegExp(pattern.source, `${pattern.flags}g`),
-			"[REDACTED]",
-		);
-	}
+	const redacted = redactSecretLikeContent(output, "[REDACTED]");
 	return Buffer.from(redacted).subarray(0, SUMMARY_LIMIT_BYTES).toString("utf8");
 }
 

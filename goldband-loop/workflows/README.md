@@ -195,7 +195,10 @@ ${GOLDBAND_HOME:-$HOME/.goldband}/workflow-runs/artifacts/
 ```
 
 Untracked diff materialization is a trust boundary. The runtime skips binary,
-oversized, non-UTF-8, or secret-like content and records a no-content marker.
+oversized, or non-UTF-8 files and records a no-content marker. It replaces each
+secret-like match with `[redacted]`, preserving line numbering, and includes the
+rest of the file. Tracked and `--diff-file` diffs receive the same redaction per hunk,
+keeping each line's diff prefix and leaving binary patch data unchanged.
 Findings carry `kind: "defect" | "improvement"`. Defects without a line,
 evidence, failure scenario, and verification are dropped. Improvements need
 evidence and a recommendation, cannot be `high` or `critical`, and are always

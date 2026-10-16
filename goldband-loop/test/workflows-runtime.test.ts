@@ -1545,13 +1545,71 @@ describe('workflow runtime', () => {
     }
   });
 
-  test('worktree diff skips secret-like untracked file content', async () => {
+  test('tracked diff redacts secret-like spans', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'goldband-workflow-repo-'));
     try {
       spawnSync('git', ['init'], { cwd: repo, encoding: 'utf8' });
       writeFileSync(join(repo, 'tracked.txt'), 'initial\n');
       commitAll(repo, 'initial');
-      writeFileSync(join(repo, 'secret-not-ignored.txt'), 'token=abc123\n');
+      writeFileSync(join(repo, 'tracked.txt'), 'initial\ntoken=tracked123\nvisible line\n');
+
+      const step = reviewSteps.find((item) => item.name === 'collect-diff');
+      expect(step).toBeDefined();
+      const output = await step!.run({
+        runId: 'test-run',
+        workflow: getWorkflow('review/code'),
+        cwd: repo,
+        artifacts: [],
+        options: {},
+      });
+
+      const diff = String((output as { diff: string }).diff);
+      expect(diff).not.toContain('tracked123');
+      expect(diff).toContain(' initial\n+token=[redacted]\n+visible line');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test('diff-file input redacts secret-like spans', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'goldband-workflow-repo-'));
+    try {
+      writeFileSync(join(repo, 'feature.diff'), [
+        'diff --git a/.env b/.env',
+        '--- a/.env',
+        '+++ b/.env',
+        '@@ -1 +1,2 @@',
+        ' visible line',
+        '+token=difffile123',
+        '',
+      ].join('\n'));
+
+      const step = reviewSteps.find((item) => item.name === 'collect-diff');
+      expect(step).toBeDefined();
+      const output = await step!.run({
+        runId: 'test-run',
+        workflow: getWorkflow('review/code'),
+        cwd: repo,
+        artifacts: [],
+        options: { diffFile: 'feature.diff' },
+      });
+
+      const result = output as { diff: string; changedFiles: string[] };
+      expect(result.diff).not.toContain('difffile123');
+      expect(result.diff).toContain(' visible line\n+token=[redacted]');
+      expect(result.changedFiles).toEqual(['.env']);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test('worktree diff redacts secret-like spans in untracked files', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'goldband-workflow-repo-'));
+    try {
+      spawnSync('git', ['init'], { cwd: repo, encoding: 'utf8' });
+      writeFileSync(join(repo, 'tracked.txt'), 'initial\n');
+      commitAll(repo, 'initial');
+      writeFileSync(join(repo, 'secret-not-ignored.txt'), 'visible line\ntoken=abc123\n');
 
       const step = reviewSteps.find((item) => item.name === 'collect-diff');
       expect(step).toBeDefined();
@@ -1564,10 +1622,9 @@ describe('workflow runtime', () => {
       });
 
       const diff = String((output as { diff: string }).diff);
-      expect(diff).toContain('skipped untracked file: secret-like content');
+      expect(diff).toContain('+visible line\n+token=[redacted]');
       expect(diff).toContain('secret-not-ignored.txt');
       expect(diff).not.toContain('abc123');
-      expect(diff).not.toContain('+token=');
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

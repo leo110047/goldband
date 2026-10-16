@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { assertValidReviewExecutionOptions, MAX_REVIEW_DIFF_BYTES, MAX_REVIEW_PROMPT_OVERHEAD_BYTES } from '../lib/review-runtime-contract';
+import { redactSecretLikeDiff } from '../lib/secret-content';
 import { readStableRegularFile } from '../lib/stable-file-read';
 import { materializeReviewUntrackedFile } from '../lib/verification-receipt';
 import { stateRoot } from './evidence';
@@ -65,12 +66,12 @@ function collectDiff(ctx: WorkflowContext): ReviewDiffInput {
   if (ctx.options.diffFile) {
     const file = resolve(ctx.cwd, ctx.options.diffFile);
     const label = 'review/code diff file';
-    const diff = readStableRegularFile(file, {
+    const diff = redactSecretLikeDiff(readStableRegularFile(file, {
       label,
       maxBytes: MAX_REVIEW_DIFF_BYTES,
       checkpoint: () => timeBudget.assertWithinDeadline(),
       tooLarge: () => reviewDiffSizeError(label),
-    }).toString('utf8');
+    }).toString('utf8'));
     return {
       source: `diff-file:${file}`,
       diff,
@@ -231,7 +232,7 @@ function collectTrackedDiff(
     if (result.stdout) {
       collectedBytes += Buffer.byteLength(result.stdout) + (chunks.length > 0 ? 1 : 0);
       if (collectedBytes > MAX_REVIEW_DIFF_BYTES) throw reviewDiffSizeError();
-      chunks.push(result.stdout);
+      chunks.push(redactSecretLikeDiff(result.stdout));
     }
   }
   return {
