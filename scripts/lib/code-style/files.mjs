@@ -114,10 +114,9 @@ export function isBinary(buffer) {
   return sample.includes(0);
 }
 
-export function lineCount(text) {
+export function nonBlankLineCount(text) {
   if (!text) return 0;
-  const withoutTrailing = text.endsWith('\n') ? text.slice(0, -1) : text;
-  return withoutTrailing ? withoutTrailing.split('\n').length : 0;
+  return text.split('\n').filter((line) => line.trim() !== '').length;
 }
 
 export function isCodeFile(file) {

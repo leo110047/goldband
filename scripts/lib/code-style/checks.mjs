@@ -14,7 +14,7 @@ import {
   fileSize,
   isBinary,
   isCodeFile,
-  lineCount,
+  nonBlankLineCount,
 } from './files.mjs';
 import {
   allowsLargeGeneratedText,
@@ -178,13 +178,13 @@ function checkFileSize(file, buffer, issues, generatedTextPolicy) {
 
 function checkLineCount(file, text, issues) {
   if (!isCodeFile(file)) return;
-  const lines = lineCount(text);
+  const lines = nonBlankLineCount(text);
   if (lines > config.maxFileLines) {
     issues.push(
       violation(
         'file-lines',
         file,
-        `file has ${lines} lines, max is ${config.maxFileLines}`,
+        `file has ${lines} non-blank lines, max is ${config.maxFileLines}`,
       ),
     );
   }

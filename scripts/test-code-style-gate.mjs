@@ -12,6 +12,8 @@ const tests = [
   ['markdown setext heading is not a merge conflict', testMarkdownSetext],
   ['real merge conflict block is blocked', testMergeConflictBlock],
   ['ordinary text over 1 MB is blocked', testLargeOrdinaryTextBlocked],
+  ['blank lines do not count toward file length', testBlankLinesNotCounted],
+  ['non-blank lines over the file limit are blocked', testFileLinesBlocked],
   [
     'tracked generated text with an exact generator contract is allowed',
     testTrackedGeneratedTextAllowed,
@@ -111,6 +113,26 @@ function testLargeOrdinaryTextBlocked() {
   const result = checkStyle(dir);
   assertEqual(result.status, 1, result.stdout + result.stderr);
   assertIncludes(result.stdout, '"rule": "text-size"');
+}
+
+function testBlankLinesNotCounted() {
+  const dir = createRepo();
+  fs.writeFileSync(path.join(dir, 'long.js'), codeLines(600, '\n  \n'));
+  run('git', ['add', 'long.js'], { cwd: dir });
+
+  const result = checkStyle(dir);
+  assertEqual(result.status, 0, result.stdout + result.stderr);
+  assertNotIncludes(result.stdout, '"rule": "file-lines"');
+}
+
+function testFileLinesBlocked() {
+  const dir = createRepo();
+  fs.writeFileSync(path.join(dir, 'long.js'), codeLines(601, '\n'));
+  run('git', ['add', 'long.js'], { cwd: dir });
+
+  const result = checkStyle(dir);
+  assertEqual(result.status, 1, result.stdout + result.stderr);
+  assertIncludes(result.stdout, '601 non-blank lines, max is 600');
 }
 
 function testTrackedGeneratedTextAllowed() {
@@ -485,6 +507,10 @@ function largeText(bytes = 1024 * 1024) {
   return `${'x'.repeat(bytes)}\n`;
 }
 
+function codeLines(count, separator) {
+  return `${Array.from({ length: count }, (_, i) => `x${i}();`).join(separator)}\n`;
+}
+
 function createRepo() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'goldband-style-test-'));
   run('git', ['init', '--quiet'], { cwd: dir });
@@ -547,4 +573,9 @@ function assertEqual(actual, expected, message = '') {
 function assertIncludes(value, expected) {
   if (value.includes(expected)) return;
   throw new Error(`expected output to include ${expected}\n${value}`);
+}
+
+function assertNotIncludes(value, unexpected) {
+  if (!value.includes(unexpected)) return;
+  throw new Error(`expected output not to include ${unexpected}\n${value}`);
 }

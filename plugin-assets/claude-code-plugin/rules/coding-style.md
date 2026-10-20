@@ -12,7 +12,7 @@ must not raise a threshold or add a bypass only to make one change pass.
 
 | Rule | Default | Tool |
 |---|---:|---|
-| Code file length | `GOLDBAND_MAX_FILE_LINES=600` | `check-code-style.mjs` |
+| Code file non-blank lines | `GOLDBAND_MAX_FILE_LINES=600` | `check-code-style.mjs` |
 | JS/TS function length | `GOLDBAND_MAX_FN_LINES=50` | Biome `noExcessiveLinesPerFunction` |
 | JS/TS cognitive complexity | `GOLDBAND_MAX_COMPLEXITY=12` | Biome `noExcessiveCognitiveComplexity` |
 | JS/TS function parameters | `GOLDBAND_MAX_PARAMS=4` | Biome `useMaxParams` |
