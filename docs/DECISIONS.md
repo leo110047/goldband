@@ -2046,3 +2046,28 @@ environment was not added. Only the client-side hooks listed in
 `OPERATIONS.md` are chained; `push-to-checkout` is excluded because its
 presence replaces Git's built-in `updateInstead` check, and per-ref hooks such
 as `reference-transaction` are excluded to avoid a process per ref update.
+
+## 2026-10-20: Commit Message Format Warns by Default and Defers to Repository Hooks
+
+Decision: the global `commit-msg` hook checks the Conventional Commits subject
+against the eleven `config-conventional` types in every repository without its
+own runnable `commit-msg` hook. A mismatch warns; it blocks only when the
+repository opts in with `.goldband-git-workflow.json` (or
+`GOLDBAND_GIT_WORKFLOW_GATE=1`). Subjects matching commitlint's default
+ignores (merge, revert, reapply, amend/fixup/squash, bare semantic versions)
+pass unchecked. Without the opt-in, goldband skips the check when the
+repository has its own runnable `commit-msg` hook; with the opt-in it always
+checks, because a hook's presence does not show that it validates the format
+(husky v9 installs a stub for every hook name, Gerrit's hook only adds a
+Change-Id).
+
+The hook only sees the message and the process environment; it cannot tell a
+person's or agent's commit from one a test suite, release tool, or scaffolder
+writes, and environment signals are inherited by every child process. A
+blocking default would therefore fail automated commits such as test fixtures
+committing `initial`. Projects that enforce the format do so in CI on the
+merged commit or pull request title and keep local hooks advisory or opt-in;
+commitlint skips Git- and tool-generated subjects by default. Repositories
+with their own commit-msg hook define formats goldband cannot know, such as
+extra types or required trailers, and running both checks would reject
+messages the repository accepts.

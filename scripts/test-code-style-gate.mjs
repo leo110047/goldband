@@ -48,7 +48,16 @@ const tests = [
   ],
   ['staged gitlinks are not read as blobs', testStagedGitlinkSkipped],
   ['commit-msg accepts scope and breaking marker', testCommitMsgScope],
-  ['commit-msg remains opt-in', testCommitMsgOptIn],
+  ['commit-msg accepts every conventional type', testCommitMsgTypes],
+  ['commit-msg warns by default', testCommitMsgWarnsByDefault],
+  [
+    'commit-msg blocks when the repository or environment opts in',
+    testCommitMsgOptInBlocks,
+  ],
+  [
+    'commit-msg ignores Git and release tool subjects',
+    testCommitMsgIgnoresGeneratedSubjects,
+  ],
   [
     'pre-commit runs project hook after goldband',
     testPreCommitProjectHookOrder,
@@ -67,8 +76,8 @@ const tests = [
   ],
   ['commit-msg runs project hook after goldband', testCommitMsgProjectHook],
   [
-    'commit-msg stops before project hook when goldband fails',
-    testCommitMsgProjectHookSkippedOnGoldbandFailure,
+    'commit-msg leaves the format to a project hook',
+    testCommitMsgDefersToProjectHook,
   ],
   ['pre-commit missing checker fails soft', testPreCommitMissingChecker],
   ['pre-commit missing node fails soft', testPreCommitMissingNode],
@@ -244,19 +253,101 @@ function testCommitMsgScope() {
   assertEqual(run('bash', [commitMsgHook, breaking], { cwd: dir }).status, 0);
 }
 
-function testCommitMsgOptIn() {
+function testCommitMsgTypes() {
+  const dir = createRepo();
+  fs.writeFileSync(path.join(dir, '.goldband-git-workflow.json'), '{}\n');
+  const message = path.join(dir, 'msg');
+  for (const type of [
+    'feat',
+    'fix',
+    'docs',
+    'style',
+    'refactor',
+    'perf',
+    'test',
+    'build',
+    'ci',
+    'chore',
+    'revert',
+  ]) {
+    fs.writeFileSync(message, `${type}: describe the change\n`);
+    const result = run('bash', [commitMsgHook, message], {
+      cwd: dir,
+      env: hookEnv(),
+    });
+    assertEqual(result.status, 0, type + result.stderr);
+  }
+}
+
+function testCommitMsgWarnsByDefault() {
   const dir = createRepo();
   const message = path.join(dir, 'msg');
   fs.writeFileSync(message, 'bad message\n');
 
-  assertEqual(run('bash', [commitMsgHook, message], { cwd: dir }).status, 0);
-  fs.writeFileSync(path.join(dir, '.goldband-git-workflow.json'), '{}\n');
-  const blocked = run('bash', [commitMsgHook, message], { cwd: dir });
-  assertEqual(blocked.status, 1);
+  const result = run('bash', [commitMsgHook, message], {
+    cwd: dir,
+    env: hookEnv(),
+  });
+  assertEqual(result.status, 0, result.stderr);
   assertIncludes(
-    blocked.stderr,
+    result.stderr,
     'commit message must follow Conventional Commits',
   );
+  assertIncludes(result.stderr, 'warning only');
+}
+
+function testCommitMsgOptInBlocks() {
+  // An opted-in repository is checked even when its own hook exists.
+  for (const optIn of ['marker', 'env']) {
+    const dir = createRepo();
+    const message = path.join(dir, 'msg');
+    if (optIn === 'marker') {
+      fs.writeFileSync(path.join(dir, '.goldband-git-workflow.json'), '{}\n');
+    }
+    const env = hookEnv(
+      optIn === 'env' ? { GOLDBAND_GIT_WORKFLOW_GATE: '1' } : {},
+    );
+    writeProjectHook(dir, 'commit-msg', '#!/usr/bin/env bash\nexit 0\n');
+    for (const subject of ['bad message', 'Merge duplicate parser helpers']) {
+      fs.writeFileSync(message, `${subject}\n`);
+      const result = run('bash', [commitMsgHook, message], { cwd: dir, env });
+      assertEqual(result.status, 1, optIn + subject + result.stderr);
+      assertIncludes(
+        result.stderr,
+        'commit message must follow Conventional Commits',
+      );
+    }
+  }
+}
+
+function testCommitMsgIgnoresGeneratedSubjects() {
+  const dir = createRepo();
+  const message = path.join(dir, 'msg');
+  fs.writeFileSync(path.join(dir, '.goldband-git-workflow.json'), '{}\n');
+  for (const subject of [
+    "Merge branch 'main' into topic",
+    'Merge pull request #12 from org/topic',
+    'Merged PR 7: topic',
+    'Merge tag v1.2.0',
+    'Merge remote-tracking branch origin/main',
+    'Revert "feat: add endpoint"',
+    'Reapply "feat: add endpoint"',
+    'fixup! feat: add endpoint',
+    'squash! feat: add endpoint',
+    'amend! feat: add endpoint',
+    'Automatic merge from release',
+    'Auto-merged main into topic',
+    '1.2.3',
+    'v2.0.0-rc.1',
+  ]) {
+    fs.writeFileSync(message, `${subject}\n`);
+    const result = run('bash', [commitMsgHook, message], {
+      cwd: dir,
+      env: hookEnv(),
+    });
+    assertEqual(result.status, 0, subject + result.stderr);
+    assertEqual(result.stderr, '', subject);
+  }
 }
 
 function testPreCommitProjectHookOrder() {
@@ -361,7 +452,6 @@ function testCommitMsgProjectHook() {
   const dir = createRepo();
   const log = path.join(dir, 'commit-msg-project.log');
   const message = path.join(dir, 'msg');
-  fs.writeFileSync(path.join(dir, '.goldband-git-workflow.json'), '{}\n');
   fs.writeFileSync(message, 'fix: chain project hook\n');
   writeProjectHook(
     dir,
@@ -378,12 +468,11 @@ function testCommitMsgProjectHook() {
   assertEqual(fs.readFileSync(log, 'utf8').trim(), message);
 }
 
-function testCommitMsgProjectHookSkippedOnGoldbandFailure() {
+function testCommitMsgDefersToProjectHook() {
   const dir = createRepo();
   const log = path.join(dir, 'commit-msg-project.log');
   const message = path.join(dir, 'msg');
-  fs.writeFileSync(path.join(dir, '.goldband-git-workflow.json'), '{}\n');
-  fs.writeFileSync(message, 'bad message\n');
+  fs.writeFileSync(message, 'project format message\n');
   writeProjectHook(
     dir,
     'commit-msg',
@@ -395,18 +484,18 @@ function testCommitMsgProjectHookSkippedOnGoldbandFailure() {
     env: hookEnv(),
   });
 
-  assertEqual(result.status, 1, result.stdout + result.stderr);
-  assertEqual(fs.existsSync(log), false);
+  assertEqual(result.status, 0, result.stdout + result.stderr);
+  assertEqual(fs.readFileSync(log, 'utf8'), 'project\n');
+  assertEqual(result.stderr.includes('Conventional Commits'), false);
 }
 
 function testPreCommitMissingChecker() {
   const dir = createRepo();
   const result = run('bash', [preCommitHook], {
     cwd: dir,
-    env: {
-      ...process.env,
+    env: hookEnv({
       GOLDBAND_STYLE_GATE_SCRIPT: path.join(dir, 'missing-checker.mjs'),
-    },
+    }),
   });
 
   assertEqual(result.status, 0, result.stdout + result.stderr);
@@ -430,11 +519,10 @@ function testPreCommitMissingNode() {
 
   const result = run('/bin/bash', [preCommitHook], {
     cwd: dir,
-    env: {
-      ...process.env,
+    env: hookEnv({
       GOLDBAND_STYLE_GATE_SCRIPT: checker,
       PATH: pathWithoutNode,
-    },
+    }),
   });
 
   assertEqual(result.status, 0, result.stdout + result.stderr);
@@ -531,16 +619,18 @@ function shellQuote(value) {
 }
 
 function hookEnv(overrides = {}) {
-  const env = { ...process.env, ...overrides };
+  const env = { ...process.env };
   delete env.GOLDBAND_PROJECT_HOOK_RUNNING;
-  return env;
+  delete env.GOLDBAND_GIT_WORKFLOW_GATE;
+  delete env.GOLDBAND_STYLE_GATE;
+  return { ...env, ...overrides };
 }
 
 function run(command, args, options = {}) {
   return spawnSync(resolveSpawnCommand(command), args, {
     cwd: options.cwd ?? repoRoot,
     encoding: 'utf8',
-    env: options.env ?? process.env,
+    env: options.env ?? hookEnv(),
   });
 }
 

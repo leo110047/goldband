@@ -126,8 +126,18 @@ the recorded Goldband source script or `node` is unavailable, the hook warns
 and allows the commit. The hooks are materialized outside the checkout so no
 hook manager writes generated hooks into Goldband source. Re-running `./install.sh style-gate` refreshes the materialized runtime
 and migrates the legacy source-checkout `core.hooksPath`. The commit-msg
-Conventional Commits gate is installed but enforced only when the repo has
-`.goldband-git-workflow.json` or `GOLDBAND_GIT_WORKFLOW_GATE=1`.
+gate checks for a Conventional Commits subject,
+`<type>[(scope)][!]: <description>`, with type `feat`, `fix`, `docs`, `style`,
+`refactor`, `perf`, `test`, `build`, `ci`, `chore`, or `revert`. A mismatch
+prints a warning; it blocks the commit only when the repository has
+`.goldband-git-workflow.json` or `GOLDBAND_GIT_WORKFLOW_GATE=1` is set.
+Subjects that Git and release tools write pass unchecked, following
+commitlint's default ignores: `Merge pull request|branch|tag|remote-tracking
+branch ...`, `Merge <a> into <b>`, `Merged <a> in|into <b>`, `Merged PR <n>: `,
+`Automatic merge`, `Auto-merged <a> into <b>`, `Revert ` or `Reapply ` (either
+case), `amend!`, `fixup!`, `squash!`, and a bare semantic version. Without the
+opt-in, the gate is skipped when the repository has its own runnable
+`commit-msg` hook; with the opt-in it always runs.
 
 Large generated text files use the exact-path contract documented in
 `rules/coding-style.md`. Ordinary text remains limited to 1 MB; a tracked

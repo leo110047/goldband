@@ -67,7 +67,7 @@ install_style_gate() {
         echo -e "  ${GREEN}[安裝] Git style gate -> global core.hooksPath=$GIT_HOOKS_DIR${NC}"
     fi
     upsert_marked_block "$ZSHENV_FILE" "$STYLE_GATE_SHELL_BLOCK" style_gate_shell_block || return 1
-    echo -e "  ${GREEN}[安裝] Git hooks 環境覆寫 -> $ZSHENV_FILE（新開的 shell 生效）${NC}"
+    echo -e "  ${GREEN}[安裝] Git hooks 環境覆寫 -> ${ZSHENV_FILE}（新開的 shell 生效）${NC}"
     install_goldband_project_style_gate
 }
 

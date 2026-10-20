@@ -448,6 +448,8 @@ function testGitConfigEnvAppendsOnce() {
       {
         env: {
           PATH: process.env.PATH,
+          HOME: dir,
+          ZDOTDIR: dir,
           GIT_CONFIG_COUNT: '1',
           GIT_CONFIG_KEY_0: 'user.name',
           GIT_CONFIG_VALUE_0: 'Kept',

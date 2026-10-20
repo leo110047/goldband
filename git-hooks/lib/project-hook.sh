@@ -67,6 +67,56 @@ goldband_project_hooks_dir() {
   esac
 }
 
+# Sets GOLDBAND_REPO_ROOT and GOLDBAND_COMMON_DIR for the current repository.
+goldband_git_paths() {
+  local git_info
+  GOLDBAND_REPO_ROOT="$(pwd)"
+  GOLDBAND_COMMON_DIR=""
+  git_info="$(git rev-parse --show-toplevel --git-common-dir 2>/dev/null || true)"
+  [ -n "$git_info" ] || return 0
+  GOLDBAND_REPO_ROOT="${git_info%%$'\n'*}"
+  GOLDBAND_COMMON_DIR="${git_info#*$'\n'}"
+  [ "$GOLDBAND_COMMON_DIR" != "$git_info" ] || GOLDBAND_COMMON_DIR=""
+}
+
+# Prints the repository's runnable <name> hook and warns about an unusable one.
+# Run with the goldband override removed.
+goldband_project_hook_file() {
+  local repo_root="$1"
+  local hook_dir="$2"
+  local common_dir="$3"
+  local hook_name="$4"
+  local project_dir project_hook
+
+  project_dir="$(goldband_project_hooks_dir "$repo_root" "$common_dir" "$hook_dir")" || return 1
+  project_hook="$project_dir/$hook_name"
+  [ -e "$project_hook" ] || return 1
+  if [ -d "$project_hook" ]; then
+    echo "[goldband] WARNING: project $hook_name hook path is a directory, skipping: $project_hook" >&2
+    return 1
+  fi
+  if [ ! -f "$project_hook" ]; then
+    echo "[goldband] WARNING: project $hook_name hook is not a regular file, skipping: $project_hook" >&2
+    return 1
+  fi
+  if [ ! -x "$project_hook" ]; then
+    echo "[goldband] WARNING: project $hook_name hook exists but is not executable, skipping: $project_hook" >&2
+    return 1
+  fi
+  [ "$project_hook" -ef "$hook_dir/$hook_name" ] && return 1
+  printf '%s\n' "$project_hook"
+}
+
+goldband_has_project_hook() {
+  local hook_dir="$1"
+  local hook_name="$2"
+  goldband_git_paths
+  (
+    goldband_strip_hooks_override "$hook_dir"
+    goldband_project_hook_file "$GOLDBAND_REPO_ROOT" "$hook_dir" "$GOLDBAND_COMMON_DIR" "$hook_name" >/dev/null 2>&1
+  )
+}
+
 goldband_run_project_hook() {
   local repo_root="$1"
   local hook_dir="$2"
@@ -78,26 +128,7 @@ goldband_run_project_hook() {
 
   (
     goldband_strip_hooks_override "$hook_dir"
-    project_dir="$(goldband_project_hooks_dir "$repo_root" "$common_dir" "$hook_dir")" || exit 0
-    project_hook="$project_dir/$hook_name"
-
-    [ -e "$project_hook" ] || exit 0
-    if [ -d "$project_hook" ]; then
-      echo "[goldband] WARNING: project $hook_name hook path is a directory, skipping: $project_hook" >&2
-      exit 0
-    fi
-    if [ ! -f "$project_hook" ]; then
-      echo "[goldband] WARNING: project $hook_name hook is not a regular file, skipping: $project_hook" >&2
-      exit 0
-    fi
-    if [ ! -x "$project_hook" ]; then
-      echo "[goldband] WARNING: project $hook_name hook exists but is not executable, skipping: $project_hook" >&2
-      exit 0
-    fi
-    if [ "$project_hook" -ef "$hook_dir/$hook_name" ]; then
-      exit 0
-    fi
-
+    project_hook="$(goldband_project_hook_file "$repo_root" "$hook_dir" "$common_dir" "$hook_name")" || exit 0
     GOLDBAND_PROJECT_HOOK_RUNNING=1 exec "$project_hook" "$@"
   )
 }
@@ -119,15 +150,11 @@ goldband_chain_hooks() {
   local hook_dir="$1"
   local hook_name="$2"
   shift 2
-  local repo_root git_info common_dir="" input_file
+  local repo_root common_dir input_file
 
-  repo_root="$(pwd)"
-  git_info="$(git rev-parse --show-toplevel --git-common-dir 2>/dev/null || true)"
-  if [ -n "$git_info" ]; then
-    repo_root="${git_info%%$'\n'*}"
-    common_dir="${git_info#*$'\n'}"
-    [ "$common_dir" != "$git_info" ] || common_dir=""
-  fi
+  goldband_git_paths
+  repo_root="$GOLDBAND_REPO_ROOT"
+  common_dir="$GOLDBAND_COMMON_DIR"
 
   case "$GOLDBAND_STDIN_HOOKS" in
     *" $hook_name "*) ;;
