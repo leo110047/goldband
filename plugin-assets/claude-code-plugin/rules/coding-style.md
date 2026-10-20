@@ -81,7 +81,9 @@ Advisory-only checks:
 - Claude and Codex PostToolUse checks, including shell writes, are advisory.
 - `.goldband-no-style-gate` is a visible repository opt-out for the gate and live advice.
   `GOLDBAND_STYLE_GATE=0` is a logged temporary bypass.
-- A repository-local `core.hooksPath` overrides the global hook.
+- A `.zshenv` block forces the global hook ahead of a repository-local
+  `core.hooksPath` for Git started from zsh; the global hook then runs the
+  repository's own hook of the same name.
 
 ## Advisory Engineering Guidance
 

@@ -3,22 +3,14 @@ set -euo pipefail
 
 hook_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_hook_lib="$hook_dir/lib/project-hook.sh"
-repo_root="$(pwd)"
-git_common_dir_value=""
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 message_file="${1:?missing commit message file}"
-
-git_info="$(git rev-parse --show-toplevel --git-common-dir 2>/dev/null || true)"
-if [ -n "$git_info" ]; then
-  repo_root="${git_info%%$'\n'*}"
-  git_common_dir_value="${git_info#*$'\n'}"
-  [ "$git_common_dir_value" != "$git_info" ] || git_common_dir_value=""
-fi
 
 [ -f "$project_hook_lib" ] && source "$project_hook_lib"
 
 run_project_commit_msg() {
-  declare -F goldband_run_project_hook >/dev/null || return 0
-  goldband_run_project_hook "$repo_root" "$hook_dir" "$git_common_dir_value" "commit-msg" "$message_file"
+  declare -F goldband_chain_hooks >/dev/null || return 0
+  goldband_chain_hooks "$hook_dir" "commit-msg" "$message_file"
 }
 
 run_goldband_commit_msg() {

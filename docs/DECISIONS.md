@@ -2020,3 +2020,29 @@ are neither checked nor counted, and `hooks/fixtures/` is excluded.
 The check is deliberately lenient: a common name mentioned elsewhere counts as
 used, and an export that tests import without exercising still passes. It
 guards against orphaned exports, not against dead code that review must judge.
+
+## 2026-10-20: The Global Git Hook Runs Ahead of Repository-Local Hook Paths
+
+Decision: `./install.sh style-gate` adds a marked block to
+`${ZDOTDIR:-$HOME}/.zshenv` that appends `core.hooksPath=<installed hook dir>`
+to Git's environment configuration. The installed hooks chain to a preserved
+`<name>.local` global hook and then to the repository's own hook, read from
+the repository- or worktree-level `core.hooksPath` or `<git common dir>/hooks`,
+with the environment override removed.
+
+A repository-local `core.hooksPath` outranks the global one, so repositories
+that ship their own hook directory skipped the style gate entirely. Those
+repositories re-assert their local setting from install scripts and from their
+own hooks, so moving the setting aside per repository does not hold, and it
+does not cover repositories created later. Git environment configuration is the
+only configuration level above the repository's. Removing the override before
+running chained hooks keeps hooks that check `git config core.hooksPath`
+working unchanged.
+
+`.zshenv` covers interactive and non-interactive zsh and the agent shells
+started from them. Git started outside such a shell, such as a GUI application
+launched from the Dock, keeps the repository-local behavior; a login-session
+environment was not added. Only the client-side hooks listed in
+`OPERATIONS.md` are chained; `push-to-checkout` is excluded because its
+presence replaces Git's built-in `updateInstead` check, and per-ref hooks such
+as `reference-transaction` are excluded to avoid a process per ref update.

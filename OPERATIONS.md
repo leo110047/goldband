@@ -107,7 +107,16 @@ Install or refresh the global git style gate:
 ./install.sh style-gate
 ```
 
-The installed `core.hooksPath` is `~/.config/goldband/git-hooks`.
+The installed `core.hooksPath` is `~/.config/goldband/git-hooks`. The same
+command adds a marked block to `${ZDOTDIR:-$HOME}/.zshenv` that appends
+`core.hooksPath=<that directory>` to Git's environment configuration
+(`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>`). Environment
+configuration takes precedence over repository-local configuration, so every
+Git command started from zsh runs the goldband hooks, including repositories
+that set their own `core.hooksPath`. It takes effect in shells started after
+installation. Git started without that environment, such as a GUI application
+launched outside a shell, follows the repository-local `core.hooksPath` and
+skips goldband.
 
 Default install packs do not change global git settings; run `style-gate`
 explicitly when you want the machine-wide hook. The pre-commit hook checks only
@@ -126,16 +135,26 @@ Large generated text files use the exact-path contract documented in
 16 MB generated-text hard limit. The exception does not replace the
 project-specific regeneration/drift check.
 
-When the global hook is active, goldband runs first. After the goldband
-pre-commit or commit-msg gate passes or soft-skips, it looks for an executable
-project hook in the repo's default git hook directory:
+goldband installs `pre-commit` and `commit-msg`, which run the goldband gate
+first, and a chain-only hook for each of `applypatch-msg`, `pre-applypatch`,
+`post-applypatch`, `pre-merge-commit`, `prepare-commit-msg`, `post-commit`,
+`pre-rebase`, `post-checkout`, `post-merge`, `pre-push`, `post-rewrite`,
+`pre-auto-gc`, and `sendemail-validate`. After the goldband gate passes or
+soft-skips, each hook runs, in order and stopping at the first failure:
 
-- `.git/hooks/pre-commit`
-- `.git/hooks/commit-msg`
+1. `<installed hook dir>/<name>.local`, when executable. Installation moves a
+   non-goldband file found at `<installed hook dir>/<name>` (for example a Git
+   LFS hook) to `<name>.local`; uninstall moves it back.
+2. The repository's own `<name>` hook, when executable. Its directory is the
+   repository- or worktree-level `core.hooksPath`, resolved against the
+   working tree root, otherwise `<git common dir>/hooks`.
 
-If that project hook exists, goldband runs it next. If it does not exist, the
-hook chain ends without requiring any project configuration. There is no order
-setting; goldband-first is the default contract.
+Chained hooks receive the original arguments; `pre-push` and `post-rewrite`
+standard input is replayed to each of them. They run with the goldband
+environment override removed, so `git config core.hooksPath` inside them
+reports the repository's value. Other hook names, including
+`push-to-checkout`, `reference-transaction`, and server-side hooks, are not
+chained.
 
 This repository's project style gate
 (`scripts/check-goldband-project-style-gate.mjs --staged`) selects fast
@@ -151,8 +170,8 @@ command with `GOLDBAND_STYLE_GATE=0`.
 Temporary bypasses print a warning and write a local log under
 `${XDG_STATE_HOME:-$HOME/.local/state}/goldband/style-gate-bypass.log`.
 
-A repository-local `core.hooksPath` replaces the global goldband hook; that
-project hook owns the chain and must invoke goldband to run both checks.
+Uninstall removes the `.zshenv` block, the global `core.hooksPath`, and the
+unmodified goldband-owned hook files.
 
 ## Plugin and Installer Distribution
 

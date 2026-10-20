@@ -22,6 +22,7 @@ CLAUDE_SHELL_DIR="$CLAUDE_DIR/shell"
 SHELL_UPDATE_BIN="$CLAUDE_BIN_DIR/goldband-self-update"
 SHELL_LAUNCHERS_FILE="$CLAUDE_SHELL_DIR/goldband-launchers.sh"
 ZSHRC_FILE="${ZDOTDIR:-$HOME}/.zshrc"
+ZSHENV_FILE="${ZDOTDIR:-$HOME}/.zshenv"
 CODEX_DIR="$HOME/.codex"
 CODEX_CONFIG_FILE="$CODEX_DIR/config.toml"
 if [ -z "${CODEX_REQUIREMENTS_FILE+x}" ]; then
@@ -149,6 +150,7 @@ load_install_modules() {
         "$REPO_DIR/shell/install/launchers.sh" \
         "$REPO_DIR/shell/install/workflow.sh" \
         "$REPO_DIR/shell/install/profiles.sh" \
+        "$REPO_DIR/shell/install/style-gate.sh" \
         "$REPO_DIR/shell/install/app-support-status.sh" \
         "$REPO_DIR/shell/install/knowledge-status.sh" \
         "$REPO_DIR/shell/install/workflow-status.sh" \

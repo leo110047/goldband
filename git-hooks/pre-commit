@@ -10,15 +10,7 @@ if [ -f "$hook_dir/.goldband-source" ]; then
   fi
 fi
 project_hook_lib="$hook_dir/lib/project-hook.sh"
-repo_root="$(pwd)"
-git_common_dir_value=""
-
-git_info="$(git rev-parse --show-toplevel --git-common-dir 2>/dev/null || true)"
-if [ -n "$git_info" ]; then
-  repo_root="${git_info%%$'\n'*}"
-  git_common_dir_value="${git_info#*$'\n'}"
-  [ "$git_common_dir_value" != "$git_info" ] || git_common_dir_value=""
-fi
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
 [ -f "$project_hook_lib" ] && source "$project_hook_lib"
 
@@ -38,8 +30,8 @@ block_managed_worktree_commit() {
 }
 
 run_project_pre_commit() {
-  declare -F goldband_run_project_hook >/dev/null || return 0
-  goldband_run_project_hook "$repo_root" "$hook_dir" "$git_common_dir_value" "pre-commit"
+  declare -F goldband_chain_hooks >/dev/null || return 0
+  goldband_chain_hooks "$hook_dir" "pre-commit"
 }
 
 run_goldband_pre_commit() {

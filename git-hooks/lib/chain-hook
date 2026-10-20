@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Installed under each chained hook name; goldband adds no checks of its own.
+hook_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$hook_dir/lib/project-hook.sh"
+goldband_chain_hooks "$hook_dir" "$(basename "${BASH_SOURCE[0]}")" "$@"
