@@ -2071,3 +2071,91 @@ commitlint skips Git- and tool-generated subjects by default. Repositories
 with their own commit-msg hook define formats goldband cannot know, such as
 extra types or required trailers, and running both checks would reject
 messages the repository accepts.
+
+## 2026-10-21: Agent Bypass, Secret Push, and Configuration Gates
+
+Decision: goldband adds four blocking gates with one rule for all of them: a
+check that cannot run reports failure, never success.
+
+- Gate A runs in Claude and Codex PreToolUse and denies agent commands that
+  disable or relax goldband or project hooks. It does not inspect commands a
+  person runs. Hooks cannot tell who started a Git process, and a person's
+  explicit `--no-verify` is the escape hatch Git defines; the risk being
+  closed is an agent removing the check that reported its own mistake. The
+  threat is an agent taking the direct route (`--no-verify`, `HUSKY=0`,
+  `core.hooksPath`), including through shells, `env`, wrappers, and aliases;
+  deliberate obfuscation is not. Gate A judges only literal text: arguments,
+  values, and program names computed when the command runs (`$NAME`,
+  `$(...)`, globs, zsh `=name`, `$IFS` splitting, `eval`) are out of scope,
+  because judging them by their worst value denied ordinary commands such as
+  `git push origin "$(git branch --show-current)"`, and every closed form
+  exposed another. The git hooks themselves, the pre-push secret scan, and CI
+  remain the enforcement. Gate A judges the effect of a value, not the
+  variable name, so tightening settings pass. It reads static command text
+  and is not a sandbox. A Git alias is
+  judged where it is defined, by the bypass its value would run, and again
+  where it is invoked with options, because harmless aliases such as
+  `ci = commit` take `-n` from the invocation. Only that invocation runs
+  `git config --get alias.<name>`, the one read-only lookup that sees every
+  configuration scope; a lookup that fails counts as a bypass. A repository
+  selected with `--git-dir`, `GIT_DIR`, or `GIT_COMMON_DIR` for a hook-running
+  subcommand counts as a bypass, because its unprotected configuration can set
+  `core.hooksPath`. An alias invoked without options is not looked up: every
+  non-builtin subcommand would otherwise cost a Git process, and its
+  definition was already judged where an agent could have written it. The
+  lookups per call are capped at 32 and 2 seconds and fail closed past that,
+  because Codex lets a call continue when its hook times out. Gate G write
+  targets resolve literal assignments made earlier in the same command;
+  variables from the caller's environment stay out of scope, since a hook
+  cannot know the shell's state.
+- Hidden Unicode and multi-language skipped tests run at pre-commit on staged
+  added lines read from the raw diff, so repository attributes and diff
+  drivers cannot hide content. Only syntactically unconditional skips block;
+  forms that can be legitimate conditions advise, because goldband does not
+  model control flow in each language.
+- The pre-push secret gate scans the pushed history with gitleaks, because the
+  pre-commit secret scan sees only staged files. For a new branch or an
+  unknown remote SHA the range excludes only SHAs the destination advertises
+  now (`git ls-remote`), never local tracking refs, which can be stale or
+  belong to another remote; a failed `ls-remote` scans the full reachable
+  history. Only the boundary commits of that walk are passed on, because a
+  destination can advertise more SHAs than one argument holds; a boundary
+  that is still too large also falls back to the full reachable history. Rules come from the installed baseline (gitleaks defaults
+  extended), verified against its checksum in `.goldband-source`, because a
+  valid but rule-less file would load and pass silently. The pushed repository
+  cannot replace the rules; its `.gitleaksignore` is the only exception list,
+  inline `gitleaks:allow` is ignored, and Git color and root-commit settings
+  are forced because they otherwise make gitleaks parse nothing and exit 0.
+  The gate's Git processes ignore replace refs and grafts, because they
+  change the history `git log` shows while push sends the real objects.
+  Merge commits are scanned as remerge diffs, because `git log -p` otherwise
+  omits what a merge commit itself adds, and a first-parent diff re-reports
+  side-branch findings under the merge commit's fingerprint, which the
+  repository's existing `.gitleaksignore` entries do not match. Git skips
+  remerge diffs for octopus merges, so a push containing one is a scan
+  failure rather than a partial scan.
+  The gate is independent of the style gate opt-outs and has its own logged
+  bypass, `GOLDBAND_SECRET_GATE=0`.
+- Gate G protects agent, hook, MCP, goldband, and gitleaks configuration with
+  the same surface list and decision module as Gate A. The shared contract is
+  that an agent cannot change these files without user authorization; the
+  confirmation flow differs by host. Claude asks, except that it denies in
+  `bypassPermissions`, where the documentation does not say an `ask` is
+  honored, and it stays silent for file-tool writes Claude's own protected-path
+  prompt already covers in default, acceptEdits, and plan modes. Codex denies,
+  because its hooks parse but do not support `ask` and a hook error lets the
+  tool call continue. Codex also denies project `.codex/` files, although it
+  keeps them read-only itself, because that protection does not hold under
+  `--sandbox danger-full-access`, which managed worktrees use. The recorded
+  Goldband installer is authorized as one operation, identified by real path
+  from `.goldband-source`, not by command name. Git configuration files,
+  installed Claude plugins, and `~/.codex/hooks/` are protected because a
+  direct write there disables hooks or runs code as a hook without any
+  command Gate A inspects. Shell targets with glob characters count every
+  existing path they match, quoted or not, since over-matching is the safe
+  direction for a static check. Glob walks, target paths, and tracked working
+  directories share one budget per tool call; exceeding it returns the Gate G
+  response rather than running past the Codex hook timeout, which would let
+  the call continue. Glob walks run in a child process killed at a 2-second
+  deadline, because a directory read can block, as on a macOS
+  privacy-protected folder, where no in-process check interrupts it.

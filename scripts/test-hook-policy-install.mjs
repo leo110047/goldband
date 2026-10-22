@@ -41,6 +41,15 @@ function verifyInstall(mode) {
     'shell-output.js',
     'shell-invocation.js',
     'style-gate-advisory.js',
+    'gate-protection.js',
+    'gate-bypass-rules.js',
+    'protected-surfaces.js',
+    'shell-write-targets.js',
+    'shell-braces.js',
+    'shell-word-syntax.js',
+    'git-aliases.js',
+    'git-config-args.js',
+    'git-no-verify.js',
   ]) {
     assert.equal(
       fs.readFileSync(path.join(codex, file), 'utf8'),
@@ -50,20 +59,30 @@ function verifyInstall(mode) {
       ),
     );
   }
-  const replay = spawnSync(
-    process.execPath,
-    [
-      'scripts/test-hook-policy-parity.mjs',
-      path.join(home, '.claude/hooks/scripts/hooks/hook-router.js'),
-      path.join(codex, 'hook-router.js'),
-    ],
-    { cwd: root, env, encoding: 'utf8' },
-  );
-  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  replayInstalledPolicies(home, codex, env);
   verifyInstalledStyleAdvisory(home, env, mode);
   console.log(
     `[OK] ${mode} install preserves shared hook policy in a temporary HOME`,
   );
+}
+
+// Installed routers run the same shared policy cases as the source routers.
+function replayInstalledPolicies(home, codex, env) {
+  for (const script of [
+    'scripts/test-hook-policy-parity.mjs',
+    'scripts/test-gate-protection.mjs',
+  ]) {
+    const replay = spawnSync(
+      process.execPath,
+      [
+        script,
+        path.join(home, '.claude/hooks/scripts/hooks/hook-router.js'),
+        path.join(codex, 'hook-router.js'),
+      ],
+      { cwd: root, env, encoding: 'utf8' },
+    );
+    assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  }
 }
 
 // Installed routers must reach the checker: linked installs through the source

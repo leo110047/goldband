@@ -92,7 +92,7 @@ show_help_claude_options() {
     echo "  rules       只安裝 rules"
     echo "  hooks       只安裝 hooks"
     echo "  claude-statusline 選配 Goldband Claude 狀態列（取代目前樣式）"
-    echo "  style-gate  安裝全域 git style gate（pre-commit + commit-msg）"
+    echo "  style-gate  安裝全域 git style gate（pre-commit + commit-msg）與 pre-push secret gate"
     echo "  launchers   安裝 shell 啟動整合（claude/codex 啟動前自動檢查更新）"
 }
 

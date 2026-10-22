@@ -2746,5 +2746,2052 @@
         "Private Key"
       ]
     }
+  },
+  {
+    "id": "gate-a-block-git-no-verify",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-no-verify",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-git-no-verify"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git commit -anm \"feat: x\""
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-no-verify)",
+        "stop and ask the user"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-git-no-verify",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-no-verify",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-git-no-verify-lookalike"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git commit -m \"docs: explain --no-verify\" && git push -n"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-git-hookspath-override",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-hookspath-override",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-git-hookspath-override"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git -c core.hooksPath=/dev/null commit -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-hookspath-override)",
+        "stop and ask the user"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-git-hookspath-override",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-hookspath-override",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-git-hookspath-override-lookalike"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git -c user.name=x commit -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-git-hookspath-config",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-hookspath-config",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-git-hookspath-config"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git config --global core.hooksPath /tmp/hooks"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-hookspath-config)",
+        "stop and ask the user"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-git-hookspath-config",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-hookspath-config",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-git-hookspath-config-lookalike"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git config --get core.hooksPath"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-git-config-env-override",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-config-env-override",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-git-config-env-override"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "env -u GIT_CONFIG_COUNT git commit -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-config-env-override)",
+        "stop and ask the user"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-git-config-env-override",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-config-env-override",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-git-config-env-override-lookalike"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "GIT_CONFIG_PARAMETERS=\"'color.ui'='always'\" git status"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-goldband-gate-disabled",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "goldband-gate-disabled",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-goldband-gate-disabled"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "bash -c 'GOLDBAND_STYLE_GATE=0 git commit -m x'"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(goldband-gate-disabled)",
+        "stop and ask the user"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-goldband-gate-disabled",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "goldband-gate-disabled",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-goldband-gate-disabled-lookalike"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "GOLDBAND_STYLE_GATE=1 GOLDBAND_PROJECT_HOOK_RUNNING=0 git commit -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-style-limit-relaxed",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "style-limit-relaxed",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-style-limit-relaxed"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "export GOLDBAND_MAX_FILE_LINES=601"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(style-limit-relaxed)",
+        "stop and ask the user"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-style-limit-relaxed",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "style-limit-relaxed",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-style-limit-relaxed-lookalike"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "GOLDBAND_MAX_FILE_LINES=500 git commit -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-project-hooks-disabled",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "project-hooks-disabled",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-project-hooks-disabled"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "npm test && SKIP=lint git commit -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(project-hooks-disabled)",
+        "stop and ask the user"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-project-hooks-disabled",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "project-hooks-disabled",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-project-hooks-disabled-lookalike"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "SKIP= git commit -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-no-style-gate-marker",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "no-style-gate-marker",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-no-style-gate-marker"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "touch .goldband-no-style-gate"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(no-style-gate-marker)",
+        "stop and ask the user"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-no-style-gate-marker",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "no-style-gate-marker",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-no-style-gate-marker-lookalike"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "rm .goldband-no-style-gate"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-claude-settings",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "claude-settings",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-claude-settings"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": ".claude/settings.json",
+        "content": "{}",
+        "old_string": "a",
+        "new_string": "b"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-allow-claude-settings",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "claude-settings",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-g-claude-settings-unaffected"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": ".claude/settings.json",
+        "content": "{}",
+        "old_string": "a",
+        "new_string": "b"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "default"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-claude-user-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "claude-user-config",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-claude-user-config"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "echo {} > ~/.claude.json"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "default"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-allow-claude-user-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "claude-user-config",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-g-claude-user-config-unaffected"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "cat ~/.claude.json"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-claude-hooks",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "claude-hooks",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-claude-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "cp hook.sh .claude/hooks/pre.sh"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "acceptEdits"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-allow-claude-hooks",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "claude-hooks",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-g-claude-hooks-unaffected"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git diff -- .claude/hooks/pre.sh"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-mcp-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "mcp-config",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-mcp-config"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": ".mcp.json",
+        "content": "{}",
+        "old_string": "a",
+        "new_string": "b"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-allow-mcp-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "mcp-config",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-g-mcp-config-unaffected"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "cp .mcp.json /tmp/mcp-backup.json"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-codex-user-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "codex-user-config",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-codex-user-config"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "sed -i '' 's/a/b/' ~/.codex/config.toml"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "default"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-allow-codex-user-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "codex-user-config",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-g-codex-user-config-unaffected"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "grep model ~/.codex/config.toml"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-codex-project-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "codex-project-config",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-codex-project-config"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": ".codex/config.toml",
+        "content": "{}",
+        "old_string": "a",
+        "new_string": "b"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "default"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-allow-codex-project-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "codex-project-config",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-g-codex-project-config-unaffected"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": ".codex/notes.md",
+        "content": "{}",
+        "old_string": "a",
+        "new_string": "b"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-goldband-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "goldband-config",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-goldband-config"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "ln -sf x ~/.config/goldband/y"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "plan"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-allow-goldband-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "goldband-config",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-g-goldband-config-unaffected"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "ls ~/.config/goldband"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-zsh-environment",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "zsh-environment",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-zsh-environment"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "echo export X=1 >> ~/.zshenv"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "default"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-allow-zsh-environment",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "zsh-environment",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-g-zsh-environment-unaffected"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "cat ~/.zshenv"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-gitleaks-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "gitleaks-config",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-gitleaks-config"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": ".gitleaksignore",
+        "content": "{}",
+        "old_string": "a",
+        "new_string": "b"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "default"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-allow-gitleaks-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "gitleaks-config",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-g-gitleaks-config-unaffected"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": "AGENTS.md",
+        "content": "{}",
+        "old_string": "a",
+        "new_string": "b"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-git-include-path-override",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-hookspath-override",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-git-include-path-override"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git -c include.path=/tmp/h.cfg commit -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-hookspath-override)",
+        "stop and ask the user"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-git-include-path-read",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-hookspath-config",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-git-include-path-read"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git config --get include.path"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-claude-settings-case-folded",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "claude-settings",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-case-insensitive-surface"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": ".Claude/Settings.json",
+        "content": "{}"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "default"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-claude-settings-unlisted-copy",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "claude-settings",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-recursive-copy-unlisted-source"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "cp -R missing/ out/"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-allow-gitleaks-config-truncate",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "gitleaks-config",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-g-truncate-ordinary-file"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "truncate -s 0 log.txt && dd if=notes.md of=out.bin"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "pretool-block-gate-a-bypass",
+    "coverage": {
+      "category": "pretool-policy",
+      "policy": "gate-a-bypass",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-always-on"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git push --no-verify"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "bypassPermissions"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-no-verify)"
+      ]
+    }
+  },
+  {
+    "id": "pretool-allow-gate-a-push-dry-run",
+    "coverage": {
+      "category": "pretool-policy",
+      "policy": "gate-a-bypass",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-push-dry-run"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git push -n"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "bypassPermissions"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "pretool-block-gate-g-bypass-permissions",
+    "coverage": {
+      "category": "pretool-policy",
+      "policy": "gate-g-protected-config",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-g-bypass-permissions-deny"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": ".claude/settings.json",
+        "content": "{}",
+        "old_string": "a",
+        "new_string": "b"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "bypassPermissions"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate G protects",
+        ".claude/settings.json"
+      ]
+    }
+  },
+  {
+    "id": "pretool-allow-gate-g-builtin-prompt",
+    "coverage": {
+      "category": "pretool-policy",
+      "policy": "gate-g-protected-config",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-g-no-duplicate-builtin-prompt"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": ".claude/settings.json",
+        "content": "{}",
+        "old_string": "a",
+        "new_string": "b"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "acceptEdits"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-git-global-config-relocated",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-global-config-relocated",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-global-config-relocation"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git commit -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-global-config-relocated)"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-git-global-config-relocated",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-global-config-relocated",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-global-config-read"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "GIT_CONFIG_GLOBAL=~/.gitconfig git config --get user.name && GIT_CONFIG_NOSYSTEM=1 git status"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-shell-analysis-failed",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "shell-analysis-failed",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-unanalyzable-command"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git commit --no-verify -m x; env -S 'echo $HOME' true"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "bypassPermissions"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A could not analyze",
+        "(shell-analysis-failed)"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-shell-analysis-failed",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "shell-analysis-failed",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-analyzable-env-split"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "env -S 'echo hi' true"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-env-option-cluster",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-config-env-override",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-env-getopt-cluster"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "env -vi git commit -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-config-env-override)"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-loop-body-assignment",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "project-hooks-disabled",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-loop-body-keyword"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "for i in 1; do HUSKY=0 git commit -m x; done"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(project-hooks-disabled)"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-loop-body",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "project-hooks-disabled",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-loop-body-lookalike"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "for f in *.md; do echo \"$f\"; done"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-sudo-assignment",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "goldband-gate-disabled",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-sudo-assignment"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "sudo GOLDBAND_SECRET_GATE=0 git push"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(goldband-gate-disabled)"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-goldband-hook-mode-change",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "goldband-config",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-metadata-writer"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "chmod -x ~/.config/goldband/git-hooks/pre-commit"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "default"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-env-chdir-nested-shell",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "claude-user-config",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-env-chdir-nested"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "env -C ~ sh -c \"echo {} > .claude.json\""
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "default"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-git-alias-bypass",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-alias-bypass",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-git-alias-no-verify"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git -c alias.c=\"commit --no-verify\" c"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-alias-bypass)"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-git-alias-bypass",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-alias-bypass",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-git-alias-ordinary"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git config --global alias.st status"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-git-config-edit",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-hookspath-config",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-git-config-edit"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "GIT_EDITOR='sed -i s/a/b/' git config --global --edit"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-hookspath-config)"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-precommand-modifier",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-no-verify",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-zsh-precommand-modifier"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "noglob git commit --no-verify -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-no-verify)"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-unknown-launcher",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-no-verify",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-unknown-launcher-argv"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "arch -arm64 git commit -n -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-no-verify)"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-exported-home",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-global-config-relocated",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-inherited-relocation"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "export HOME=/tmp/h; git commit -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-global-config-relocated)"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-launcher-home",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-global-config-relocated",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-inherited-relocation"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "HOME=/tmp/h sh -c 'git commit -m x'"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-global-config-relocated)"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-claude-plugins",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "claude-plugins",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-claude-plugins"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "echo '{}' > ~/.claude/plugins/installed_plugins.json"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "default"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-allow-claude-plugins",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "claude-plugins",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-g-claude-plugins-data"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "echo x > ~/.claude/plugins/data/p/state.json"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-git-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "git-config",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-git-config-direct-write"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "echo '[core] hooksPath=/dev/null' >> .git/config"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "default"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-allow-git-config",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "git-config",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-g-git-config-read"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "cat .git/config"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "auto"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-codex-user-hooks",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "codex-user-config",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-codex-user-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "printf 'process.exit(0)' > ~/.codex/hooks/hook-router.js"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "default"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-g-ask-brace-target",
+    "coverage": {
+      "category": "gate-g",
+      "policy": "claude-settings",
+      "expectedDecision": "allow",
+      "variant": "positive",
+      "regressionSource": "gate-g-brace-expanded-target"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "echo '{}' | tee .claude/settings.{json,bak}"
+      },
+      "cwd": "/tmp/goldband-replay-project",
+      "permission_mode": "default"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutIncludes": [
+        "\"permissionDecision\":\"ask\"",
+        "Gate G protects"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-git-dir-relocated",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-dir-relocated",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-git-dir-hook-command"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "GIT_DIR=/tmp/other.git git commit -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-dir-relocated)"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-git-dir-read",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-dir-relocated",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-git-dir-read-command"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git --git-dir=/tmp/other.git log --oneline"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-block-alias-invocation",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-alias-bypass",
+      "expectedDecision": "block",
+      "variant": "positive",
+      "regressionSource": "gate-a-alias-invoked-with-no-verify"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git config alias.zz commit && git zz -n -m x"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 2,
+      "decision": "block",
+      "stderrIncludes": [
+        "Gate A blocked a hook bypass",
+        "(git-alias-bypass)"
+      ]
+    }
+  },
+  {
+    "id": "gate-a-allow-alias-invocation",
+    "coverage": {
+      "category": "gate-a",
+      "policy": "git-alias-bypass",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "gate-a-alias-invoked-with-count"
+    },
+    "env": {
+      "GIT_CONFIG_COUNT": "1",
+      "GIT_CONFIG_KEY_0": "core.hooksPath",
+      "GIT_CONFIG_VALUE_0": "/goldband/git-hooks"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git config alias.zz log && git zz -n 3"
+      },
+      "cwd": "/tmp/goldband-replay-project"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow",
+      "stdoutExcludes": [
+        "permissionDecision"
+      ]
+    }
   }
 ]

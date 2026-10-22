@@ -1,0 +1,8 @@
+# goldband pre-push secret gate baseline rules. The installed copy next to the
+# pre-push hook is the only gitleaks configuration the gate uses; repository
+# .gitleaks.toml files and GITLEAKS_CONFIG are ignored. Exceptions belong in
+# the pushed repository's .gitleaksignore.
+title = "goldband pre-push baseline"
+
+[extend]
+useDefault = true

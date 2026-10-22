@@ -57,6 +57,9 @@ const tests = [
   ],
 ];
 
+// A pushed-ref line with an all-zero local SHA, which the secret gate skips.
+const DELETION_LINE = `(delete) ${'0'.repeat(40)} refs/heads/main ${'1'.repeat(40)}`;
+
 for (const [name, test] of tests) {
   test();
   console.log(`ok - ${name}`);
@@ -89,6 +92,22 @@ function testMaterializedInstall() {
     assertFile(path.join(installedHooks, hook));
     assertIncludes(ownershipRecord.join('\n'), `file\t${hook}\t`);
   }
+  for (const file of ['pre-push', 'lib/gitleaks.toml']) {
+    assertEqual(
+      readText(installedHooks, file),
+      readText(path.join(fixture.root, 'git-hooks'), file),
+    );
+    assertIncludes(ownershipRecord.join('\n'), `file\t${file}\t`);
+  }
+  assertEqual(
+    fs.statSync(path.join(installedHooks, 'pre-push')).mode & 0o111,
+    0o111,
+  );
+  assertEqual(
+    fs.statSync(path.join(installedHooks, 'lib', 'gitleaks.toml')).mode & 0o111,
+    0,
+  );
+  assertIncludes(result.stdout, 'gitleaks');
   assertIncludes(
     fs.readFileSync(path.join(fixture.home, '.zshenv'), 'utf8'),
     `${installedHooks}/lib/git-config-env.sh`,
@@ -346,12 +365,12 @@ function testChainedStdin() {
   const result = run(path.join(installedHooks, 'pre-push'), ['origin', 'url'], {
     cwd: repo,
     env: fixtureEnv(fixture.home),
-    input: 'refs/heads/main 1 refs/heads/main 0\n',
+    input: `${DELETION_LINE}\n`,
   });
   assertEqual(result.status, 0, result.stdout + result.stderr);
   assertEqual(
     fs.readFileSync(log, 'utf8'),
-    'preserved refs/heads/main 1 refs/heads/main 0\nproject refs/heads/main 1 refs/heads/main 0\n',
+    `preserved ${DELETION_LINE}\nproject ${DELETION_LINE}\n`,
   );
 }
 
@@ -411,7 +430,7 @@ function testFailingChainedHookStops() {
   const push = run(path.join(installedHooks, 'pre-push'), ['origin', 'url'], {
     cwd: repo,
     env: fixtureEnv(fixture.home),
-    input: 'refs/heads/main 1 refs/heads/main 0\n',
+    input: `${DELETION_LINE}\n`,
   });
   assertEqual(push.status, 3, push.stdout + push.stderr);
   assertEqual(fs.existsSync(log), false);
@@ -539,7 +558,7 @@ function createInstallerFixture() {
   fs.cpSync(path.join(repoRoot, 'git-hooks'), path.join(root, 'git-hooks'), {
     recursive: true,
     filter: (source) =>
-      !['post-checkout', 'post-commit', 'post-merge', 'pre-push'].includes(
+      !['post-checkout', 'post-commit', 'post-merge'].includes(
         path.basename(source),
       ),
   });

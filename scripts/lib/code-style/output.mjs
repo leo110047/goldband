@@ -89,8 +89,9 @@ function formatIssue(issue) {
 }
 
 function formatIssueLine(issue) {
+  const column = issue.line && issue.column ? `:${issue.column}` : '';
   const location = issue.file
-    ? `${issue.file}${issue.line ? `:${issue.line}` : ''}`
+    ? `${issue.file}${issue.line ? `:${issue.line}` : ''}${column}`
     : '(repo)';
   return `[${issue.rule}] ${location}: ${issue.message}`;
 }

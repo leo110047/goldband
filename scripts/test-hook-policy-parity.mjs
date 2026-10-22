@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import secretPatterns from '../hooks/scripts/lib/hook-router/secret-patterns.js';
+import shellCommandsModule from '../hooks/scripts/lib/hook-router/shell-commands.js';
 import {
   shellAnalysisFailureCases,
   shellPolicyCases,
@@ -342,6 +343,8 @@ console.log(
 );
 
 const inactiveState = path.join(dataDir, 'inactive.json');
+// An unknown launcher naming a Gate G writer in every argv word.
+const GATE_A_BUDGET_CASES = new Set(['large candidate argv']);
 fs.writeFileSync(inactiveState, JSON.stringify({ modes: {} }));
 for (const [name, command] of shellAnalysisFailureCases) {
   for (const hook_event_name of ['PreToolUse', 'PermissionRequest']) {
@@ -358,14 +361,27 @@ for (const [name, command] of shellAnalysisFailureCases) {
     HOOK_ROUTER_MODE_STATE_FILE: carefulState,
   });
   assert.equal(active.decision, 'block', name);
-  assert.match(active.message, /Unable to analyze/, name);
-  assert.equal(
-    run('claude', input, { HOOK_ROUTER_MODE_STATE_FILE: inactiveState })
-      .decision,
-    'allow',
-    name,
-  );
+  assert.match(active.message, /Unable to analyze|could not analyze/, name);
+  // Gate A denies in every mode when the shared parser fails or its own
+  // launcher scan exceeds its budget; other policies' candidate budgets stay
+  // a careful-mode concern.
+  const inactive = run('claude', input, {
+    HOOK_ROUTER_MODE_STATE_FILE: inactiveState,
+  });
+  if (parseFails(command) || GATE_A_BUDGET_CASES.has(name)) {
+    assert.equal(inactive.decision, 'block', name);
+    assert.match(inactive.message, /\(shell-analysis-failed\)/, name);
+  } else assert.equal(inactive.decision, 'allow', name);
 }
 console.log(
-  '[OK] Analysis failures return native denial; inactive careful mode stays inactive',
+  '[OK] Analysis failures return native denial; Gate A denies unparseable commands outside careful mode',
 );
+
+function parseFails(command) {
+  try {
+    shellCommandsModule.shellCommands(command);
+    return false;
+  } catch {
+    return true;
+  }
+}

@@ -24,7 +24,8 @@ must not raise a threshold or add a bypass only to make one change pass.
 | Large text/binary files | text 1 MB, binary 512 KB; declared generated text up to 16 MB | `check-code-style.mjs` |
 | Escape hatches | n/a | staged added-line scan |
 | Focused tests | n/a | staged added-line scan |
-| Skipped tests | n/a | staged added-line scan |
+| Skipped tests | JS/TS; Python unconditional skip decorators; Go and Rust skips advise | staged added-line scan |
+| Hidden Unicode | bidi controls and tag characters anywhere; zero-width characters in agent instruction files | staged added-line scan, including style-excluded paths |
 | `debugger` and non-CLI `console.log` | n/a | staged added-line scan |
 
 Currently blocked escape hatches:
@@ -63,6 +64,16 @@ Advisory-only checks:
 ## Enforcement Surfaces
 
 - The git style gate is opt-in and checks staged files before commit.
+- Staged added lines are read from the raw diff (`--text --no-ext-diff
+  --no-textconv`); a failed read blocks the commit as a check failure.
+- The opt-in `pre-push` hook scans the pushed range with gitleaks and the
+  installed baseline rules, independent of the style gate opt-outs; a scan
+  that cannot complete blocks the push. Only `.gitleaksignore` grants
+  exceptions. `GOLDBAND_SECRET_GATE=0` is a logged temporary bypass.
+- Claude and Codex PreToolUse deny agent commands that disable or relax these
+  hooks and require user authorization for writes to agent, hook, MCP,
+  goldband, and gitleaks configuration. `OPERATIONS.md` defines both
+  contracts and host responses.
 - The installed global hooks are materialized under
   `${XDG_CONFIG_HOME:-$HOME/.config}/goldband/git-hooks`; `core.hooksPath`
   never points at the Goldband source checkout.

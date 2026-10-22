@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Scans the commits each pushed ref would send with gitleaks and the baseline
+# rules installed next to this hook, then chains to the preserved global hook
+# and the repository's own pre-push hook with the same standard input. The
+# secret gate does not honor the style gate opt-outs.
+
+hook_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$hook_dir/lib/project-hook.sh"
+
+remote_name="${1:-}"
+remote_url="${2:-$remote_name}"
+baseline="$hook_dir/lib/gitleaks.toml"
+goldband_git_paths
+repo_root="$GOLDBAND_REPO_ROOT"
+
+work_dir="$(mktemp -d "${TMPDIR:-/tmp}/goldband-pre-push.XXXXXXXX")"
+# shellcheck disable=SC2064
+trap "rm -rf '$work_dir'" EXIT
+input_file="$work_dir/stdin"
+cat > "$input_file"
+
+advertised_state=unknown
+push_revisions=()
+# Linux caps one argument at 128 KiB, and --log-opts passes the whole range to
+# gitleaks as one argument.
+max_exclusion_bytes=100000
+
+block_scan_failure() {
+  echo "[goldband] BLOCKED: secret scan failed, push not scanned: $1" >&2
+  echo "[goldband] Fix the cause and push again." >&2
+  exit 1
+}
+
+baseline_matches_install_record() {
+  local marker="$hook_dir/.goldband-source"
+  local kind relative checksum bytes actual_checksum actual_bytes
+  [ -f "$marker" ] && [ -f "$baseline" ] || return 1
+  IFS=' ' read -r actual_checksum actual_bytes _ < <(cksum "$baseline")
+  while IFS=$'\t' read -r kind relative checksum bytes _; do
+    if [ "$kind" = "file" ] && [ "$relative" = "lib/gitleaks.toml" ]; then
+      [ "$checksum $bytes" = "$actual_checksum $actual_bytes" ]
+      return
+    fi
+  done < <(sed -n '3,$p' "$marker")
+  return 1
+}
+
+is_zero_sha() {
+  case "$1" in
+    *[!0]* | '') return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# Writes, once per push, the commits the destination currently advertises that
+# also exist locally to $work_dir/advertised, as exclusions for rev-list
+# --stdin (which ignores a command-line --not). Local tracking refs are never
+# consulted. Returns 1 when the destination cannot be listed.
+load_advertised_commits() {
+  local listing="$work_dir/ls-remote"
+  case "$advertised_state" in
+    loaded) return 0 ;;
+    failed) return 1 ;;
+  esac
+  if ! GIT_TERMINAL_PROMPT=0 git ls-remote "$remote_url" > "$listing" 2>/dev/null </dev/null; then
+    advertised_state=failed
+    return 1
+  fi
+  cut -f1 "$listing" | sort -u | sed 's/$/^{commit}/' \
+    | git cat-file --batch-check='%(objectname)' 2>"$work_dir/cat-file.err" \
+    | awk 'NF == 1 { print "^" $1 }' > "$work_dir/advertised" \
+    || block_scan_failure "cannot resolve the commits $remote_name advertises: $(head -n 1 "$work_dir/cat-file.err")"
+  advertised_state=loaded
+}
+
+# Sets push_revisions to the commits reachable from local_sha that the
+# destination does not advertise, or to none. The advertised set goes to
+# rev-list on stdin; only its boundary commits, the advertised commits that
+# parent a pushed commit, are passed on. They exclude exactly what the whole
+# set would, so the range stays small on a destination with many refs. A
+# boundary too large for one argument falls back to the full history.
+set_unadvertised_range() {
+  local local_sha="$1" walk="$work_dir/boundary" bytes sha
+  local -a boundary=()
+  git rev-list --boundary "$local_sha" --stdin \
+    < "$work_dir/advertised" > "$walk" 2>"$work_dir/rev-list.err" \
+    || block_scan_failure "cannot compute the commits pushed from $local_sha:$(head -n 1 "$work_dir/rev-list.err")"
+  if ! grep -qv '^-' "$walk"; then
+    push_revisions=()
+    return 0
+  fi
+  bytes="$(awk '/^-/ { n += length($0) + 1 } END { print n + 0 }' "$walk")"
+  if [ "$bytes" -gt "$max_exclusion_bytes" ]; then
+    echo "[goldband] $remote_name: too many boundary commits to exclude; scanning the full history of $local_sha" >&2
+    push_revisions=("$local_sha")
+    return 0
+  fi
+  while IFS= read -r sha; do
+    boundary+=("$sha")
+  done < <(awk '/^-/ { print substr($0, 2) }' "$walk")
+  push_revisions=("$local_sha")
+  if [ "${#boundary[@]}" -gt 0 ]; then
+    push_revisions+=(--not "${boundary[@]}")
+  fi
+}
+
+# Sets push_revisions to the git revision arguments for the commits one stdin
+# ref would send; none when it sends no commit.
+set_push_range() {
+  local local_sha="$1" remote_sha="$2"
+  if ! is_zero_sha "$remote_sha" && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+    push_revisions=("$remote_sha..$local_sha")
+  elif ! load_advertised_commits; then
+    echo "[goldband] git ls-remote $remote_name failed; scanning the full history of $local_sha" >&2
+    push_revisions=("$local_sha")
+  else
+    set_unadvertised_range "$local_sha"
+  fi
+}
+
+# Error-level gitleaks log lines (ERR, FTL), including git errors it relays.
+has_error_output() {
+  sed $'s/\x1b\\[[0-9;]*m//g' "$1" | grep -Eq '^[^ ]+ (ERR|FTL)( |$)|fatal:'
+}
+
+scan_ref() {
+  local local_ref="$1" range count octopus status=0
+
+  [ "${#push_revisions[@]}" -gt 0 ] || return 0
+  range="${push_revisions[*]}"
+  count="$(git rev-list --count "${push_revisions[@]}" 2>"$work_dir/rev-list.err" </dev/null)" \
+    || block_scan_failure "cannot compute the commits pushed from $local_ref:$(head -n 1 "$work_dir/rev-list.err")"
+  [ "$count" -gt 0 ] || return 0
+  # Git skips remerge diffs for octopus merges, so their own content would
+  # go unscanned.
+  octopus="$(git rev-list --count --min-parents=3 "${push_revisions[@]}" 2>"$work_dir/rev-list.err" </dev/null)" \
+    || block_scan_failure "cannot list the merges pushed from $local_ref:$(head -n 1 "$work_dir/rev-list.err")"
+  [ "$octopus" -eq 0 ] \
+    || block_scan_failure "$octopus octopus merge(s) pushed from $local_ref cannot be scanned; push them as two-parent merges"
+
+  command -v gitleaks >/dev/null 2>&1 \
+    || block_scan_failure "gitleaks not found; install gitleaks (https://github.com/gitleaks/gitleaks)"
+  baseline_matches_install_record \
+    || block_scan_failure "baseline rules missing or modified: $baseline; run ./install.sh style-gate"
+
+  # Colored diffs and hidden root commits make gitleaks parse nothing and pass.
+  # git log omits merge diffs by default; remerge diffs (Git 2.36+) show what a
+  # merge commit adds beyond its automatic merge result.
+  (
+    unset GITLEAKS_CONFIG GITLEAKS_CONFIG_TOML
+    export GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }'color.ui'='never' 'color.diff'='never' 'log.showroot'='true'"
+    exec gitleaks git --no-banner --no-color --verbose --redact --exit-code 3 \
+      --ignore-gitleaks-allow --config "$baseline" \
+      --gitleaks-ignore-path "$repo_root" \
+      --log-opts="--text --no-ext-diff --no-textconv --diff-merges=remerge $range" "$repo_root" </dev/null
+  ) > "$work_dir/findings" 2> "$work_dir/log" || status=$?
+
+  cat "$work_dir/findings" "$work_dir/log" >&2
+  case "$status" in
+    3)
+      echo "[goldband] BLOCKED: gitleaks found secrets in $count commit(s) pushed from $local_ref to $remote_name" >&2
+      echo "[goldband] Remove the secret from those commits and rotate it. Record a reviewed false positive's Fingerprint in .gitleaksignore." >&2
+      exit 1
+      ;;
+    0)
+      if has_error_output "$work_dir/log"; then
+        block_scan_failure "gitleaks reported errors while reading the commits pushed from $local_ref"
+      fi
+      ;;
+    *) block_scan_failure "gitleaks exited with status $status for $local_ref" ;;
+  esac
+}
+
+run_secret_gate() {
+  local local_ref local_sha remote_sha entry state_dir
+  local -a pushed=()
+  if [ "${GOLDBAND_SECRET_GATE:-1}" = "0" ]; then
+    state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/goldband"
+    mkdir -p "$state_dir"
+    printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$repo_root" "GOLDBAND_SECRET_GATE=0" >> "$state_dir/secret-gate-bypass.log"
+    echo "[goldband] WARNING: secret gate bypassed with GOLDBAND_SECRET_GATE=0" >&2
+    return 0
+  fi
+
+  # Collected first so the scans below cannot consume the ref list.
+  while read -r local_ref local_sha _ remote_sha _; do
+    [ -n "${local_sha:-}" ] || continue
+    is_zero_sha "$local_sha" && continue
+    pushed+=("$local_ref $local_sha ${remote_sha:-}")
+  done < "$input_file"
+
+  for entry in "${pushed[@]+"${pushed[@]}"}"; do
+    read -r local_ref local_sha remote_sha <<< "$entry"
+    set_push_range "$local_sha" "$remote_sha"
+    scan_ref "$local_ref"
+  done
+}
+
+# Replace refs and grafts change the history that rev-list and git log read,
+# and push ignores replace refs, so the gate's own Git processes read the real
+# history. A graft file that does not exist disables grafts without the
+# deprecation hint that gitleaks reports as an error. The chained hooks keep
+# the caller's environment.
+(
+  export GIT_NO_REPLACE_OBJECTS=1 GIT_GRAFT_FILE="$work_dir/no-grafts"
+  run_secret_gate
+)
+# The subshell keeps the chain's own EXIT trap from replacing this one.
+( goldband_chain_hooks "$hook_dir" "pre-push" "$@" ) < "$input_file"

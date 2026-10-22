@@ -11,12 +11,25 @@ const {
   SHELL_ANALYSIS_FAILURE,
 } = require('./shell-policy');
 const { snapshotWorktreeBeforeShell } = require('./style-gate-advisory');
+const {
+  CLAUDE_FILE_TOOLS,
+  evaluateGateProtection,
+} = require('./gate-protection');
 
 const PRETOOL_DENY_POLICIES = [
   {
     name: 'managed-worktree-commit-guard',
     description:
       'blocks direct Git metadata writes in Goldband-managed worktrees',
+  },
+  {
+    name: 'gate-a-bypass',
+    description: 'blocks explicit Git and Goldband hook bypass operations',
+  },
+  {
+    name: 'gate-g-protected-config',
+    description:
+      'denies protected configuration writes in bypassPermissions mode; other modes ask',
   },
 ];
 
@@ -351,20 +364,24 @@ function evaluateCarefulBashPolicy(context) {
   });
 }
 
+function evaluateManagedWorktreePolicy(context) {
+  const { command, toolName } = context;
+  const managedViolation =
+    toolName === 'Bash' ? managedWorktreeBashViolation(command) : null;
+  if (!managedViolation) return null;
+  return {
+    decision: 'block',
+    blockedBy: 'managed-worktree-commit-guard',
+    logs: [
+      '[Hook] BLOCKED: Git writes are brokered in this managed worktree',
+      `[Hook] Reason: ${managedViolation.detail}`,
+      `[Hook] Command: ${command}`,
+    ],
+  };
+}
+
 function evaluateBashPolicy(context) {
   const { command } = context;
-  const managedViolation = managedWorktreeBashViolation(command);
-  if (managedViolation) {
-    return {
-      decision: 'block',
-      blockedBy: 'managed-worktree-commit-guard',
-      logs: [
-        '[Hook] BLOCKED: Git writes are brokered in this managed worktree',
-        `[Hook] Reason: ${managedViolation.detail}`,
-        `[Hook] Command: ${command}`,
-      ],
-    };
-  }
   const modeDecision =
     evaluateReviewReadOnlyBashPolicy(context) ||
     evaluateFreezeBashPolicy(context) ||
@@ -459,6 +476,45 @@ function evaluateSecretPolicy(context) {
   };
 }
 
+// Modes where Claude Code's own protected-path prompt already covers its file
+// tools, so a hook prompt would only duplicate it.
+const BUILTIN_PROMPT_MODES = new Set(['default', 'acceptEdits', 'plan']);
+
+function claudeGateResponse(gate, toolName, permissionMode) {
+  if (gate.gate === 'A' || permissionMode === 'bypassPermissions')
+    return 'deny';
+  const builtinPrompt =
+    gate.surface?.claudeBuiltin && BUILTIN_PROMPT_MODES.has(permissionMode);
+  return CLAUDE_FILE_TOOLS.has(toolName) && builtinPrompt ? null : 'ask';
+}
+
+function evaluateGateProtectionPolicy(input) {
+  const gate = evaluateGateProtection(input);
+  if (!gate) return null;
+  const response = claudeGateResponse(
+    gate,
+    input.tool_name || '',
+    input.permission_mode,
+  );
+  if (response === 'deny') {
+    const logs = [`[Hook] BLOCKED: ${gate.message}`];
+    return gate.gate === 'A'
+      ? { decision: 'block', blockedBy: 'gate-a-bypass', logs }
+      : { decision: 'block', blockedBy: 'gate-g-protected-config', logs };
+  }
+  if (!response) return null;
+  return {
+    decision: 'allow',
+    outputJson: {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'ask',
+        permissionDecisionReason: gate.message,
+      },
+    },
+  };
+}
+
 function evaluatePreToolUse(input) {
   const toolName = input.tool_name || '';
   const toolInput = input.tool_input || {};
@@ -476,6 +532,12 @@ function evaluatePreToolUse(input) {
   // A secret block precedes every allow result, including Bash advisories.
   const secretDecision = evaluateSecretPolicy(context);
   if (secretDecision?.decision === 'block') return secretDecision;
+  // The managed-worktree guard names the brokered path, so it precedes Gate A.
+  const managedDecision = evaluateManagedWorktreePolicy(context);
+  if (managedDecision) return managedDecision;
+  // Gate A and G apply in every session mode; mode blocks still win over ask.
+  const gateDecision = evaluateGateProtectionPolicy(input);
+  if (gateDecision?.decision === 'block') return gateDecision;
 
   const decision =
     evaluateReadOnlyWorkflowActivation(context) ||
@@ -494,6 +556,7 @@ function evaluatePreToolUse(input) {
     blockedBy: null,
     logs: [],
     ...decision,
+    ...(gateDecision ? { outputJson: gateDecision.outputJson } : {}),
     spawnedProcesses,
   };
 }

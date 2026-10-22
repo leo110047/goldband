@@ -12,24 +12,29 @@ STYLE_GATE_SHELL_BLOCK="git hooks"
 STYLE_GATE_CHAINED_HOOKS=(
     applypatch-msg pre-applypatch post-applypatch pre-merge-commit
     prepare-commit-msg post-commit pre-rebase post-checkout post-merge
-    pre-push post-rewrite pre-auto-gc sendemail-validate
+    post-rewrite pre-auto-gc sendemail-validate
 )
 
+# Hooks whose foreign global file is kept as <name>.local and chained: the
+# chain-only hooks and pre-push, which runs the secret gate first.
+STYLE_GATE_PRESERVING_HOOKS=(pre-push "${STYLE_GATE_CHAINED_HOOKS[@]}")
+
 style_gate_managed_files() {
-    printf '%s\n' pre-commit commit-msg lib/project-hook.sh lib/git-config-env.sh
+    printf '%s\n' pre-commit commit-msg pre-push
+    printf '%s\n' lib/project-hook.sh lib/git-config-env.sh lib/gitleaks.toml
     printf '%s\n' "${STYLE_GATE_CHAINED_HOOKS[@]}"
 }
 
 style_gate_source_for() {
     case "$1" in
-        pre-commit | commit-msg | lib/*) printf '%s\n' "$GIT_HOOKS_SOURCE_DIR/$1" ;;
+        pre-commit | commit-msg | pre-push | lib/*) printf '%s\n' "$GIT_HOOKS_SOURCE_DIR/$1" ;;
         *) printf '%s\n' "$GIT_HOOKS_SOURCE_DIR/lib/chain-hook" ;;
     esac
 }
 
-style_gate_is_chained_hook() {
+style_gate_preserves_foreign_hook() {
     local name
-    for name in "${STYLE_GATE_CHAINED_HOOKS[@]}"; do
+    for name in "${STYLE_GATE_PRESERVING_HOOKS[@]}"; do
         [ "$name" = "$1" ] && return 0
     done
     return 1
@@ -69,6 +74,12 @@ install_style_gate() {
     upsert_marked_block "$ZSHENV_FILE" "$STYLE_GATE_SHELL_BLOCK" style_gate_shell_block || return 1
     echo -e "  ${GREEN}[安裝] Git hooks 環境覆寫 -> ${ZSHENV_FILE}（新開的 shell 生效）${NC}"
     install_goldband_project_style_gate
+    if command -v gitleaks >/dev/null 2>&1; then
+        echo -e "  ${GREEN}[OK] gitleaks 可用，pre-push secret gate 會掃描推送的 commit${NC}"
+    else
+        echo -e "  ${YELLOW}[警告] 找不到 gitleaks；安裝前 pre-push secret gate 會阻擋所有含新 commit 的 push${NC}"
+        echo -e "  ${CYAN}  安裝方式見 https://github.com/gitleaks/gitleaks（例如 brew install gitleaks）${NC}"
+    fi
 }
 
 style_gate_shell_block() {
@@ -130,7 +141,7 @@ style_gate_file_is_owned() {
     [ "$recorded" = "$checksum $bytes" ]
 }
 
-# A foreign hook under a chained name moves to <name>.local, which the goldband
+# A foreign hook under a preserving name moves to <name>.local, which the goldband
 # hook runs before the repository hook. Fails when <name>.local is taken.
 preserve_foreign_hook() {
     local name="$1"
@@ -155,12 +166,12 @@ materialize_style_gate_hooks() {
             echo -e "  ${RED}[失敗] Git style gate 缺少來源: $source${NC}" >&2
             return 1
         fi
-        if style_gate_is_chained_hook "$relative"; then
+        if style_gate_preserves_foreign_hook "$relative"; then
             preserve_foreign_hook "$relative" || continue
         fi
         materialize_file_copy "$source" "$destination" || return 1
         case "$relative" in
-            lib/project-hook.sh | lib/git-config-env.sh) ;;
+            lib/*) ;;
             *) chmod +x "$destination" ;;
         esac
         installed+=("$relative")
@@ -247,7 +258,7 @@ show_style_gate_override_status() {
     else
         echo -e "  ${YELLOW}[未安裝]${NC} repo-local core.hooksPath 會略過 goldband；請執行 ./install.sh style-gate"
     fi
-    for name in "${STYLE_GATE_CHAINED_HOOKS[@]}"; do
+    for name in "${STYLE_GATE_PRESERVING_HOOKS[@]}"; do
         [ -e "$GIT_HOOKS_DIR/$name.local" ] && preserved+=("$name.local")
     done
     if [ "${#preserved[@]}" -gt 0 ]; then
@@ -262,8 +273,8 @@ style_gate_runtime_matches_source() {
     [ "$(sed -n '1p' "$marker")" = "$REPO_DIR" ] || return 1
     [ "$(sed -n '2p' "$marker")" = "schemaVersion=2" ] || return 1
     while IFS= read -r relative; do
-        # A chained hook left out because <name> and <name>.local both exist.
-        if style_gate_is_chained_hook "$relative" \
+        # A hook left out because <name> and <name>.local both exist.
+        if style_gate_preserves_foreign_hook "$relative" \
             && ! style_gate_recorded_identity "$relative" >/dev/null; then
             continue
         fi
@@ -329,7 +340,7 @@ remove_installed_style_gate_hooks() {
         remove_owned_style_gate_file "$relative" "$checksum" "$bytes"
     done < <(sed -n '3,$p' "$marker")
     rm -f "$marker"
-    for name in "${STYLE_GATE_CHAINED_HOOKS[@]}"; do
+    for name in "${STYLE_GATE_PRESERVING_HOOKS[@]}"; do
         if [ -e "$GIT_HOOKS_DIR/$name.local" ] && [ ! -e "$GIT_HOOKS_DIR/$name" ]; then
             mv "$GIT_HOOKS_DIR/$name.local" "$GIT_HOOKS_DIR/$name"
             echo -e "  ${GREEN}[還原] 保留的 hook $name.local -> $name${NC}"

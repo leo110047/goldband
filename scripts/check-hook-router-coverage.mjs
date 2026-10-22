@@ -36,6 +36,12 @@ const {
 const {
   PRETOOL_DENY_POLICIES,
 } = require('../hooks/scripts/lib/hook-router/pretool-policy');
+const {
+  GATE_A_RULES,
+} = require('../hooks/scripts/lib/hook-router/gate-bypass-rules');
+const {
+  PROTECTED_SURFACES,
+} = require('../hooks/scripts/lib/hook-router/protected-surfaces');
 
 const REQUIRED_FIELDS = [
   'category',
@@ -59,6 +65,7 @@ function main() {
     ...validateCoverageMatrix(fixtures),
     ...validatePretoolPolicyMetadata(),
     ...validateSecretAdvisoryAssertions(fixtures),
+    ...validateGateAssertions(fixtures),
     ...validateCarefulModeDescription(),
   ];
 
@@ -257,6 +264,72 @@ function validateSecretAdvisoryAssertions(fixtures) {
   return failures;
 }
 
+// Gate G asks are exit-0 outcomes, so the replay decision alone cannot tell
+// an ask from silence: positives assert the ask and negatives exclude it.
+function validateGateAssertions(fixtures) {
+  const failures = [];
+  for (const fixture of fixtures) {
+    const { category, variant } = fixture.coverage || {};
+    if (!['gate-a', 'gate-g'].includes(category)) continue;
+    const expect = fixture.expect || {};
+    if (
+      variant === 'negative' &&
+      !includesFragment(expect.stdoutExcludes, 'permissionDecision')
+    ) {
+      failures.push(
+        `${fixture.id}: ${category} negative case must exclude permissionDecision output`,
+      );
+    }
+    if (
+      category === 'gate-g' &&
+      variant === 'positive' &&
+      !includesFragment(expect.stdoutIncludes, '"permissionDecision":"ask"')
+    ) {
+      failures.push(
+        `${fixture.id}: gate-g positive case must assert the ask response`,
+      );
+    }
+  }
+  return failures;
+}
+
+function includesFragment(list, fragment) {
+  return Array.isArray(list) && list.includes(fragment);
+}
+
+function gateCoverage() {
+  const items = [];
+  for (const { rule } of GATE_A_RULES) {
+    items.push(
+      {
+        category: 'gate-a',
+        policy: rule,
+        variant: 'positive',
+        expectedDecision: 'block',
+      },
+      {
+        category: 'gate-a',
+        policy: rule,
+        variant: 'negative',
+        expectedDecision: 'allow',
+      },
+    );
+  }
+  for (const surface of PROTECTED_SURFACES.filter(
+    (item) => item.gate !== 'A',
+  )) {
+    for (const variant of ['positive', 'negative']) {
+      items.push({
+        category: 'gate-g',
+        policy: surface.id,
+        variant,
+        expectedDecision: 'allow',
+      });
+    }
+  }
+  return items;
+}
+
 function buildCoverageIndex(fixtures) {
   const index = new Set();
   for (const fixture of fixtures) {
@@ -336,7 +409,7 @@ function expectedCoverage() {
     });
   }
 
-  return items;
+  return [...items, ...gateCoverage()];
 }
 
 function hasCoverage(index, item) {

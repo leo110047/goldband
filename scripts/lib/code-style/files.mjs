@@ -4,6 +4,10 @@ import path from 'node:path';
 import { config, cwdInGitRepo, repoRoot, run, ToolError } from './config.mjs';
 import { CODE_EXTENSIONS } from './constants.mjs';
 
+// The index does not change during one run; several rules read each file.
+const stagedEntries = new Map();
+const stagedBinary = new Map();
+
 export function toRepoRelative(filePath) {
   if (!filePath) return null;
   const absolute = path.isAbsolute(filePath)
@@ -101,6 +105,16 @@ export function fileSize(relativePath, mode) {
   return mode === 'staged'
     ? (stagedBlobEntry(relativePath)?.size ?? null)
     : workingTreeFileSize(relativePath);
+}
+
+// Whether the staged blob is binary, or null when the path has no staged blob.
+// The verdict is recorded by the first read of the blob, so a rule that runs
+// after the style checks does not read it again; a read failure throws.
+export function isStagedBinary(relativePath) {
+  if (!stagedBinary.has(relativePath) && !readStagedFile(relativePath)) {
+    return null;
+  }
+  return stagedBinary.get(relativePath);
 }
 
 export function decodeText(buffer) {
@@ -218,6 +232,7 @@ function readStagedFile(relativePath) {
       `expected ${entry.size} bytes, received ${result.stdout.length}`,
     );
   }
+  stagedBinary.set(relativePath, isBinary(result.stdout));
   return result.stdout;
 }
 
@@ -237,6 +252,13 @@ function workingTreeFileSize(relativePath) {
 }
 
 function stagedBlobEntry(relativePath) {
+  if (!stagedEntries.has(relativePath)) {
+    stagedEntries.set(relativePath, readStagedBlobEntry(relativePath));
+  }
+  return stagedEntries.get(relativePath);
+}
+
+function readStagedBlobEntry(relativePath) {
   const result = run('git', [
     'ls-files',
     '--stage',
