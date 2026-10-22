@@ -378,7 +378,8 @@ Gate G covers writes to `.claude/settings*.json`, `.claude/hooks/`,
 `${ZDOTDIR:-$HOME}/.zshenv`, `$HOME/.zshenv`, `.codex/hooks/`, `config` and
 `config.worktree` below a directory whose name ends in `.git`, a `.git` file,
 `~/.gitconfig`, `${XDG_CONFIG_HOME:-$HOME/.config}/git/config`, files those
-two name in `[include]` or `[includeIf]` `path` entries (four levels deep),
+two name in `[include]` or `[includeIf]` `path` entries, including one on the
+section header's line (four levels deep),
 `.gitleaks.toml`, and
 `.gitleaksignore`; project-level names match in any directory, and every name
 and home or XDG anchor compares case-insensitively. A write is a Claude Write,
@@ -407,7 +408,8 @@ forms expand to the hook's home directory; `~user` expands to that directory
 for the current user and to `<parent of home>/user` otherwise. `~+` and
 `$PWD` expand to the working directory, `${NAME:-word}` and `${NAME:=word}`
 to `word` when `NAME` has no known value, and a variable assigned literally
-earlier in the same command to that value. Other variables are not resolved,
+earlier in the same command to that value, with the names its value uses
+expanded as assigned before it. Other variables are not resolved,
 so a target built from one is not protected. Quoted glob characters are treated the same
 way. Relative shell paths resolve
 against both the starting directory and every static `cd` or `pushd` target

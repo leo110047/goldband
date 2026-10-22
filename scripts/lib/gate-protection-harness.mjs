@@ -43,6 +43,10 @@ fs.writeFileSync(
     '\tpath = extra.gitconfig',
     '[includeIf "gitdir:~/work/"]',
     '\tpath = ~/work.gitconfig',
+    // A key may share the header's line; only include sections include.
+    '[include] path = inline.gitconfig',
+    '[includeIf "gitdir:~/w]x/"] path = ~/quoted.gitconfig',
+    '[core] path = ~/core.gitconfig',
     '',
   ].join('\n'),
 );

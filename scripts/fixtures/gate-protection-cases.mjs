@@ -408,6 +408,8 @@ export const protectedTargets = [
   // Files named by [include] and [includeIf] in the global configuration.
   { target: '~/extra.gitconfig' },
   { target: '~/work.gitconfig' },
+  { target: '~/inline.gitconfig' },
+  { target: '~/quoted.gitconfig' },
 ];
 
 export const unprotectedTargets = [
@@ -489,6 +491,12 @@ export const shellResolutionCases = [
   ['T=.mcp.json; echo {} > $T', true],
   ['export T=.mcp.json; echo {} > "$T"', true],
   ['T=notes.md; echo x > $T', false],
+  // A path key outside an include section includes nothing.
+  ['echo x > ~/core.gitconfig', false],
+  // An assignment expands the names assigned before it.
+  ['A=.claude; B=$A/settings.json; echo {} > $B', true],
+  ['A=.git; B=$A; C=$B/config; echo x > $C', true],
+  ['A=docs; B=$A/notes.md; echo x > $B', false],
   ['echo x > "$LOG"', false],
   ["sh -c -- 'echo x > .mcp.json'", true],
   // apply_patch run from the shell, by argument or heredoc.

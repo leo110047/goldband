@@ -259,7 +259,9 @@ const DECLARATIONS = new Set([
 const VARIANT_LIMIT = 64;
 
 // Bare assignments and declarations earlier in the command, so a write
-// target that names them resolves: `T=.mcp.json; echo x > $T`.
+// target that names them resolves: `T=.mcp.json; echo x > $T`. A value is
+// expanded with the values recorded before it, as the shell does at
+// assignment time.
 function recordAssignments(launch, found) {
   const words = DECLARATIONS.has(launch.words[0]) ? launch.words.slice(1) : [];
   const effects = launch.words.length === 0 ? launch.effects : [];
@@ -268,11 +270,14 @@ function recordAssignments(launch, found) {
     if (match) effects.push({ name: match[1], value: match[2] });
   }
   for (const { name, value } of effects) {
-    if (value !== undefined)
-      found.assignments.set(name, [
-        ...(found.assignments.get(name) || []),
-        value,
-      ]);
+    if (value === undefined) continue;
+    const expanded = assignedTargets([{ word: value }], found).map(
+      (target) => target.word,
+    );
+    found.assignments.set(name, [
+      ...(found.assignments.get(name) || []),
+      ...expanded,
+    ]);
   }
 }
 

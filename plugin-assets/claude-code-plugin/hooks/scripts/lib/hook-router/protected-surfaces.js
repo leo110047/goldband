@@ -112,6 +112,8 @@ function globMilliseconds(env) {
 }
 
 const INCLUDE_DEPTH_LIMIT = 4;
+// A section header and its name: `[include]`, `[includeIf "gitdir:~/w/"]`.
+const CONFIG_HEADER = /^\s*\[\s*([^\]\s"]+)(?:[^\]"]|"(?:[^"\\]|\\.)*")*\]/;
 
 function includeValue(text, file, home) {
   const value = text
@@ -137,9 +139,12 @@ function configIncludes(file, home, depth = 0) {
   let section = '';
   const files = [];
   for (const line of text.split(/\r?\n/)) {
-    const header = /^\s*\[\s*([^\]\s"]+)/.exec(line);
+    const header = CONFIG_HEADER.exec(line);
     if (header) section = header[1].toLowerCase();
-    const entry = /^\s*path\s*=\s*(.*)$/i.exec(line);
+    // A key may follow its section header on the same line.
+    const entry = /^\s*path\s*=\s*(.*)$/i.exec(
+      header ? line.slice(header[0].length) : line,
+    );
     if (!entry || !['include', 'includeif'].includes(section)) continue;
     const included = includeValue(entry[1], file, home);
     if (included) files.push(included);

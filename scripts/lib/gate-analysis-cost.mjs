@@ -89,16 +89,45 @@ export function verifyAnalysisCost() {
 }
 
 // Unmatched braces and glob groups are parsed in linear time, or the parse
-// stops at its work limit, well inside the Codex hook timeout.
+// stops at its work limit. Each parse is timed against a linear character
+// scan of the same text on the same machine, never against a fixed budget,
+// so a slow machine slows both; superlinear parsing at this length takes
+// thousands of times longer than the scan.
+const SCAN_FACTOR = 200;
+const TRIALS = 5;
+
+// The fastest of several runs; evaluating another command first evicts the
+// shell policy's last-parse cache.
+function fastest(evaluateGateProtection, run) {
+  let best = Infinity;
+  for (let trial = 0; trial < TRIALS; trial += 1) {
+    evaluateGateProtection(bash('true'));
+    const started = performance.now();
+    run();
+    best = Math.min(best, performance.now() - started);
+  }
+  return best;
+}
+
+function scanCharacters(text) {
+  let count = 0;
+  for (const char of text) if (/[{}()]/.test(char)) count += 1;
+  return count;
+}
+
 function verifyLinearParse(evaluateGateProtection) {
   for (const command of [
     `echo ${'{'.repeat(90000)}`,
     `echo ${'{a,'.repeat(30000)}`,
     'x=('.repeat(40000),
   ]) {
-    const started = Date.now();
-    evaluateGateProtection(bash(command));
-    const elapsed = Date.now() - started;
-    assert.ok(elapsed < 1000, `${command.slice(0, 12)}: ${elapsed}ms`);
+    const scan = fastest(evaluateGateProtection, () => scanCharacters(command));
+    const parse = fastest(evaluateGateProtection, () =>
+      evaluateGateProtection(bash(command)),
+    );
+    assert.ok(
+      parse < scan * SCAN_FACTOR,
+      `${command.slice(0, 12)}: ${parse.toFixed(1)}ms parse vs ${scan.toFixed(1)}ms scan`,
+    );
   }
 }
