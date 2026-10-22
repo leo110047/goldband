@@ -109,7 +109,14 @@ export function push(repo, args, extraEnv = {}, firstArgsAreGlobal = false) {
     : `git push ${args.map(shellQuote).join(' ')}`;
   return run(
     '/bin/sh',
-    ['-c', `. "$1" "$2" && ${command}`, 'sh', envFile, fixture.hooks],
+    // POSIX `.` passes no arguments; the sourced file reads the caller's $1.
+    [
+      '-c',
+      `f="$1"; set -- "$2"; . "$f" && ${command}`,
+      'sh',
+      envFile,
+      fixture.hooks,
+    ],
     {
       cwd: repo,
       env: { ...baseEnv(fixture.home), ...extraEnv },
