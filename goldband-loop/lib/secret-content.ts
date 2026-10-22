@@ -1,13 +1,11 @@
 // A separator-delimited credential key; `_` and `-` may precede it
 // (`GITHUB_TOKEN`) but not extend it (`token_count`).
-const CREDENTIAL_KEY =
-	String.raw`(?<![A-Za-z0-9])(?:api[_-]?(?:key|token)|access[_-]?token|refresh[_-]?token|auth[_-]?token|token|secret[_-]?(?:access[_-]?)?key|access[_-]?key|secret|password|passwd|client[_-]?secret)(?![A-Za-z0-9_])['"]?[ \t]*[:=][ \t]*`;
+const CREDENTIAL_KEY = String.raw`(?<![A-Za-z0-9])(?:api[_-]?(?:key|token)|access[_-]?token|refresh[_-]?token|auth[_-]?token|token|secret[_-]?(?:access[_-]?)?key|access[_-]?key|secret|password|passwd|client[_-]?secret)(?![A-Za-z0-9_])['"]?[ \t]*[:=][ \t]*`;
 // A bare type name ends at a delimiter, so `none-of-…` is still a value.
-const TYPE_NAME =
-	String.raw`(?:string|number|boolean|bigint|any|unknown|never|undefined|null|object|symbol|void|str|int|float|bool|bytes|true|false|none)(?=[\s;,)}\][|?>=]|$)`;
+const TYPE_NAME = String.raw`(?:string|number|boolean|bigint|any|unknown|never|undefined|null|object|symbol|void|str|int|float|bool|bytes|true|false|none)(?=[\s;,)}\][|?>=]|$)`;
 
 // A rule with a `prefix` group redacts only the text after that prefix.
-export const SECRET_CONTENT_RULES: ReadonlyArray<{
+const SECRET_CONTENT_RULES: ReadonlyArray<{
 	name: string;
 	pattern: RegExp;
 }> = [
@@ -78,7 +76,10 @@ export function redactSecretLikeContent(
 // Redacts each hunk separately, so an unterminated match stays within its
 // hunk, and leaves binary patch data unchanged. Every spanned line keeps its
 // diff prefix, so the result remains a well-formed unified diff.
-export function redactSecretLikeDiff(diff: string, marker = "[redacted]"): string {
+export function redactSecretLikeDiff(
+	diff: string,
+	marker = "[redacted]",
+): string {
 	return diff
 		.split(/(?=^diff --git )/m)
 		.map((section) => {
@@ -117,33 +118,56 @@ const KEY_FOOTER_LINE = /^[ +-].*?-----END [A-Z ]*PRIVATE KEY-----/;
 function redactKeyBodyLines(hunk: string, marker: string): string {
 	const lines = hunk.split("\n");
 	const bodies = lines.map((line) => KEY_BODY_LINE.exec(line));
-	const redact = (index: number) => {
+	for (const index of [
+		...bodyLinesBeforeFooters(lines, bodies),
+		...wrapWidthRuns(bodies),
+	]) {
 		const body = bodies[index]!;
 		lines[index] = body[1] + marker + body[3];
-	};
-	for (let index = 0; index < lines.length; index++) {
-		if (!KEY_FOOTER_LINE.test(lines[index])) continue;
+	}
+	return lines.join("\n");
+}
+
+type BodyMatch = RegExpExecArray | null;
+
+// Body lines directly above each END marker: the last may be short, the
+// others hold at least 16 base64 characters.
+function bodyLinesBeforeFooters(
+	lines: string[],
+	bodies: BodyMatch[],
+): number[] {
+	const indexes: number[] = [];
+	lines.forEach((line, footer) => {
+		if (!KEY_FOOTER_LINE.test(line)) return;
 		for (
-			let body = index - 1;
-			body >= 0 && bodies[body] && (body === index - 1 || bodies[body]![2].length >= 16);
+			let body = footer - 1;
+			body >= 0 &&
+			bodies[body] &&
+			(body === footer - 1 || bodies[body]![2].length >= 16);
 			body--
 		) {
-			redact(body);
+			indexes.push(body);
 		}
-	}
+	});
+	return indexes;
+}
+
+// Runs of two or more consecutive body lines at PEM or OpenSSH wrap width.
+function wrapWidthRuns(bodies: BodyMatch[]): number[] {
 	const atWrapWidth = (index: number) => {
 		const length = bodies[index]?.[2].length ?? 0;
 		return length >= 60 && length <= 76;
 	};
-	for (let start = 0; start < lines.length; ) {
+	const indexes: number[] = [];
+	for (let start = 0; start < bodies.length; ) {
 		let end = start;
-		while (end < lines.length && atWrapWidth(end)) end++;
+		while (end < bodies.length && atWrapWidth(end)) end++;
 		if (end - start >= 2) {
-			for (let index = start; index < end; index++) redact(index);
+			for (let index = start; index < end; index++) indexes.push(index);
 		}
 		start = Math.max(end, start + 1);
 	}
-	return lines.join("\n");
+	return indexes;
 }
 
 function redactMatches(
