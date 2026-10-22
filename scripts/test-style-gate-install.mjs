@@ -459,7 +459,7 @@ function testGitConfigEnvAppendsOnce() {
       shell,
       [
         '-c',
-        `. "$1" "$2"; . "$1" "$2"; env | grep '^GIT_CONFIG_' | sort`,
+        `f="$1"; set -- "$2"; . "$f"; . "$f"; env | grep '^GIT_CONFIG_' | sort`,
         shell,
         envFile,
         dir,
@@ -524,7 +524,14 @@ function runWithOverride(home, cwd, command, extraEnv = {}) {
   const envFile = path.join(hooksDir(home), 'lib', 'git-config-env.sh');
   return run(
     'sh',
-    ['-c', `. "$1" "$2" && ${command}`, 'sh', envFile, hooksDir(home)],
+    // POSIX `.` passes no arguments; the sourced file reads the caller's $1.
+    [
+      '-c',
+      `f="$1"; set -- "$2"; . "$f" && ${command}`,
+      'sh',
+      envFile,
+      hooksDir(home),
+    ],
     { cwd, env: { ...fixtureEnv(home), ...extraEnv } },
   );
 }
