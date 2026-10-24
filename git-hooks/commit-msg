@@ -3,22 +3,14 @@ set -euo pipefail
 
 hook_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_hook_lib="$hook_dir/lib/project-hook.sh"
-repo_root="$(pwd)"
-git_common_dir_value=""
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 message_file="${1:?missing commit message file}"
-
-git_info="$(git rev-parse --show-toplevel --git-common-dir 2>/dev/null || true)"
-if [ -n "$git_info" ]; then
-  repo_root="${git_info%%$'\n'*}"
-  git_common_dir_value="${git_info#*$'\n'}"
-  [ "$git_common_dir_value" != "$git_info" ] || git_common_dir_value=""
-fi
 
 [ -f "$project_hook_lib" ] && source "$project_hook_lib"
 
 run_project_commit_msg() {
-  declare -F goldband_run_project_hook >/dev/null || return 0
-  goldband_run_project_hook "$repo_root" "$hook_dir" "$git_common_dir_value" "commit-msg" "$message_file"
+  declare -F goldband_chain_hooks >/dev/null || return 0
+  goldband_chain_hooks "$hook_dir" "commit-msg" "$message_file"
 }
 
 run_goldband_commit_msg() {
@@ -34,26 +26,36 @@ run_goldband_commit_msg() {
     return 0
   fi
 
-  if [ "${GOLDBAND_GIT_WORKFLOW_GATE:-0}" != "1" ] && [ ! -f "$repo_root/.goldband-git-workflow.json" ]; then
+  local enforced=false
+  if [ "${GOLDBAND_GIT_WORKFLOW_GATE:-0}" = "1" ] || [ -f "$repo_root/.goldband-git-workflow.json" ]; then
+    enforced=true
+  fi
+  # Without the opt-in, a repository commit-msg hook owns the message format.
+  if [ "$enforced" = false ] && declare -F goldband_has_project_hook >/dev/null \
+    && goldband_has_project_hook "$hook_dir" "commit-msg"; then
     return 0
   fi
 
   first_line="$(sed -n '1p' "$message_file" | tr -d '\r')"
-  case "$first_line" in
-    Merge\ *|Revert\ \"*|fixup!\ *|squash!\ *)
-      return 0
-      ;;
-  esac
-
-  if ! printf '%s\n' "$first_line" | grep -Eq '^(feat|fix|refactor|docs|test|chore|perf|ci)(\([A-Za-z0-9._-]+\))?!?: .+'; then
-    {
-      echo "[goldband] commit message must follow Conventional Commits:"
-      echo "  <type>[optional scope][!]: <description>"
-      echo "  allowed types: feat, fix, refactor, docs, test, chore, perf, ci"
-      echo "  got: ${first_line:-<empty>}"
-    } >&2
-    return 1
+  if commit_subject_is_generated "$first_line" \
+    || printf '%s\n' "$first_line" | grep -Eq '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([A-Za-z0-9._-]+\))?!?: .+'; then
+    return 0
   fi
+
+  {
+    echo "[goldband] commit message must follow Conventional Commits:"
+    echo "  <type>[optional scope][!]: <description>"
+    echo "  allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+    echo "  got: ${first_line:-<empty>}"
+  } >&2
+  [ "$enforced" = false ] || return 1
+  echo "[goldband] warning only; .goldband-git-workflow.json makes this block the commit" >&2
+}
+
+# Subjects Git and release tools write, matching commitlint's default ignores.
+commit_subject_is_generated() {
+  printf '%s\n' "$1" | grep -Eq \
+    '^(Merge (pull request|branch|tag|remote-tracking branch) |Merge .+ into .+|Merged .+ (in|into) .+|Merged PR .+: |Automatic merge|Auto-merged .+ into .+|[Rr]evert |[Rr]eapply |(amend|fixup|squash)!|v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$)'
 }
 
 run_goldband_commit_msg

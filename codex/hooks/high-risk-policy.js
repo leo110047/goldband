@@ -11,6 +11,7 @@ const {
   inspectShellCommand,
   SHELL_ANALYSIS_FAILURE,
 } = require('./shell-policy');
+const { evaluateGateProtection } = require('./gate-protection');
 
 const MKFS_COMMAND = /^mkfs(?:\.[^\s/]+)?$/;
 const FORMAT_COMMANDS = new Set(['mke2fs', 'newfs_apfs']);
@@ -454,10 +455,19 @@ function findHighRiskPatch(command) {
   return classifyHighRiskPatch(command)?.reason || null;
 }
 
-function classifyHighRiskToolUse(input) {
-  const toolName = input.tool_name || '';
-  const command = input.tool_input?.command || '';
+// Codex has no supported `ask`, so every Gate A and Gate G match is an explicit
+// deny. Project `.codex/` files are included: Codex's own read-only protection
+// does not hold under `--sandbox danger-full-access`, which managed worktrees use.
+function classifyGateProtection(input) {
+  const gate = evaluateGateProtection(input);
+  if (!gate) return null;
+  return highRiskDecision(
+    gate.message,
+    gate.gate === 'A' ? 'gate-a-bypass' : 'gate-g-protected-config',
+  );
+}
 
+function classifyToolRisk(toolName, command) {
   if (toolName === 'Bash') {
     return (
       classifyHighRiskSecretCommand(command) || classifyHighRiskBash(command)
@@ -465,6 +475,12 @@ function classifyHighRiskToolUse(input) {
   }
   if (toolName === 'apply_patch') return classifyHighRiskPatch(command);
   return null;
+}
+
+function classifyHighRiskToolUse(input) {
+  const toolName = input.tool_name || '';
+  const command = input.tool_input?.command || '';
+  return classifyToolRisk(toolName, command) || classifyGateProtection(input);
 }
 
 module.exports = {

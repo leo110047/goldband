@@ -4,6 +4,10 @@ import path from 'node:path';
 import { config, cwdInGitRepo, repoRoot, run, ToolError } from './config.mjs';
 import { CODE_EXTENSIONS } from './constants.mjs';
 
+// The index does not change during one run; several rules read each file.
+const stagedEntries = new Map();
+const stagedBinary = new Map();
+
 export function toRepoRelative(filePath) {
   if (!filePath) return null;
   const absolute = path.isAbsolute(filePath)
@@ -103,6 +107,16 @@ export function fileSize(relativePath, mode) {
     : workingTreeFileSize(relativePath);
 }
 
+// Whether the staged blob is binary, or null when the path has no staged blob.
+// The verdict is recorded by the first read of the blob, so a rule that runs
+// after the style checks does not read it again; a read failure throws.
+export function isStagedBinary(relativePath) {
+  if (!stagedBinary.has(relativePath) && !readStagedFile(relativePath)) {
+    return null;
+  }
+  return stagedBinary.get(relativePath);
+}
+
 export function decodeText(buffer) {
   if (!buffer || isBinary(buffer)) return null;
   return buffer.toString('utf8');
@@ -114,10 +128,9 @@ export function isBinary(buffer) {
   return sample.includes(0);
 }
 
-export function lineCount(text) {
+export function nonBlankLineCount(text) {
   if (!text) return 0;
-  const withoutTrailing = text.endsWith('\n') ? text.slice(0, -1) : text;
-  return withoutTrailing ? withoutTrailing.split('\n').length : 0;
+  return text.split('\n').filter((line) => line.trim() !== '').length;
 }
 
 export function isCodeFile(file) {
@@ -219,6 +232,7 @@ function readStagedFile(relativePath) {
       `expected ${entry.size} bytes, received ${result.stdout.length}`,
     );
   }
+  stagedBinary.set(relativePath, isBinary(result.stdout));
   return result.stdout;
 }
 
@@ -238,6 +252,13 @@ function workingTreeFileSize(relativePath) {
 }
 
 function stagedBlobEntry(relativePath) {
+  if (!stagedEntries.has(relativePath)) {
+    stagedEntries.set(relativePath, readStagedBlobEntry(relativePath));
+  }
+  return stagedEntries.get(relativePath);
+}
+
+function readStagedBlobEntry(relativePath) {
   const result = run('git', [
     'ls-files',
     '--stage',

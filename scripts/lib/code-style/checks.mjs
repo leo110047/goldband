@@ -1,7 +1,8 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { getAddedLines } from './added-lines.mjs';
 import { runBiome } from './biome.mjs';
-import { config, run, ToolError } from './config.mjs';
+import { config, ToolError } from './config.mjs';
 import {
   JS_EXTENSIONS,
   PY_EXTENSIONS,
@@ -14,13 +15,14 @@ import {
   fileSize,
   isBinary,
   isCodeFile,
-  lineCount,
+  nonBlankLineCount,
 } from './files.mjs';
 import {
   allowsLargeGeneratedText,
   loadLargeGeneratedTextPolicy,
 } from './generated-text.mjs';
 import { advisory, violation } from './issues.mjs';
+import { checkLanguageSkips, languageSkipRules } from './test-skips.mjs';
 
 const require = createRequire(import.meta.url);
 const {
@@ -178,13 +180,13 @@ function checkFileSize(file, buffer, issues, generatedTextPolicy) {
 
 function checkLineCount(file, text, issues) {
   if (!isCodeFile(file)) return;
-  const lines = lineCount(text);
+  const lines = nonBlankLineCount(text);
   if (lines > config.maxFileLines) {
     issues.push(
       violation(
         'file-lines',
         file,
-        `file has ${lines} lines, max is ${config.maxFileLines}`,
+        `file has ${lines} non-blank lines, max is ${config.maxFileLines}`,
       ),
     );
   }
@@ -284,31 +286,6 @@ function updateMergeConflictState(state, source) {
   }
 }
 
-function getAddedLines(file) {
-  const result = run('git', ['diff', '--cached', '--unified=0', '--', file]);
-  if (result.status !== 0) return [];
-  const state = { added: [], newLine: null };
-  for (const rawLine of result.stdout.split('\n')) {
-    updateAddedLineState(state, rawLine);
-  }
-  return state.added;
-}
-
-function updateAddedLineState(state, rawLine) {
-  const hunk = rawLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-  if (hunk) {
-    state.newLine = Number(hunk[1]);
-    return;
-  }
-  if (rawLine.startsWith('+++') || rawLine.startsWith('---')) return;
-  if (rawLine.startsWith('+')) {
-    state.added.push({ line: state.newLine || null, text: rawLine.slice(1) });
-    if (state.newLine !== null) state.newLine += 1;
-  } else if (!rawLine.startsWith('-') && state.newLine !== null) {
-    state.newLine += 1;
-  }
-}
-
 function linesForDeltaRules(file, text, mode) {
   return mode === 'staged' ? getAddedLines(file) : allLines(text);
 }
@@ -326,6 +303,7 @@ function checkDeltaRules(file, text, mode, issues) {
     isTs: ['.ts', '.tsx'].includes(path.extname(file)),
     isTest: isTestFile(file),
     consoleLogAllowed: isConsoleOutputFile(file, text),
+    skipRules: languageSkipRules(file),
   };
   for (const source of linesForDeltaRules(file, text, mode)) {
     checkDeltaLine(context, source, issues);
@@ -411,7 +389,15 @@ function checkEscapeHatches(context, source, issues) {
 }
 
 function checkFocusedTests(context, source, issues) {
-  if (!context.isJs || !context.isTest) return;
+  if (context.isJs && context.isTest) {
+    checkJsFocusedTests(context, source, issues);
+  }
+  if (context.skipRules) {
+    checkLanguageSkips(context.skipRules, context.file, source, issues);
+  }
+}
+
+function checkJsFocusedTests(context, source, issues) {
   const focusedPattern =
     /(?:\b(?:describe|it|test)\.only\s*\(|\b(?:fdescribe|fit)\s*\()/;
   if (focusedPattern.test(source.text)) {

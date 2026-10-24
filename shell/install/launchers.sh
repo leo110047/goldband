@@ -10,13 +10,17 @@ fi
 EOF
 }
 
-upsert_shell_launcher_block() {
+# Marked blocks are delimited by "# >>> goldband <name> >>>" and
+# "# <<< goldband <name> <<<" lines that goldband owns in a startup file.
+upsert_marked_block() {
     local rc_file="$1"
+    local name="$2"
+    local block_fn="$3"
     local temp_file
 
     mkdir -p "$(dirname "$rc_file")"
     [ -f "$rc_file" ] || touch "$rc_file"
-    temp_file="$(strip_shell_launcher_block "$rc_file")" || return 1
+    temp_file="$(strip_marked_block "$rc_file" "$name")" || return 1
 
     if [ -s "$temp_file" ]; then
         printf '\n' >> "$temp_file" || {
@@ -24,7 +28,7 @@ upsert_shell_launcher_block() {
             return 1
         }
     fi
-    shell_launcher_block >> "$temp_file" || {
+    "$block_fn" >> "$temp_file" || {
         rm -f "$temp_file"
         return 1
     }
@@ -32,16 +36,15 @@ upsert_shell_launcher_block() {
     mv "$temp_file" "$rc_file"
 }
 
-strip_shell_launcher_block() {
+strip_marked_block() {
     local rc_file="$1"
-    local begin_marker="# >>> goldband shell launchers >>>"
-    local end_marker="# <<< goldband shell launchers <<<"
+    local name="$2"
     local temp_file
 
     [ -f "$rc_file" ] || return 1
     temp_file="$(mktemp)"
 
-    awk -v begin="$begin_marker" -v end="$end_marker" '
+    awk -v begin="# >>> goldband $name >>>" -v end="# <<< goldband $name <<<" '
         BEGIN { skipping = 0 }
         $0 == begin { skipping = 1; next }
         skipping == 1 && $0 == end { skipping = 0; next }
@@ -54,45 +57,25 @@ strip_shell_launcher_block() {
     printf '%s\n' "$temp_file"
 }
 
-remove_shell_launcher_block() {
+remove_marked_block() {
     local rc_file="$1"
+    local name="$2"
     local temp_file
 
     [ -f "$rc_file" ] || return 0
-    temp_file="$(strip_shell_launcher_block "$rc_file")" || return 1
+    temp_file="$(strip_marked_block "$rc_file" "$name")" || return 1
     mv "$temp_file" "$rc_file"
 }
 
-strip_powershell_launcher_block() {
-    local profile_file="$1"
-    local begin_marker="# >>> goldband powershell launchers >>>"
-    local end_marker="# <<< goldband powershell launchers <<<"
-    local temp_file
-
-    [ -f "$profile_file" ] || return 1
-    temp_file="$(mktemp)"
-
-    awk -v begin="$begin_marker" -v end="$end_marker" '
-        BEGIN { skipping = 0 }
-        $0 == begin { skipping = 1; next }
-        skipping == 1 && $0 == end { skipping = 0; next }
-        skipping == 0 { print }
-    ' "$profile_file" > "$temp_file" || {
-        rm -f "$temp_file"
-        return 1
-    }
-
-    printf '%s\n' "$temp_file"
+marked_block_installed() {
+    [ -f "$1" ] && grep -qxF "# >>> goldband $2 >>>" "$1"
 }
 
 remove_powershell_launcher_block() {
     local profile_file="$1"
-    local temp_file
 
-    [ -f "$profile_file" ] || return 0
-    grep -q '^# >>> goldband powershell launchers >>>$' "$profile_file" 2>/dev/null || return 0
-    temp_file="$(strip_powershell_launcher_block "$profile_file")" || return 1
-    mv "$temp_file" "$profile_file"
+    marked_block_installed "$profile_file" "powershell launchers" || return 0
+    remove_marked_block "$profile_file" "powershell launchers" || return 1
     echo -e "  ${GREEN}[移除] retired PowerShell launcher profile block -> $profile_file${NC}"
 }
 
@@ -126,15 +109,14 @@ install_shell_launchers() {
     cleanup_retired_windows_launchers
     link_component "$REPO_DIR/shell/goldband-self-update.sh" "$SHELL_UPDATE_BIN" "Shell self-update script"
     link_component "$REPO_DIR/shell/goldband-launchers.sh" "$SHELL_LAUNCHERS_FILE" "Shell launcher wrappers"
-    upsert_shell_launcher_block "$ZSHRC_FILE"
+    upsert_marked_block "$ZSHRC_FILE" "shell launchers" shell_launcher_block
     echo -e "  ${GREEN}[安裝] zsh 啟動整合${NC}"
 }
 
 shell_launchers_installed() {
     repo_path_installed_from "$REPO_DIR/shell/goldband-self-update.sh" "$SHELL_UPDATE_BIN" || return 1
     repo_path_installed_from "$REPO_DIR/shell/goldband-launchers.sh" "$SHELL_LAUNCHERS_FILE" || return 1
-    [ -f "$ZSHRC_FILE" ] || return 1
-    grep -q '^# >>> goldband shell launchers >>>$' "$ZSHRC_FILE"
+    marked_block_installed "$ZSHRC_FILE" "shell launchers"
 }
 
 install_launchers() {

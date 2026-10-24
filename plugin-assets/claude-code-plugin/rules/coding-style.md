@@ -12,7 +12,7 @@ must not raise a threshold or add a bypass only to make one change pass.
 
 | Rule | Default | Tool |
 |---|---:|---|
-| Code file length | `GOLDBAND_MAX_FILE_LINES=600` | `check-code-style.mjs` |
+| Code file non-blank lines | `GOLDBAND_MAX_FILE_LINES=600` | `check-code-style.mjs` |
 | JS/TS function length | `GOLDBAND_MAX_FN_LINES=50` | Biome `noExcessiveLinesPerFunction` |
 | JS/TS cognitive complexity | `GOLDBAND_MAX_COMPLEXITY=12` | Biome `noExcessiveCognitiveComplexity` |
 | JS/TS function parameters | `GOLDBAND_MAX_PARAMS=4` | Biome `useMaxParams` |
@@ -24,7 +24,8 @@ must not raise a threshold or add a bypass only to make one change pass.
 | Large text/binary files | text 1 MB, binary 512 KB; declared generated text up to 16 MB | `check-code-style.mjs` |
 | Escape hatches | n/a | staged added-line scan |
 | Focused tests | n/a | staged added-line scan |
-| Skipped tests | n/a | staged added-line scan |
+| Skipped tests | JS/TS; Python unconditional skip decorators; Go and Rust skips advise | staged added-line scan |
+| Hidden Unicode | bidi controls and tag characters anywhere; zero-width characters in agent instruction files | staged added-line scan, including style-excluded paths |
 | `debugger` and non-CLI `console.log` | n/a | staged added-line scan |
 
 Currently blocked escape hatches:
@@ -63,6 +64,16 @@ Advisory-only checks:
 ## Enforcement Surfaces
 
 - The git style gate is opt-in and checks staged files before commit.
+- Staged added lines are read from the raw diff (`--text --no-ext-diff
+  --no-textconv`); a failed read blocks the commit as a check failure.
+- The opt-in `pre-push` hook scans the pushed range with gitleaks and the
+  installed baseline rules, independent of the style gate opt-outs; a scan
+  that cannot complete blocks the push. Only `.gitleaksignore` grants
+  exceptions. `GOLDBAND_SECRET_GATE=0` is a logged temporary bypass.
+- Claude and Codex PreToolUse deny agent commands that disable or relax these
+  hooks and require user authorization for writes to agent, hook, MCP,
+  goldband, and gitleaks configuration. `OPERATIONS.md` defines both
+  contracts and host responses.
 - The installed global hooks are materialized under
   `${XDG_CONFIG_HOME:-$HOME/.config}/goldband/git-hooks`; `core.hooksPath`
   never points at the Goldband source checkout.
@@ -81,7 +92,9 @@ Advisory-only checks:
 - Claude and Codex PostToolUse checks, including shell writes, are advisory.
 - `.goldband-no-style-gate` is a visible repository opt-out for the gate and live advice.
   `GOLDBAND_STYLE_GATE=0` is a logged temporary bypass.
-- A repository-local `core.hooksPath` overrides the global hook.
+- A `.zshenv` block forces the global hook ahead of a repository-local
+  `core.hooksPath` for Git started from zsh; the global hook then runs the
+  repository's own hook of the same name.
 
 ## Advisory Engineering Guidance
 

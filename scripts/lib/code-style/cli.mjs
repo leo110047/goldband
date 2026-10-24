@@ -1,6 +1,7 @@
 import { checkFiles, checkSecretsOnly } from './checks.mjs';
 import { config, repoRoot, ToolError, UsageError } from './config.mjs';
 import { listFilesForMode, uniqueFiles } from './files.mjs';
+import { checkHiddenUnicode } from './hidden-unicode.mjs';
 import { outputResult, redact } from './output.mjs';
 import {
   listWorktreeFilesChangedSince,
@@ -29,6 +30,8 @@ export function main(argv) {
     const styleChecked = new Set(files);
     const styleExcluded = candidates.filter((file) => !styleChecked.has(file));
     issues.push(...checkSecretsOnly(styleExcluded, args.mode));
+    // Nor from the hidden Unicode check, which covers every staged path.
+    issues.push(...checkHiddenUnicode(candidates, args.mode));
     const result = buildResult(args.mode, files, issues);
     outputResult(result, args.format);
     return result.ok ? 0 : 1;

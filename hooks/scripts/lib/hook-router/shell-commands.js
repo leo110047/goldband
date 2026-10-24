@@ -1,7 +1,13 @@
 const { literalOutput } = require('./shell-output');
+const { escapeBraceText, expandBraces } = require('./shell-braces');
+const { readAnsiCQuoted, readGlobGroup } = require('./shell-word-syntax');
 const {
+  COMMAND_KEYWORDS,
   commandWords,
+  sshInvocation,
+  privilegedLaunch,
   shellInvocation,
+  suScript,
   shellReadsStdin,
   isShellCommand,
   skipCommandOptions,
@@ -53,8 +59,11 @@ function readArithmetic(state, expansion = false) {
   return { words: [], pipe: false, children: [] };
 }
 
+// A substitution keeps its source text, so gates can tell a word whose value
+// is computed when the command runs.
 function readDoubleQuotedPart(state) {
-  if (readSubstitution(state)) return '';
+  const start = state.index;
+  if (readSubstitution(state)) return state.text.slice(start, state.index);
   const char = state.text[state.index++];
   if (char !== '\\') return char;
   const escaped = state.text[state.index];
@@ -79,24 +88,97 @@ function readQuoted(state, quote, expandSingle = false) {
   return value;
 }
 
+// `${...}` stays one literal part, so its operators and parentheses are not
+// word or glob syntax; substitutions inside it still run.
+const BRACE_DEPTH = { '{': 1, '}': -1 };
+
+// Advances past one element of a parameter expansion; returns its brace
+// depth change.
+function parameterStep(state) {
+  if (readSubstitution(state)) return 0;
+  const char = state.text[state.index];
+  if (char === "'" || char === '"') {
+    readQuoted(state, char);
+    return 0;
+  }
+  state.index += char === '\\' ? 2 : 1;
+  return BRACE_DEPTH[char] || 0;
+}
+
+function readParameterExpansion(state) {
+  const start = state.index;
+  let depth = 1;
+  state.index += 2;
+  while (state.index < state.text.length && depth > 0)
+    depth += parameterStep(state);
+  return state.text.slice(start, state.index);
+}
+
+function readDollarPart(state) {
+  const next = state.text[state.index + 1];
+  if (next === "'") return { value: readAnsiCQuoted(state), quoted: true };
+  if (next === '"') {
+    state.index += 1;
+    return { value: readQuoted(state, '"'), quoted: true };
+  }
+  if (next === '{')
+    return { value: readParameterExpansion(state), quoted: true };
+  return null;
+}
+
 function readWordPart(state) {
   const char = state.text[state.index];
   if (char === "'" || char === '"') {
     return { value: readQuoted(state, char), quoted: true };
   }
+  const dollar = char === '$' && readDollarPart(state);
+  if (dollar) return dollar;
   if (char === '\\') {
     state.index += 1;
     const escaped = state.text[state.index++] || '';
     return { value: escaped === '\n' ? '' : escaped, quoted: true };
   }
-  if (readSubstitution(state)) return { value: '', quoted: false };
+  const start = state.index;
+  if (readSubstitution(state))
+    return { value: state.text.slice(start, state.index), quoted: true };
   state.index += 1;
   return { value: char, quoted: false };
 }
 
+// A zsh glob group or qualifier, or a bash extglob group, continues the word
+// it follows: `name.(json|bak)`, `name(N)`, `@(a|b)`. `name()` stays a
+// function definition and `name=(...)` an array or zsh process substitution.
+// `state.leadingGroup` lets a group start an argument word: `(a|b)`.
+function startsGlobGroup(state, word) {
+  return (
+    state.text[state.index] === '(' &&
+    (word.value !== '' || state.leadingGroup) &&
+    !word.value.endsWith('=') &&
+    state.text[state.index + 1] !== ')'
+  );
+}
+
+// A group that continues a word, or false. Outside `[[ ]]`, where blanks may
+// sit inside regex groups, a group that does not close before a blank or
+// operator is a syntax error in bash and zsh, so it is not analyzed.
+function wordGroup(state, word) {
+  if (!startsGlobGroup(state, word)) return false;
+  const group = readGlobGroup(state, readWordPart, word.value.at(-1));
+  if (group === null && !state.conditional)
+    throw new Error('Unsupported glob group');
+  return group;
+}
+
+// `pattern` keeps quoted characters escaped for brace expansion.
 function readWord(state) {
-  const word = { value: '', quoted: false };
+  const word = { value: '', quoted: false, pattern: '' };
   while (state.index < state.text.length) {
+    const group = wordGroup(state, word);
+    if (group) {
+      word.value += group;
+      word.pattern += escapeBraceText(group);
+      continue;
+    }
     const char = state.text[state.index];
     if (
       (char === state.stop && char !== '}') ||
@@ -106,9 +188,18 @@ function readWord(state) {
       break;
     const part = readWordPart(state);
     word.value += part.value;
+    word.pattern += part.quoted ? escapeBraceText(part.value) : part.value;
     word.quoted ||= part.quoted;
   }
   return word;
+}
+
+// Prefix assignment values are not brace-expanded.
+function expandedWords(word, command) {
+  const assignment =
+    /^[A-Za-z_][A-Za-z0-9_]*=/.test(word.value) &&
+    command.words.every((value) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(value));
+  return assignment ? [word.value] : expandBraces(word.pattern);
 }
 
 function readHeredoc(state, owner, fd) {
@@ -176,30 +267,8 @@ function findExecCommands(words) {
 }
 
 function wrappedCommands(words) {
-  if (words[0] === 'sudo') {
-    return [
-      words.slice(
-        skipCommandOptions(words, 1, [
-          '-u',
-          '-g',
-          '-h',
-          '-p',
-          '-C',
-          '-R',
-          '-D',
-          '--user',
-          '--group',
-          '--host',
-          '--prompt',
-          '--chdir',
-          '--chroot',
-        ]),
-      ),
-    ];
-  }
-  if (words[0] === 'doas') {
-    return [words.slice(skipCommandOptions(words, 1, ['-u', '-C']))];
-  }
+  const privileged = privilegedLaunch(words);
+  if (privileged) return [privileged.words];
   if (words[0] === 'xargs') {
     return [
       words.slice(
@@ -228,44 +297,21 @@ function wrappedCommands(words) {
   return words[0] === 'find' ? findExecCommands(words) : [];
 }
 
+// `launchedBy` links each extracted command to the command that runs it, so
+// launch context such as env -C reaches nested commands.
+function linkLaunched(commands, owner) {
+  for (const child of commands) child.launchedBy ||= owner;
+}
+
 function appendShellChildren(state, command, script, inheritStdin = true) {
   const children = shellCommands(script);
+  linkLaunched(children, command);
   command.children = children.filter((child) => !child.embedded);
   if (inheritStdin) {
     for (const child of command.children) child.stdinFrom = command;
   }
   for (const child of children) child.embedded = true;
   state.commands.push(...children);
-}
-
-function sshOption(word) {
-  const result = { nextValue: false, noCommand: false, nullStdin: false };
-  for (let index = 1; index < word.length; index += 1) {
-    const flag = word[index];
-    result.noCommand ||= 'GNQsVWOZ'.includes(flag);
-    result.nullStdin ||= 'nf'.includes(flag);
-    if ('BbcDEeFIiJLlmOopQRSWw'.includes(flag)) {
-      result.nextValue = index === word.length - 1;
-      break;
-    }
-  }
-  return result;
-}
-
-function sshInvocation(words) {
-  let host = 1;
-  let noCommand = false;
-  let stdin = true;
-  while (words[host]?.startsWith('-') && words[host] !== '--') {
-    const option = sshOption(words[host]);
-    noCommand ||= option.noCommand;
-    stdin &&= !option.nullStdin;
-    host += option.nextValue ? 2 : 1;
-  }
-  if (words[host] === '--') host += 1;
-  // OpenSSH joins the remote argv with spaces before sending shell code.
-  // https://man.openbsd.org/ssh#DESCRIPTION
-  return { script: noCommand ? '' : words.slice(host + 1).join(' '), stdin };
 }
 
 function expandShellArguments(state, command) {
@@ -279,19 +325,49 @@ function expandShellArguments(state, command) {
       command,
       words.slice(words[1] === '--' ? 2 : 1).join(' '),
     );
+  } else if (words[0] === 'su' && suScript(words)) {
+    appendShellChildren(state, command, suScript(words));
   } else if (words[0] === 'ssh') {
     const remote = sshInvocation(words);
     if (remote.script)
       appendShellChildren(state, command, remote.script, remote.stdin);
   }
   for (const wrapped of wrappedCommands(words)) {
-    const child = { words: wrapped, pipe: false, embedded: true };
+    const child = {
+      words: wrapped,
+      pipe: false,
+      embedded: true,
+      launchedBy: command,
+    };
     // xargs supplies arguments; its child does not consume the pipeline stdin.
     if (words[0] !== 'xargs') child.stdinFrom = command;
     command.children ||= [];
     command.children.push(child);
     flushCommand(state, child);
   }
+}
+
+function skipBlanks(state) {
+  while (SHELL_BLANK.test(state.text[state.index] || '')) state.index += 1;
+}
+
+function readRedirectOperator(state) {
+  const start = state.index;
+  while (/[<>]/.test(state.text[state.index] || '')) state.index += 1;
+  let operator = state.text.slice(start, state.index);
+  // `>|` and zsh `>!`/`>>!` write despite noclobber; the character belongs
+  // to the operator.
+  if (operator.endsWith('>') && /[|!]/.test(state.text[state.index] || '')) {
+    operator += state.text[state.index];
+    state.index += 1;
+  }
+  skipBlanks(state);
+  if (state.text[state.index] === '&') {
+    operator += '&';
+    state.index += 1;
+    skipBlanks(state);
+  }
+  return operator;
 }
 
 function readRedirect(state, owner, fd = null) {
@@ -303,33 +379,34 @@ function readRedirect(state, owner, fd = null) {
     readHeredoc(state, owner, descriptor);
     return;
   }
-  const start = state.index;
-  while (/[<>]/.test(state.text[state.index] || '')) state.index += 1;
-  let operator = state.text.slice(start, state.index);
-  while (SHELL_BLANK.test(state.text[state.index] || '')) state.index += 1;
-  if (state.text[state.index] === '&') {
-    operator += '&';
-    state.index += 1;
-  }
-  const target = readWord(state).value;
+  const operator = readRedirectOperator(state);
+  const word = readWord(state);
+  // zsh writes every target of a brace-expanded redirection.
+  const targets =
+    operator === '<<<' ? [word.value] : expandBraces(word.pattern);
   owner.redirects ||= [];
-  owner.redirects.push({
-    fd: descriptor,
-    operator,
-    target,
-    content: operator === '<<<' ? `${target}\n` : '',
-  });
+  for (const target of targets)
+    owner.redirects.push({
+      fd: descriptor,
+      operator,
+      target,
+      content: operator === '<<<' ? `${target}\n` : '',
+    });
 }
 
 function readCommandWord(state, command) {
+  // A `[[ ... =~ ... ]]` pattern is a regex, not a glob with qualifiers.
+  state.conditional = command.words[0] === '[[';
+  state.leadingGroup = state.text[state.index] === '(';
   const word = readWord(state);
+  state.leadingGroup = false;
   if (
     !word.quoted &&
     /^\d+$/.test(word.value) &&
     /[<>]/.test(state.text[state.index] || '')
   )
     readRedirect(state, command, Number(word.value));
-  else command.words.push(word.value);
+  else command.words.push(...expandedWords(word, command));
 }
 
 function readCommandToken(state, command) {
@@ -340,7 +417,16 @@ function readCommandToken(state, command) {
     const end = state.text.indexOf('\n', state.index);
     state.index = end < 0 ? state.text.length : end;
   } else if (char === '<' || char === '>') readRedirect(state, command);
-  else readCommandWord(state, command);
+  else if (isOutputAndErrorRedirect(state)) {
+    // `&>` and `&>>` redirect stdout and stderr to one target.
+    state.index += 1;
+    readRedirect(state, command, 1);
+    command.redirects.at(-1).operator = `&${command.redirects.at(-1).operator}`;
+  } else readCommandWord(state, command);
+}
+
+function isOutputAndErrorRedirect(state) {
+  return state.text[state.index] === '&' && state.text[state.index + 1] === '>';
 }
 
 function isBraceToken(state, char) {
@@ -365,22 +451,36 @@ function readCommandGroup(state, stop) {
     children: nested.commands.filter((child) => !child.embedded),
   };
   for (const child of group.children) child.stdinFrom = group;
+  linkLaunched(nested.commands, group);
   for (const child of nested.commands) child.embedded = true;
   state.commands.push(...nested.commands);
   return group;
 }
 
-function commandBoundary(state, stop) {
+function commandBoundary(state, stop, command) {
   const char = state.text[state.index];
+  const subshell = char === '(' && !startsArgumentGlob(state, command);
   const closes = char === stop && (char !== '}' || isBraceToken(state, '}'));
   return {
     arithmetic: state.text.startsWith('((', state.index),
-    group: char === '(' ? ')' : isBraceToken(state, '{') && '}',
+    group: subshell ? ')' : isBraceToken(state, '{') && '}',
     closes,
-    separates: closes || /[;\n|&)]/.test(char),
+    separates:
+      closes || (/[;\n|&)]/.test(char) && !isOutputAndErrorRedirect(state)),
     pipe: char === '|' && state.text[state.index + 1] !== '|',
     newline: char === '\n',
   };
+}
+
+// In argument position, zsh reads `(a|b)` as a glob word; after keywords
+// such as `if` or `time`, or when it is not a glob group, it is a subshell.
+function startsArgumentGlob(state, command) {
+  const argument = command.words.some(
+    (word) => !COMMAND_KEYWORDS.has(word) && word !== 'time',
+  );
+  if (!argument || state.text[state.index + 1] === ')') return false;
+  const probe = { ...state, commands: [], heredocs: [] };
+  return readGlobGroup(probe, readWordPart, '(') !== null;
 }
 
 function scanCommands(state, stop = null) {
@@ -389,7 +489,7 @@ function scanCommands(state, stop = null) {
   let command = { words: [], pipe: false };
   let previous = null;
   while (state.index < state.text.length) {
-    const boundary = commandBoundary(state, stop);
+    const boundary = commandBoundary(state, stop, command);
     if (boundary.arithmetic) {
       previous = flushSequentialCommand(state, command, previous);
       command = readArithmetic(state);
@@ -418,15 +518,19 @@ function scanCommands(state, stop = null) {
   state.stop = previousStop;
 }
 
+function isEmptyCommand(command) {
+  return command.words.length === 0 && !command.children && !command.redirects;
+}
+
 function flushSequentialCommand(state, command, previous) {
-  if (command.words.length === 0 && !command.children) return previous;
+  if (isEmptyCommand(command)) return previous;
   if (previous?.pipe) command.pipeFrom = previous;
   flushCommand(state, command);
   return command;
 }
 
 function flushCommand(state, command) {
-  if (command.words.length === 0 && !command.children) return;
+  if (isEmptyCommand(command)) return;
   state.commands.push(command);
   expandShellArguments(state, command);
 }
@@ -505,9 +609,15 @@ function expandShellStdin(state) {
   for (const command of [...state.commands]) {
     if (!shellReadsStdin(command.words)) continue;
     const input = commandStdin(command);
-    if (input) state.commands.push(...shellCommands(input));
+    if (!input) continue;
+    const children = shellCommands(input);
+    linkLaunched(children, command);
+    state.commands.push(...children);
   }
 }
+
+// Steps that glob group reads, including probes, may take per text.
+const GROUP_WORK_LIMIT = 200000;
 
 function shellCommands(text) {
   const state = {
@@ -515,6 +625,7 @@ function shellCommands(text) {
     index: 0,
     commands: [],
     heredocs: [],
+    groupWork: { remaining: GROUP_WORK_LIMIT },
   };
   scanCommands(state);
   expandShellStdin(state);

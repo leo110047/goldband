@@ -52,10 +52,55 @@ function readStdinRaw() {
 
 function parseInput(raw) {
   try {
-    return raw.trim() ? JSON.parse(raw) : {};
+    const parsed = raw.trim() ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : malformedPayload(raw);
   } catch {
-    return {};
+    return malformedPayload(raw);
   }
+}
+
+// Codex continues a tool call when its hook fails, so a payload that is not a
+// JSON object is still read as patch text: a protected target gets an
+// explicit deny instead of an error exit. JSON string escapes are decoded and
+// unescaped quotes become line breaks so patch headers stay on their own
+// lines. The undecoded text is appended, so a target spelled either way
+// through an invalid escape is still read.
+const JSON_ESCAPES = {
+  b: '\b',
+  f: '\f',
+  n: '\n',
+  r: '\r',
+  t: '\t',
+  '"': '"',
+  '\\': '\\',
+  '/': '/',
+};
+
+function decodeJsonText(text) {
+  return text.replace(
+    /\\u([0-9a-fA-F]{4})|\\([\s\S])|"/g,
+    (_match, hex, escape) => {
+      if (hex) return String.fromCharCode(Number.parseInt(hex, 16));
+      if (escape === undefined) return '\n';
+      // An invalid escape reads as its character; the raw copy keeps it.
+      return Object.hasOwn(JSON_ESCAPES, escape)
+        ? JSON_ESCAPES[escape]
+        : escape;
+    },
+  );
+}
+
+function malformedPayload(raw) {
+  const text = String(raw);
+  return {
+    hook_event_name: 'PreToolUse',
+    tool_name: 'apply_patch',
+    tool_input: {
+      command: `${decodeJsonText(text)}\n${text.replace(/\\n|"/g, '\n')}`,
+    },
+  };
 }
 
 function writeJson(value) {
@@ -289,6 +334,9 @@ function evaluateInput(input) {
     return evaluatePermissionRequestResult(input);
   if (eventName === 'PostToolUse') return evaluatePostToolUseResult(input);
   if (eventName === 'Stop') return evaluateStopResult(input);
+  // A tool payload missing its event name still gets the PreToolUse checks.
+  if (!eventName && input.tool_input !== undefined)
+    return evaluatePreToolUseResult(input);
   return null;
 }
 

@@ -1,5 +1,8 @@
 {
   "version": "0.1.0",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "bootstrap:test": "node scripts/bootstrap-repo-tests.mjs",
     "clean:legacy-host-artifacts": "node scripts/cleanup-retired-host-artifacts.mjs",
@@ -16,7 +19,7 @@
     "test:unused-exports": "node scripts/test-unused-exports.mjs && node scripts/check-unused-exports.mjs",
     "lint:style": "node scripts/check-code-style.mjs",
     "lint:style:staged": "node scripts/check-code-style.mjs --staged",
-    "test:hook-router": "node hooks/scripts/tools/replay-hook-router.js && node scripts/test-claude-hook-router-review-readonly.mjs && node scripts/test-codex-high-risk-policy.mjs && node scripts/test-codex-hook-router.mjs && node scripts/test-hook-policy-parity.mjs && node scripts/test-hook-noise-policy.mjs && node scripts/test-review-launch-advisory.mjs && node scripts/test-claude-config-verification-runtime.mjs",
+    "test:hook-router": "node hooks/scripts/tools/replay-hook-router.js && node scripts/test-claude-hook-router-review-readonly.mjs && node scripts/test-codex-high-risk-policy.mjs && node scripts/test-codex-hook-router.mjs && node scripts/test-hook-policy-parity.mjs && node scripts/test-gate-protection.mjs && node scripts/test-hook-noise-policy.mjs && node scripts/test-review-launch-advisory.mjs && node scripts/test-claude-config-verification-runtime.mjs",
     "test:telemetry": "node scripts/test-telemetry-schema.mjs && node scripts/test-telemetry.mjs && node scripts/test-telemetry-otlp.mjs && node scripts/test-telemetry-miner.mjs",
     "test:hook-router:coverage": "node scripts/check-hook-router-coverage.mjs",
     "test:cross-review": "node scripts/test-cross-review.mjs && node scripts/test-cross-review-regressions.mjs",
@@ -24,7 +27,7 @@
     "test:mcp-server": "npm --prefix mcp/server test",
     "smoke:mcp-server": "npm --prefix mcp/server run smoke",
     "test:eval-budget-cap": "node scripts/test-eval-budget-cap.mjs",
-    "test:style-gate": "node scripts/test-code-style-gate.mjs && node scripts/test-code-style-advisory.mjs && node scripts/test-code-style-scopes.mjs && node scripts/test-live-style-advisory.mjs && node scripts/test-live-secret-advisory.mjs && node scripts/test-style-gate-install.mjs && node scripts/test-goldband-loop-source-gates.mjs",
+    "test:style-gate": "node scripts/test-code-style-gate.mjs && node scripts/test-code-style-advisory.mjs && node scripts/test-code-style-scopes.mjs && node scripts/test-code-style-hidden-unicode.mjs && node scripts/test-code-style-test-skips.mjs && node scripts/test-live-style-advisory.mjs && node scripts/test-live-secret-advisory.mjs && node scripts/test-style-gate-install.mjs && node scripts/test-secret-push-gate.mjs && node scripts/test-goldband-loop-source-gates.mjs",
     "test:auto-update": "node scripts/test-auto-update.mjs",
     "test:config-preservation": "node scripts/test-config-preservation.mjs && node scripts/test-config-lifecycle.mjs && node scripts/test-playwright-mcp-install.mjs",
     "test:launchers": "node scripts/test-shell-launchers.mjs",

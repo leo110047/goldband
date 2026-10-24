@@ -77,7 +77,7 @@ uninstall_claude_paths() {
     remove_repo_component "$REPO_DIR/shell/goldband-self-update.sh" "$SHELL_UPDATE_BIN"
     remove_repo_component "$REPO_DIR/shell/goldband-launchers.sh" "$SHELL_LAUNCHERS_FILE"
     remove_repo_component "$REPO_DIR/hooks/statusline-command.sh" "$CLAUDE_DIR/statusline-command.sh"
-    remove_shell_launcher_block "$ZSHRC_FILE"
+    remove_marked_block "$ZSHRC_FILE" "shell launchers"
     remove_empty_dir "$CLAUDE_BIN_DIR"
     remove_empty_dir "$CLAUDE_SHELL_DIR"
 }
@@ -216,90 +216,4 @@ remove_codex_requirements_file() {
     else
         sudo rm "$CODEX_REQUIREMENTS_FILE"
     fi
-}
-
-uninstall_style_gate() {
-    local installed_runtime_owned=false
-    if installed_style_gate_runtime_is_owned; then
-        installed_runtime_owned=true
-    fi
-    if command -v git >/dev/null 2>&1; then
-        local current_hooks_path
-        current_hooks_path="$(git config --global --get core.hooksPath 2>/dev/null || true)"
-        if paths_equivalent "$current_hooks_path" "$GIT_HOOKS_DIR" \
-            && [ "$installed_runtime_owned" = true ]; then
-            git config --global --unset core.hooksPath
-            echo -e "  ${GREEN}[移除] global core.hooksPath goldband style gate${NC}"
-        elif paths_equivalent "$current_hooks_path" "$LEGACY_GIT_HOOKS_DIR"; then
-            git config --global --unset core.hooksPath
-            echo -e "  ${GREEN}[移除] legacy global core.hooksPath goldband style gate${NC}"
-        elif [ -n "$current_hooks_path" ]; then
-            echo -e "  ${YELLOW}[保留] global core.hooksPath — 不是 goldband 管理: $current_hooks_path${NC}"
-        fi
-    fi
-    if [ "$installed_runtime_owned" = true ]; then
-        remove_installed_style_gate_hooks
-    fi
-}
-
-installed_style_gate_runtime_is_owned() {
-    local marker="$GIT_HOOKS_DIR/.goldband-source"
-    local kind relative checksum bytes extra
-    local saw_pre_commit=false
-    local saw_commit_msg=false
-    local saw_project_hook=false
-    [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
-    [ "$(sed -n '2p' "$marker")" = "schemaVersion=1" ] || return 1
-    while IFS=$'\t' read -r kind relative checksum bytes extra; do
-        [ "$kind" = "file" ] || return 1
-        [ -n "$checksum" ] && [[ "$checksum" =~ ^[0-9]+$ ]] || return 1
-        [ -n "$bytes" ] && [[ "$bytes" =~ ^[0-9]+$ ]] || return 1
-        [ -z "$extra" ] || return 1
-        case "$relative" in
-            pre-commit)
-                [ "$saw_pre_commit" = false ] || return 1
-                saw_pre_commit=true
-                ;;
-            commit-msg)
-                [ "$saw_commit_msg" = false ] || return 1
-                saw_commit_msg=true
-                ;;
-            lib/project-hook.sh)
-                [ "$saw_project_hook" = false ] || return 1
-                saw_project_hook=true
-                ;;
-            *) return 1 ;;
-        esac
-    done < <(sed -n '3,$p' "$marker")
-    [ "$saw_pre_commit" = true ] \
-        && [ "$saw_commit_msg" = true ] \
-        && [ "$saw_project_hook" = true ]
-}
-
-remove_installed_style_gate_hooks() {
-    local marker="$GIT_HOOKS_DIR/.goldband-source"
-    local kind relative checksum bytes extra
-    while IFS=$'\t' read -r kind relative checksum bytes extra; do
-        remove_owned_style_gate_file "$relative" "$checksum" "$bytes"
-    done < <(sed -n '3,$p' "$marker")
-    rm -f "$marker"
-    rmdir "$GIT_HOOKS_DIR/lib" 2>/dev/null || true
-    rmdir "$GIT_HOOKS_DIR" 2>/dev/null || true
-}
-
-remove_owned_style_gate_file() {
-    local relative="$1"
-    local expected_checksum="$2"
-    local expected_bytes="$3"
-    local target="$GIT_HOOKS_DIR/$relative"
-    local checksum bytes ignored
-    [ -e "$target" ] || return 0
-    if [ -f "$target" ] && [ ! -L "$target" ]; then
-        IFS=' ' read -r checksum bytes ignored < <(cksum "$target")
-        if [ "$checksum" = "$expected_checksum" ] && [ "$bytes" = "$expected_bytes" ]; then
-            rm -f "$target"
-            return 0
-        fi
-    fi
-    echo -e "  ${YELLOW}[保留] installed hook 已修改或不是一般檔案: $target${NC}"
 }

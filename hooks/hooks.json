@@ -75,7 +75,7 @@
             "command": "node \"${HOOKS_DIR}/scripts/hooks/hook-router.js\""
           }
         ],
-        "description": "Unified router (blocking policies: careful-mode/freeze-mode/secrets/managed-worktree)"
+        "description": "Unified router (blocking policies: careful-mode/freeze-mode/secrets/managed-worktree/gate-a-bypass/gate-g-protected-config)"
       }
     ],
     "PostToolUse": [

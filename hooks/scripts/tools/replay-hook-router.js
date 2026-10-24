@@ -76,6 +76,12 @@ function stdoutMatchesExpected(stdout, expected) {
   return list.every((fragment) => stdout.includes(fragment));
 }
 
+function stdoutExcludesExpected(stdout, excluded) {
+  if (!excluded) return true;
+  const list = Array.isArray(excluded) ? excluded : [excluded];
+  return list.every((fragment) => !stdout.includes(fragment));
+}
+
 function loadMetrics(filePath) {
   if (!fs.existsSync(filePath)) return [];
   return fs
@@ -246,6 +252,14 @@ function invokeFixture({
   return buildInvocationResult(fixture, iteration, result, startNs);
 }
 
+function outputMatchesExpected(result, expected) {
+  return (
+    matchesExpected(result.stderr || '', expected.stderrIncludes) &&
+    stdoutMatchesExpected(result.stdout || '', expected.stdoutIncludes) &&
+    stdoutExcludesExpected(result.stdout || '', expected.stdoutExcludes)
+  );
+}
+
 function buildInvocationResult(fixture, iteration, result, startNs) {
   const durationMs = Number(process.hrtime.bigint() - startNs) / 1e6;
   const exitCode = typeof result.status === 'number' ? result.status : 1;
@@ -258,8 +272,7 @@ function buildInvocationResult(fixture, iteration, result, startNs) {
   const pass =
     exitCode === expectedExitCode &&
     decision === expectedDecision &&
-    matchesExpected(result.stderr || '', expected.stderrIncludes) &&
-    stdoutMatchesExpected(result.stdout || '', expected.stdoutIncludes);
+    outputMatchesExpected(result, expected);
 
   return {
     id: fixture.id,
