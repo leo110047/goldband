@@ -419,11 +419,15 @@ and every command it launches through `sh -c`, wrappers, or stdin, against
 `DIR`, while its own redirections stay in the shell's directory. `mv` and recursive `cp` (`-r`,
 `-R`, `-a`) check every entry of a source directory at its destination; a cp
 source written `dir/` or `dir/.` merges its contents into the destination. A
-recursive cp source that is missing, is an unmatched glob, cannot be read, or
+recursive cp source that is missing or an unmatched glob in any working
+directory the command may run in, cannot be read, or
 holds more than 2000 entries, an existing `mv` source that cannot be read or
 holds more than 2000 entries, and a recursive `chmod`-family operand that
 cannot be read or holds more than 2000 entries, is checked as if it contained
-every protected project and home name. Running the installer recorded on line 1 of
+every protected project and home name. Sources and operands are listed as
+they exist before the command runs: a source the command replaces, a glob
+match it creates, and a missing `mv` source or recursive `chmod`-family
+operand, including one named by a variable, are not protected. Running the installer recorded on line 1 of
 `<installed hook dir>/.goldband-source` (`<source>/install.sh`, resolved by real
 path) is one protected operation, whether run directly, by a shell, through
 `env` (including `-S` and `-C`), or a wrapper; its own file writes are not
