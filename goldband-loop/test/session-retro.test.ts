@@ -6,7 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { parseKnowledgeFile } from "../lib/knowledge";
 import { analyzeRetroSession, classifyShellCommand, isEmptyShellSearch } from "../lib/session-retro-analysis";
-import { locateClaudeSession, readClaudeSession } from "../lib/session-retro-claude";
+import { listClaudeSessions, locateClaudeSession, readClaudeSession } from "../lib/session-retro-claude";
 import type { RetroToolEventV1 } from "../lib/session-retro-evidence";
 import { readSessionSnapshot } from "../lib/session-retro-snapshot";
 import { runRetroEvidence, runRetroProposals, runRetroRange } from "../lib/session-retro-runtime";
@@ -141,6 +141,8 @@ function env(home: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
 	const base = { ...process.env };
 	delete base.CLAUDE_CONFIG_DIR;
 	delete base.CLAUDE_CODE_SESSION_ID;
+	delete base.CODEX_HOME;
+	delete base.CODEX_THREAD_ID;
 	return { ...base, HOME: home, GOLDBAND_HOME: path.join(home, ".goldband"), ...extra };
 }
 
@@ -301,6 +303,19 @@ describe("Claude session adapter", () => {
 		expect(locateClaudeSession(SESSION, env(home))).toMatchObject({ status: "blocked", reason: expect.stringContaining("not found") });
 	});
 
+	test("skips a symbolically linked projects directory", () => {
+		const home = tempHome();
+		const outside = tempHome();
+		writeSession(outside, sessionRecords());
+		fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+		fs.symlinkSync(path.join(outside, ".claude", "projects"), path.join(home, ".claude", "projects"));
+		expect(locateClaudeSession(SESSION, env(home))).toEqual({
+			status: "blocked",
+			reason: `Claude session not found: ${SESSION}; 1 record directories could not be listed`,
+		});
+		expect(listClaudeSessions({ since: 0, env: env(home) })).toMatchObject({ sessions: [], unreadableDirectories: 1 });
+	});
+
 	test("parses the de-identified sampled session", () => {
 		const fixture = path.join(import.meta.dir, "fixtures", "session-retro", "claude-session.jsonl");
 		const session = readClaudeSession(fixture, "00000000-0000-4000-8000-00000000c1a0");
@@ -437,6 +452,30 @@ describe("measured retro evidence", () => {
 		const value = analyzeRetroSession({ snapshot, tools });
 		expect(pick(value, "first-edit")).toEqual([{ value: 4, unit: "count", refs: [5] }]);
 		expect(pick(value, "pre-edit-searches")).toEqual([{ value: 1, unit: "count", refs: [2] }]);
+	});
+
+	test("counts a lookup issued before the first edit's result as before the edit", () => {
+		const snapshot = { host: "claude" as const, sessionId: SESSION, byteLength: 1, recordCount: 100, sha256: "c".repeat(64) };
+		const event = (ordinal: number, resultOrdinal: number, tool: string, category: RetroToolEventV1["category"]): RetroToolEventV1 => ({
+			ordinal,
+			resultOrdinal,
+			tool,
+			category,
+			inputSha256: String(ordinal).padStart(64, "0"),
+			outputBytes: 10,
+			failed: false,
+		});
+		// The Edits and the first Grep are parallel calls of one message; the later Edit finished first.
+		const tools = [
+			event(1, 2, "Read", "read"),
+			event(3, 8, "Edit", "edit"),
+			event(4, 6, "Edit", "edit"),
+			event(5, 7, "Grep", "search"),
+			event(9, 10, "Grep", "search"),
+		];
+		const value = analyzeRetroSession({ snapshot, tools });
+		expect(pick(value, "first-edit")).toEqual([{ value: 2, unit: "count", refs: [4] }]);
+		expect(pick(value, "pre-edit-searches")).toEqual([{ value: 1, unit: "count", refs: [5] }]);
 	});
 
 	test("lists the largest duplicate groups and counts every group", () => {
@@ -1102,7 +1141,7 @@ describe("retro range", () => {
 				[id(4), "completed"],
 			]);
 			expect(result.unlocated).toBe(1);
-			expect(result.unreadableProjects).toBe(2);
+			expect(result.unreadableDirectories).toBe(2);
 			// A relative cwd resolves against the process directory, so run the CLI inside the repository.
 			const cli = spawnSync("bun", [path.join(ROOT, "bin", "goldband-retro.ts"), "evidence", "--host", "claude", "--days", "3"], {
 				cwd: path.join(repo, "sub"),
@@ -1148,9 +1187,9 @@ describe("retro range", () => {
 	test("bounds the range and its session count", () => {
 		const { home, repo } = rangeHome();
 		const options = { host: "claude", cwd: repo, stateRoot: path.join(home, ".goldband"), env: env(home), now: NOW };
-		expect(runRetroRange({ ...options, days: 1 })).toEqual({ status: "completed", days: 1, sessions: [], unlocated: 0, unreadableProjects: 0 });
+		expect(runRetroRange({ ...options, days: 1 })).toEqual({ status: "completed", days: 1, sessions: [], unlocated: 0, unreadableDirectories: 0, unreadRecords: 0 });
 		for (const days of [0, 91, 1.5]) expect(() => runRetroRange({ ...options, days })).toThrow("days must be an integer from 1 to 90");
-		expect(runRetroRange({ ...options, host: "codex", days: 1 })).toMatchObject({ status: "blocked" });
+		expect(runRetroRange({ ...options, host: "gemini", days: 1 })).toMatchObject({ status: "blocked", reason: "context/retro has no gemini session adapter" });
 		for (let n = 1; n <= 201; n += 1) rangeSession(home, id(n), repo, 0, []);
 		expect(runRetroRange({ ...options, days: 1 })).toEqual({
 			status: "blocked",
@@ -1171,7 +1210,7 @@ describe("retro range", () => {
 		}
 		const run = cli(["--days", "3"]);
 		expect(run.status).toBe(0);
-		expect(JSON.parse(run.stdout)).toEqual({ status: "completed", days: 3, sessions: [], unlocated: 0, unreadableProjects: 0 });
+		expect(JSON.parse(run.stdout)).toEqual({ status: "completed", days: 3, sessions: [], unlocated: 0, unreadableDirectories: 0, unreadRecords: 0 });
 	});
 });
 
@@ -1193,7 +1232,10 @@ describe("retro owner runtime", () => {
 	test("blocks other hosts and missing sessions", () => {
 		const home = tempHome();
 		const stateRoot = path.join(home, ".goldband");
-		expect(runRetroEvidence({ host: "codex", stateRoot, env: env(home) })).toMatchObject({ status: "blocked" });
+		expect(runRetroEvidence({ host: "gemini", stateRoot, env: env(home) })).toMatchObject({
+			status: "blocked",
+			reason: "context/retro has no gemini session adapter",
+		});
 		expect(runRetroEvidence({ host: "claude", sessionId: SESSION, stateRoot, env: env(home) })).toMatchObject({
 			status: "blocked",
 			reason: expect.stringContaining("not found"),
@@ -1359,7 +1401,8 @@ describe("goldband-retro CLI", () => {
 				evidence: [
 					`${SESSION}@${report.snapshots[0].sha256}: evidence=${(evidence.output as { report: { evidence: unknown[] } }).report.evidence.length}`,
 					"unlocated=0",
-					"unreadableProjects=0",
+					"unreadableDirectories=0",
+					"unreadRecords=0",
 				],
 			});
 			const missing = await run({ mode: "evidence", sessionId: "00000000-0000-4000-8000-000000000000" });

@@ -70,10 +70,17 @@ export type RetroToolEventV1 = {
 	ordinal: number;
 	/** The result's record, at or after the call; calls issued together finish in any order. */
 	resultOrdinal: number;
+	/**
+	 * Where the call started, for ordering only, when no record marks its start:
+	 * past every result that finished before it began. Absent when `ordinal` is the start.
+	 */
+	startOrdinal?: number;
 	tool: string;
 	category: RetroToolCategory;
 	inputSha256: string;
 	outputBytes: number;
+	/** The host persisted only part of the output, so `outputBytes` is a lower bound. */
+	outputCapped?: boolean;
 	failed: boolean;
 	exitCode?: number;
 	blockedBy?: (typeof RETRO_BLOCKERS)[number];
@@ -100,12 +107,107 @@ export type RetroUsageTotalsV1 = {
 	outputTokens: number;
 };
 
+/** One session as a host adapter read it; in memory only. */
+export type RetroSessionRead = {
+	snapshot: RetroSnapshotRefV1;
+	/** The record file; never persisted. */
+	path: string;
+	tools: RetroToolEventV1[];
+	/** Ordinals of tool calls with no result inside the snapshot. */
+	unfinished: number[];
+	usage?: RetroUsageTotalsV1;
+	/** Instruction sources as the session loaded them. */
+	instructions: RetroInstructionLoadV1[];
+};
+
+export type RetroSessionLocation =
+	| { status: "found"; sessionId: string; path: string }
+	| { status: "blocked"; reason: string };
+
+/**
+ * Sessions an adapter lists for a range: `cwd` is absent when the record does
+ * not show it; `ambiguous` ids are recorded more than once at any age.
+ */
+export type RetroSessionListing = {
+	sessions: Array<{ sessionId: string; path: string; cwd?: string }>;
+	ambiguous: string[];
+	unreadableDirectories: number;
+	/** Records in range stored in a form the adapter does not read; counted, not read. */
+	unreadRecords: number;
+};
+
+/** The text parts of a tool result, joined. */
+export function retroContentText(content: unknown): string {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	return content.map((part) => (isTextPart(part) ? part.text : "")).join("");
+}
+
+/** Text parts count their UTF-8 bytes; other parts, such as images, their serialized size. */
+export function retroContentBytes(content: unknown): number {
+	if (typeof content === "string") return Buffer.byteLength(content);
+	if (!Array.isArray(content)) return 0;
+	return content.reduce(
+		(total: number, part) =>
+			total +
+			Buffer.byteLength(
+				isTextPart(part) ? part.text : (JSON.stringify(part) ?? ""),
+			),
+		0,
+	);
+}
+
+function isTextPart(part: unknown): part is { text: string } {
+	return (
+		typeof part === "object" &&
+		part !== null &&
+		typeof (part as { text?: unknown }).text === "string"
+	);
+}
+
+/** A usage token count; anything but a positive safe integer counts as 0. */
+export function retroTokenCount(value: unknown): number {
+	return Number.isSafeInteger(value) && (value as number) > 0
+		? (value as number)
+		: 0;
+}
+
+/** Ids that occur more than once among listed record files. */
+export function repeatedSessionIds(
+	files: Array<{ sessionId: string }>,
+): string[] {
+	const seen = new Set<string>();
+	const repeated = new Set<string>();
+	for (const { sessionId } of files) {
+		if (seen.has(sessionId)) repeated.add(sessionId);
+		seen.add(sessionId);
+	}
+	return [...repeated];
+}
+
+/** Session totals over usage rows already deduplicated by the host's response identity. */
+export function retroUsageTotals(
+	rows: Iterable<{ ordinal: number; input: number; output: number }>,
+): RetroUsageTotalsV1 | undefined {
+	let totals: RetroUsageTotalsV1 | undefined;
+	for (const row of rows) {
+		totals = {
+			firstOrdinal: Math.min(totals?.firstOrdinal ?? row.ordinal, row.ordinal),
+			lastOrdinal: Math.max(totals?.lastOrdinal ?? row.ordinal, row.ordinal),
+			inputTokens: (totals?.inputTokens ?? 0) + row.input,
+			outputTokens: (totals?.outputTokens ?? 0) + row.output,
+		};
+	}
+	return totals;
+}
+
 export type RetroEvidenceV1 = {
 	facet: RetroFacet;
 	grade: RetroEvidenceGrade;
 	rule: string;
 	refs: string[];
-	metric?: { value: number; unit: RetroMetricUnit };
+	/** `lowerBound` marks a value summed from at least one capped output. */
+	metric?: { value: number; unit: RetroMetricUnit; lowerBound?: true };
 	tool?: string;
 	inputSha256?: string;
 	exitCode?: number;
@@ -146,25 +248,42 @@ export function formatRetroRef(
 	return `${snapshot.sessionId}@${snapshot.sha256}#${ordinal}`;
 }
 
+function validateEventOrdinals(event: Record<string, unknown>): void {
+	count(event.ordinal, "tool event ordinal");
+	count(event.resultOrdinal, "tool event resultOrdinal");
+	if ((event.resultOrdinal as number) < (event.ordinal as number))
+		throw new Error("tool event resultOrdinal must not precede its ordinal");
+	if (event.startOrdinal === undefined) return;
+	count(event.startOrdinal, "tool event startOrdinal");
+	if ((event.startOrdinal as number) > (event.resultOrdinal as number))
+		throw new Error(
+			"tool event startOrdinal must not follow its resultOrdinal",
+		);
+}
+
+/** Where a call started: its own record unless the adapter gave a start position. */
+export function retroStartOrdinal(event: RetroToolEventV1): number {
+	return event.startOrdinal ?? event.ordinal;
+}
+
 export function validateRetroToolEvent(value: unknown): RetroToolEventV1 {
 	const event = record(value, "tool event");
 	onlyKeys(event, "tool event", [
 		"ordinal",
 		"resultOrdinal",
+		"startOrdinal",
 		"tool",
 		"category",
 		"inputSha256",
 		"outputBytes",
+		"outputCapped",
 		"failed",
 		"exitCode",
 		"blockedBy",
 		"truncated",
 		"emptyResult",
 	]);
-	count(event.ordinal, "tool event ordinal");
-	count(event.resultOrdinal, "tool event resultOrdinal");
-	if ((event.resultOrdinal as number) < (event.ordinal as number))
-		throw new Error("tool event resultOrdinal must not precede its ordinal");
+	validateEventOrdinals(event);
 	pattern(event.tool, TOOL_RE, "tool event tool");
 	member(event.category, RETRO_TOOL_CATEGORIES, "tool event category");
 	pattern(event.inputSha256, RETRO_SHA256_RE, "tool event inputSha256");
@@ -175,7 +294,7 @@ export function validateRetroToolEvent(value: unknown): RetroToolEventV1 {
 		integer(event.exitCode, "tool event exitCode");
 	if (event.blockedBy !== undefined)
 		member(event.blockedBy, RETRO_BLOCKERS, "tool event blockedBy");
-	for (const flag of ["truncated", "emptyResult"]) {
+	for (const flag of ["outputCapped", "truncated", "emptyResult"]) {
 		if (event[flag] !== undefined && typeof event[flag] !== "boolean") {
 			throw new Error(`tool event ${flag} must be a boolean`);
 		}
@@ -280,6 +399,23 @@ function validateFacetStatus(value: unknown, facet: RetroFacet): void {
 	member(status.reason, RETRO_UNAVAILABLE_REASONS, `facet ${facet} reason`);
 }
 
+function validateMetric(value: unknown): void {
+	const metric = record(value, "evidence metric");
+	onlyKeys(metric, "evidence metric", ["value", "unit", "lowerBound"]);
+	if (metric.lowerBound !== undefined && metric.lowerBound !== true)
+		throw new Error("evidence metric lowerBound must be true when present");
+	if (
+		typeof metric.value !== "number" ||
+		!Number.isFinite(metric.value) ||
+		metric.value < 0
+	) {
+		throw new Error(
+			"evidence metric value must be a finite non-negative number",
+		);
+	}
+	member(metric.unit, RETRO_METRIC_UNITS, "evidence metric unit");
+}
+
 export function validateRetroEvidence(value: unknown): RetroEvidenceV1 {
 	const evidence = record(value, "evidence");
 	onlyKeys(evidence, "evidence", [
@@ -300,20 +436,7 @@ export function validateRetroEvidence(value: unknown): RetroEvidenceV1 {
 	if (!Array.isArray(evidence.refs) || evidence.refs.length === 0) {
 		throw new Error("evidence refs must be a non-empty array");
 	}
-	if (evidence.metric !== undefined) {
-		const metric = record(evidence.metric, "evidence metric");
-		onlyKeys(metric, "evidence metric", ["value", "unit"]);
-		if (
-			typeof metric.value !== "number" ||
-			!Number.isFinite(metric.value) ||
-			metric.value < 0
-		) {
-			throw new Error(
-				"evidence metric value must be a finite non-negative number",
-			);
-		}
-		member(metric.unit, RETRO_METRIC_UNITS, "evidence metric unit");
-	}
+	if (evidence.metric !== undefined) validateMetric(evidence.metric);
 	if (evidence.tool !== undefined)
 		pattern(evidence.tool, TOOL_RE, "evidence tool");
 	if (evidence.inputSha256 !== undefined)

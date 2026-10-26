@@ -358,7 +358,8 @@
           "owner": "session-retro-evidence",
           "risk": "low",
           "hostSupport": [
-            "claude"
+            "claude",
+            "codex"
           ],
           "runtimeContract": {
             "modes": [

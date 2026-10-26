@@ -6,6 +6,7 @@ import {
 	RETRO_FACETS,
 	type RetroReportV1,
 	type RetroSnapshotRefV1,
+	retroStartOrdinal,
 	validateRetroReport,
 	validateRetroToolEvent,
 } from "../lib/session-retro-evidence";
@@ -68,6 +69,15 @@ describe("retro report contract", () => {
 		expect(() => validateRetroReport(snapshot)).toThrow("unsupported field: path");
 	});
 
+	test("accepts a lower-bound metric only as true", () => {
+		const value = report();
+		const metric = value.evidence[0].metric as unknown as Record<string, unknown>;
+		metric.lowerBound = true;
+		expect(validateRetroReport(value)).toEqual(value);
+		metric.lowerBound = false;
+		expect(() => validateRetroReport(value)).toThrow("evidence metric lowerBound must be true when present");
+	});
+
 	test("accepts instruction source kinds and content hashes only in their shapes", () => {
 		const value = report();
 		value.facets["ineffective-instructions"] = { status: "covered" };
@@ -122,12 +132,21 @@ describe("retro tool event contract", () => {
 	test("leaves host-unrecorded fields absent", () => {
 		expect(validateRetroToolEvent(event)).toEqual(event);
 		expect(validateRetroToolEvent({ ...event, exitCode: 2, truncated: false })).toMatchObject({ exitCode: 2 });
+		expect(validateRetroToolEvent({ ...event, outputCapped: true })).toMatchObject({ outputCapped: true });
+		expect(() => validateRetroToolEvent({ ...event, outputCapped: "yes" })).toThrow("tool event outputCapped must be a boolean");
 	});
 
 	test("rejects raw output and unknown categories", () => {
 		expect(() => validateRetroToolEvent({ ...event, output: "text" })).toThrow("unsupported field: output");
 		expect(() => validateRetroToolEvent({ ...event, category: "shell" })).toThrow("invalid tool event category");
 		expect(() => validateRetroToolEvent({ ...event, resultOrdinal: 2 })).toThrow("resultOrdinal must not precede its ordinal");
+	});
+
+	test("orders an event by its start position when the host records one", () => {
+		expect(retroStartOrdinal(event)).toBe(3);
+		expect(retroStartOrdinal(validateRetroToolEvent({ ...event, startOrdinal: 1 }))).toBe(1);
+		expect(() => validateRetroToolEvent({ ...event, startOrdinal: 5 })).toThrow("startOrdinal must not follow its resultOrdinal");
+		expect(() => validateRetroToolEvent({ ...event, startOrdinal: -1 })).toThrow("tool event startOrdinal");
 	});
 });
 

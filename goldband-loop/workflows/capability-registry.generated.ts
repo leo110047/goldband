@@ -534,7 +534,8 @@ export const CAPABILITY_ACTIONS: CapabilityActionRecord[] = [
     "safetyGates": [],
     "riskLevel": "low",
     "hostSupport": [
-      "claude"
+      "claude",
+      "codex"
     ]
   },
   {

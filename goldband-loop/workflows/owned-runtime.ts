@@ -707,14 +707,16 @@ function retroRangeResult(
 					: `${session.sessionId}: ${session.status}: ${compact(session.reason ?? "")}`,
 			),
 			`unlocated=${String(output.unlocated)}`,
-			`unreadableProjects=${String(output.unreadableProjects)}`,
+			`unreadableDirectories=${String(output.unreadableDirectories)}`,
+			`unreadRecords=${String(output.unreadRecords)}`,
 		],
 		reports,
 		{
 			days: output.days,
 			sessions: listed,
 			unlocated: output.unlocated,
-			unreadableProjects: output.unreadableProjects,
+			unreadableDirectories: output.unreadableDirectories,
+			unreadRecords: output.unreadRecords,
 		},
 	);
 }

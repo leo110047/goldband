@@ -1,6 +1,7 @@
 import {
 	formatRetroRef,
 	RETRO_FACETS,
+	retroStartOrdinal,
 	type RetroEvidenceV1,
 	type RetroFacet,
 	type RetroFacetStatusV1,
@@ -344,16 +345,39 @@ function facetCoverage(
 
 type Ref = (ordinal: number) => string;
 
-/** Cost of finding files and information before the first edit, or over the whole snapshot without one. */
+/**
+ * The first applied edit and what started before its result, the complement
+ * of what auto-checks count as after an edit; other applied edits are not in
+ * the window. A failed or blocked edit changed nothing, so the window continues.
+ */
+function preEditWindow(tools: RetroToolEventV1[]): {
+	firstEdit?: RetroToolEventV1;
+	window: RetroToolEventV1[];
+} {
+	const firstEdit = tools
+		.filter(isAppliedEdit)
+		.reduce<RetroToolEventV1 | undefined>(
+			(first, edit) =>
+				!first || edit.resultOrdinal < first.resultOrdinal ? edit : first,
+			undefined,
+		);
+	if (!firstEdit) return { window: tools };
+	return {
+		firstEdit,
+		window: tools.filter(
+			(event) =>
+				!isAppliedEdit(event) &&
+				retroStartOrdinal(event) <= firstEdit.resultOrdinal,
+		),
+	};
+}
+
+/** Cost of finding files and information started before the first edit's result, or over the whole snapshot without one. */
 function fileSearchEvidence(
 	tools: RetroToolEventV1[],
 	ref: Ref,
 ): RetroEvidenceV1[] {
-	// A failed or blocked edit changed nothing, so the search window continues.
-	const firstEdit = tools.find(isAppliedEdit);
-	const window = firstEdit
-		? tools.filter((event) => event.ordinal < firstEdit.ordinal)
-		: tools;
+	const { firstEdit, window } = preEditWindow(tools);
 	const searches = window.filter(
 		(event) => event.category === "search" || event.category === "list",
 	);
@@ -376,10 +400,12 @@ function fileSearchEvidence(
 	evidence.push(...countEvidence("file-search", "pre-edit-reads", reads, ref));
 	if (lookups.length > 0) {
 		evidence.push(
-			measured("file-search", "pre-edit-lookup-output", refs(lookups, ref), {
-				value: sumBytes(lookups),
-				unit: "bytes",
-			}),
+			measured(
+				"file-search",
+				"pre-edit-lookup-output",
+				refs(lookups, ref),
+				byteMetric(lookups),
+			),
 		);
 	}
 	evidence.push(
@@ -410,10 +436,12 @@ function toolCostEvidence(
 		.slice(0, topOutputs);
 	for (const event of largest) {
 		evidence.push({
-			...measured("tool-cost", "top-output", [ref(event.ordinal)], {
-				value: event.outputBytes,
-				unit: "bytes",
-			}),
+			...measured(
+				"tool-cost",
+				"top-output",
+				[ref(event.ordinal)],
+				byteMetric([event]),
+			),
 			...identity(event),
 		});
 	}
@@ -436,10 +464,12 @@ function toolCostEvidence(
 		.sort((a, b) => b.bytes - a.bytes || a.tool.localeCompare(b.tool));
 	for (const row of totals) {
 		evidence.push({
-			...measured("tool-cost", "output-by-tool", refs(row.events, ref), {
-				value: row.bytes,
-				unit: "bytes",
-			}),
+			...measured(
+				"tool-cost",
+				"output-by-tool",
+				refs(row.events, ref),
+				byteMetric(row.events),
+			),
 			tool: row.tool,
 		});
 	}
@@ -469,7 +499,7 @@ function autoCheckEvidence(
 	);
 	if (lastEdit) {
 		const after = commands.filter(
-			(event) => event.ordinal > lastEdit.resultOrdinal,
+			(event) => retroStartOrdinal(event) > lastEdit.resultOrdinal,
 		);
 		evidence.push(
 			measured("auto-checks", "last-edit", [ref(lastEdit.ordinal)], {
@@ -542,9 +572,9 @@ function splitRuns(
 			first &&
 			edits.some(
 				(edit) =>
-					edit.ordinal > first.resultOrdinal &&
-					edit.resultOrdinal > last.ordinal &&
-					edit.resultOrdinal < event.ordinal,
+					retroStartOrdinal(edit) > first.resultOrdinal &&
+					edit.resultOrdinal > retroStartOrdinal(last) &&
+					edit.resultOrdinal < retroStartOrdinal(event),
 			)
 		)
 			runs.fixed.push({ failures, passed: event });
@@ -789,4 +819,14 @@ function refs(events: RetroToolEventV1[], ref: Ref): string[] {
 
 function sumBytes(events: RetroToolEventV1[]): number {
 	return events.reduce((sum, event) => sum + event.outputBytes, 0);
+}
+
+/** Output bytes of `events`; a lower bound when the host persisted part of any. */
+function byteMetric(
+	events: RetroToolEventV1[],
+): NonNullable<RetroEvidenceV1["metric"]> {
+	const metric = { value: sumBytes(events), unit: "bytes" as const };
+	return events.some((event) => event.outputCapped)
+		? { ...metric, lowerBound: true }
+		: metric;
 }

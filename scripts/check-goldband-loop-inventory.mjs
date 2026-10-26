@@ -558,31 +558,37 @@ function assertInstalledKnowledgeCliRuns(home) {
   assert.match(result.stdout, /KNOWLEDGE:/);
 }
 
-// The retro CLI loads its full module graph from the installed root and
-// reports the absent session as blocked (exit 3).
+// Each host's retro CLI loads its full module graph from that host's
+// installed root and reports the absent session as blocked (exit 3).
 function assertInstalledRetroCliRuns(home) {
-  const result = spawnSync(
-    path.join(home, '.claude', 'skills', 'goldband', 'bin', 'goldband-retro'),
-    [
-      'evidence',
-      '--host',
-      'claude',
-      '--session',
-      '00000000-0000-4000-8000-000000000000',
-    ],
-    {
-      cwd: home,
-      env: {
-        ...process.env,
-        HOME: home,
-        CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
-        GOLDBAND_HOME: path.join(home, '.goldband'),
+  for (const [host, root, label] of [
+    ['claude', '.claude', 'Claude'],
+    ['codex', '.codex', 'Codex'],
+  ]) {
+    const result = spawnSync(
+      path.join(home, root, 'skills', 'goldband', 'bin', 'goldband-retro'),
+      [
+        'evidence',
+        '--host',
+        host,
+        '--session',
+        '00000000-0000-4000-8000-000000000000',
+      ],
+      {
+        cwd: home,
+        env: {
+          ...process.env,
+          HOME: home,
+          CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
+          CODEX_HOME: path.join(home, '.codex'),
+          GOLDBAND_HOME: path.join(home, '.goldband'),
+        },
+        encoding: 'utf8',
       },
-      encoding: 'utf8',
-    },
-  );
-  assert.equal(result.status, 3, result.stderr || result.stdout);
-  assert.match(result.stdout, /Claude session not found/);
+    );
+    assert.equal(result.status, 3, result.stderr || result.stdout);
+    assert.match(result.stdout, new RegExp(`${label} session not found`));
+  }
 }
 
 function skillDirectories(parent) {

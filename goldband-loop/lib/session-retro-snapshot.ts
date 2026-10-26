@@ -1,9 +1,43 @@
 import { createHash, type Hash } from "node:crypto";
-import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
+import {
+	closeSync,
+	constants,
+	fstatSync,
+	lstatSync,
+	openSync,
+	readSync,
+} from "node:fs";
 import type { RetroHost, RetroSnapshotRefV1 } from "./session-retro-evidence";
 
 const CHUNK_BYTES = 4 * 1024 * 1024;
 const NEWLINE = 0x0a;
+/** Bytes read from the start of a record to find a record, in steps. */
+const HEAD_BYTES = 4 * 1024 * 1024;
+const HEAD_STEP = 256 * 1024;
+let headBuffer: Buffer | undefined;
+
+/**
+ * A host's record root: absent, a directory, or unreadable, which includes a
+ * link, since it could point outside the host's home.
+ */
+export function retroDirectoryKind(
+	path: string,
+): "absent" | "directory" | "unreadable" {
+	try {
+		const stat = lstatSync(path, { throwIfNoEntry: false });
+		if (!stat) return "absent";
+		return stat.isDirectory() ? "directory" : "unreadable";
+	} catch {
+		return "unreadable";
+	}
+}
+
+/** Appended to a not-found reason when some record directories could not be listed. */
+export function retroUnreadableNote(unreadable: number): string {
+	return unreadable > 0
+		? `; ${unreadable} record directories could not be listed`
+		: "";
+}
 
 /**
  * Streams a JSONL session record as one snapshot. The range ends at the last
@@ -105,4 +139,66 @@ function parseRecord(line: Buffer, host: RetroHost, ordinal: number): unknown {
 	} catch {
 		throw new Error(`${host} session record ${ordinal} is not valid JSON`);
 	}
+}
+
+/**
+ * The first complete record within HEAD_BYTES for which `pick` returns a
+ * value, read HEAD_STEP at a time; undefined when none does or the start
+ * cannot be read. Lines that are not JSON are skipped.
+ */
+export function scanSessionHead<T>(
+	file: string,
+	pick: (record: unknown) => T | undefined,
+): T | undefined {
+	try {
+		const fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+		try {
+			return scanHead(fd, pick);
+		} finally {
+			closeSync(fd);
+		}
+	} catch {
+		return undefined;
+	}
+}
+
+function scanHead<T>(
+	fd: number,
+	pick: (record: unknown) => T | undefined,
+): T | undefined {
+	headBuffer ??= Buffer.allocUnsafe(HEAD_BYTES);
+	let length = 0;
+	let parsed = 0;
+	while (length < HEAD_BYTES) {
+		const read = readSync(
+			fd,
+			headBuffer,
+			length,
+			Math.min(HEAD_STEP, HEAD_BYTES - length),
+			length,
+		);
+		if (read === 0) return undefined;
+		length += read;
+		const end = headBuffer.lastIndexOf(NEWLINE, length - 1);
+		if (end < parsed) continue;
+		for (const line of headBuffer.toString("utf8", parsed, end).split("\n")) {
+			const found = pickLine(line, pick);
+			if (found !== undefined) return found;
+		}
+		parsed = end + 1;
+	}
+	return undefined;
+}
+
+function pickLine<T>(
+	line: string,
+	pick: (record: unknown) => T | undefined,
+): T | undefined {
+	let record: unknown;
+	try {
+		record = JSON.parse(line);
+	} catch {
+		return undefined;
+	}
+	return pick(record);
 }

@@ -8,7 +8,7 @@ Summarize recent work and lessons.
 ## Relevant context
 
 - Use current git state and the newest relevant saved artifacts for this repository and branch.
-- From the Goldband runtime root containing this contract, run `bin/goldband-retro evidence --host claude` for the current session, `--session <id>`, or `--days <N>` (this repository, last N days). Record N is line N+1 of the record path.
+- From the Goldband runtime root containing this contract, run `bin/goldband-retro evidence --host <claude|codex>` for the current session, `--session <id>`, or `--days <N>` (this repo, last N days). Record N is line N+1 of the record path.
 - Infer only from cited records: unused reads, cheaper commands or MCP, whether a deterministic check could catch an error (`mechanical`) or not (`judgement`), failure causes, and whether a repeated instruction restates another, a hook or gate, or host defaults.
 
 ## Hard boundaries

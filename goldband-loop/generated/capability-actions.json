@@ -569,7 +569,8 @@
       "safetyGates": [],
       "riskLevel": "low",
       "hostSupport": [
-        "claude"
+        "claude",
+        "codex"
       ]
     },
     {

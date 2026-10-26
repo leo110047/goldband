@@ -2168,7 +2168,7 @@ session records; the model adds `inferred` judgments; every proposal is
 written as a knowledge `candidate` and takes effect only after human review.
 The switch to `typed` lands in Phase 1, when the first two facets ship;
 Phase 2 adds `auto-checks`, `info-access`, and the last-N-days range;
-Phase 3 adds `ineffective-instructions`.
+Phase 3 adds `ineffective-instructions`; Phase 4 adds the Codex adapter.
 
 Implementation contract:
 
@@ -2200,9 +2200,9 @@ Implementation contract:
   `inferred`. A retro candidate id is `retro-<hash>` over snapshot SHA-256,
   facet, and rule code, with no date or summary, so a rerun or reworded
   proposal is `SKIPPED duplicate`. `docs/knowledge-system.md` changes with it.
-- Host record formats stay inside one adapter per host. Codex adapter work
-  follows the Claude adapter by one phase; a schema change needed by Codex
-  updates this ADR first.
+- Host record formats stay inside one adapter per host. Each adapter locates,
+  lists, and reads sessions into the in-memory `RetroSessionRead`; the
+  runtime selects it by host and knows no record shape.
 
 Phase 0 sampling (10 Claude and 8 Codex local sessions, field names only):
 
@@ -2227,14 +2227,14 @@ Consequences of the sampling:
   session loaded and stays reproducible.
 - Tool-definition size is available on both hosts and may enter `tool-cost`
   evidence as bytes.
-- Codex `file-search` evidence can classify only commands whose `parsed_cmd`
-  is not `unknown`. Phase 4 decides whether that is `covered` or
-  `host-unsupported`.
+- Codex `parsed_cmd` is `unknown` for many commands, so Phase 4 classifies
+  Codex commands with the shared shell classifier instead, and Codex
+  `file-search` is `covered`.
 
 Phase 1 contract (Claude adapter, `file-search`, `tool-cost`):
 
-- `hostSupport` is `["claude"]` until the Codex adapter lands in Phase 4; a
-  non-Claude host is `blocked`.
+- `hostSupport` is `["claude", "codex"]` from Phase 4; a host without an
+  adapter is `blocked`.
 - Location: `<CLAUDE_CONFIG_DIR or ~/.claude>/projects/*/<session id>.jsonl`,
   skipping symlinked project directories; the default session is
   `CLAUDE_CODE_SESSION_ID`. Subagent transcripts under
@@ -2270,14 +2270,14 @@ Phase 1 contract (Claude adapter, `file-search`, `tool-cost`):
   list takes the first of search, list, read that it contains.
 - Rules: `file-search` emits `first-edit`, `pre-edit-searches`,
   `pre-edit-reads`, `pre-edit-lookup-output` (bytes), `duplicate-search`, and
-  `empty-search` over the calls before the first edit that neither failed nor
-  was blocked, or the whole snapshot without one. `tool-cost` emits
+  `empty-search` over the calls that started before the result of the first
+  edit that neither failed nor was blocked, or the whole snapshot without one. `tool-cost` emits
   `top-output` (10 largest, bytes), `duplicate-call`, `truncated-output`,
   `output-by-tool` (bytes), and `session-input-tokens` /
   `session-output-tokens`, and `unfinished-call` counts calls whose result is
   outside the snapshot, which are not events. Duplicate rules list the 20
   largest groups and add `<rule>-groups` counting every group. Metrics are
-  exact; each item cites at most 20 positions in order.
+  exact unless marked `lowerBound`; each item cites at most 20 positions in order.
 - Proposals: at most 20 per run. Targets are `instruction-path-guidance`
   (requires `estimatedBytes`) or `file-structure` for `file-search`, and
   `command-usage`, `mcp-config`, or `tool-retirement` for `tool-cost`.
@@ -2346,8 +2346,8 @@ Phase 2 contract (`auto-checks`, `info-access`, last N days):
   output lists per session its snapshot, evidence count, and report path, or
   `failed` with the read error, its record path replaced by
   `<session record>`. Records with no `cwd` or an unreadable start are counted
-  as `unlocated`, and project directories that cannot be listed as
-  `unreadableProjects`. More than 200 sessions is `blocked`; the workflow
+  as `unlocated`, and directories that cannot be listed as
+  `unreadableDirectories`. More than 200 sessions is `blocked`; the workflow
   handler allows a range 600 s instead of 120 s.
   Candidate ids stay per snapshot, so rerunning an unchanged session is
   `duplicate`; a session that grew since is a new snapshot.
@@ -2386,10 +2386,90 @@ Phase 3 contract (`ineffective-instructions`):
   them out of `active` and `graduated`, so only an eval the user starts can
   make a candidate an instruction change.
 
+Phase 4 contract (Codex adapter):
+
+- Location: `<CODEX_HOME or ~/.codex>/sessions/<YYYY>/<MM>/<DD>/rollout-<time>-<thread id>.jsonl`,
+  without following links; the default session is `CODEX_THREAD_ID`, and an
+  id must be a lowercase UUID as file names spell it. A `sessions` directory,
+  or a Claude `projects` directory, that is a link or cannot be listed is
+  counted in `unreadableDirectories`, and a not-found reason names that
+  count. Archived records and records Codex compressed to `.jsonl.zst` are
+  not read: a named compressed record is `blocked`, and a range run counts
+  those in range, of any repository, as `unreadRecords`. A missing, invalid,
+  unknown, or ambiguous id is `blocked`. A record must hold a `session_meta`
+  naming the thread, and one naming another thread fails the run, as do a
+  record without a type, a read record without a payload, a model call
+  without `call_id`, an output without its call, a command without an
+  argument list, and a file change without changes.
+- Events are the operations Codex records as completed items:
+  `CommandExecution` (`exec_command`), `FileChange` (`apply_patch`, `edit`),
+  `McpToolCall` (`mcp__<server>__<tool>`, `mcp`), `ImageView` (`view_image`,
+  `read`), and `web.search` extensions (`web_search`). A completed item whose
+  `thread_id` names another thread, which a thread records for one it
+  started such as a review, is not its event. Codex records an operation
+  once, when it completes, so its ordinal and `resultOrdinal` are that
+  record.
+- Ordering: `RetroToolEventV1` gains optional `startOrdinal`, for ordering
+  only. Completion times are taken as never decreasing in record order, and
+  one without a recorded time as the latest before it. An operation whose
+  `started_at_ms` precedes the latest completion starts right after the last
+  operation that completed by then, or at 0. Start positions separate what
+  started before an edit's result from what started after it, for both
+  hosts: the file-search window is every event other than an applied edit
+  that started before the first applied edit's result, including a Claude
+  call issued in the same message as that edit, and auto-checks count only
+  what started after the last edit's result.
+- Commands: the script, the third argument of `<shell> -c` or `-lc`, is
+  classified by the shared shell classifier and hashed as `{command}`, as a
+  Claude Bash call is; the exit code is `exit_code`, and a command failed
+  when its status is not `completed` or the code is not 0. A file change
+  failed when its status is not `completed`; an MCP call when its status is
+  not `completed` or its result is an error. Codex records no hook or
+  permission block, so Codex events have no `blockedBy`.
+- Output: bytes are the operation's own output as recorded; the shared
+  byte rule (`retroContentBytes`) applies to both hosts. Codex persists at
+  most 64 KiB of a command's output and marks the cut, so such an event is
+  `outputCapped` and each byte metric summed from it carries `lowerBound`
+  (29 of 2,784 sampled commands). Codex shortens output for the model per
+  call: an operation belongs to the open call its item id names (MCP calls),
+  else to the only call open by record times both when it started and when
+  it finished. An unshortened call output sets `truncated: false` on its
+  operations; a shortened one sets `truncated: true` only when the call ran
+  one operation. Otherwise, or with several calls open at either time, none,
+  or a start before the call (a background command), the event has no
+  truncation field. Model calls without an output in the snapshot are
+  `unfinished-call`. Session tokens sum `input_tokens` and `output_tokens` of
+  `token_usage_record` rows, one per `response_id`.
+- Instruction sources: the AGENTS.md message Codex sends as the user holds
+  the user's file and the project docs joined by `--- project-doc ---`; they
+  are the `user` source and the `project` source of that directory. Without
+  the separator the record does not say which file it holds, so it is
+  `other`. A user message with the heading but no `INSTRUCTIONS` block is the
+  user's own text, not a source. Codex joins several project docs without a
+  boundary, so they are one project source and repeats among them are not
+  found. The `<skills_instructions>` developer message is the `skills`
+  source. `codex exec` sessions record neither, so their facet is
+  `not-recorded`.
+- `evidence --days` lists record files changed in range and reads each
+  file's `session_meta` within its head for the working directory; a record
+  whose `session_meta` names another thread is unlocated, and a spawned
+  agent's thread (an object `source` with `subagent`) is left out. A named
+  session may be a spawned agent's thread.
+- Persisted reports keep `RetroReportV1` with optional `startOrdinal` and
+  `outputCapped` on events and `lowerBound` on metrics; the range output
+  field `unreadableProjects` is renamed `unreadableDirectories`, and
+  `unreadRecords` is added, for both hosts.
+- Sampling for this phase: 66 local Codex records (30 user threads, 36
+  spawned agent threads) read without a format error; 14 of the 30 user
+  threads cover all five facets, and the other 16 lack instruction messages
+  (15 `codex exec`, 1 VS Code). Another 2,336 local records are compressed.
+
 Fixtures: one de-identified window per host under
 `goldband-loop/test/fixtures/session-retro/`. Keys, numbers, booleans, enum
 fields, and tool names are kept; ids are pseudonymized, timestamps rebased,
-and other strings replaced by same-length filler capped at 512 bytes. The
+and other strings replaced by same-length filler capped at 512 bytes; the
+Codex fixture's `call_id` key, which the scrubber had pseudonymized as an
+id, is restored. The
 leading `Exit code N` line and truncation markers are kept because adapters
 read them. Byte metrics from these fixtures are not real sizes; metric tests
 use synthetic fixtures. A test rejects any text outside enum fields and tool

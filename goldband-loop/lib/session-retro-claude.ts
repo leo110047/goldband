@@ -1,13 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-	closeSync,
-	constants,
-	existsSync,
-	lstatSync,
-	openSync,
-	readdirSync,
-	readSync,
-} from "node:fs";
+import { existsSync, lstatSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -17,14 +9,25 @@ import {
 import {
 	RETRO_SESSION_ID_RE,
 	type RetroInstructionLoadV1,
-	type RetroSnapshotRefV1,
+	type RetroSessionListing,
+	type RetroSessionLocation,
+	type RetroSessionRead,
 	type RetroSourceKind,
 	type RetroToolCategory,
 	type RetroToolEventV1,
-	type RetroUsageTotalsV1,
+	repeatedSessionIds,
+	retroContentBytes,
+	retroContentText,
+	retroTokenCount,
+	retroUsageTotals,
 	validateRetroToolEvent,
 } from "./session-retro-evidence";
-import { readSessionSnapshot } from "./session-retro-snapshot";
+import {
+	readSessionSnapshot,
+	retroDirectoryKind,
+	retroUnreadableNote,
+	scanSessionHead,
+} from "./session-retro-snapshot";
 import { stableJson } from "./stable-json";
 
 /**
@@ -34,21 +37,6 @@ import { stableJson } from "./stable-json";
  */
 
 type JsonRecord = Record<string, unknown>;
-
-export type ClaudeSessionLocation =
-	| { status: "found"; sessionId: string; path: string }
-	| { status: "blocked"; reason: string };
-
-export type ClaudeSessionEvidence = {
-	snapshot: RetroSnapshotRefV1;
-	path: string;
-	tools: RetroToolEventV1[];
-	/** Ordinals of tool calls with no result inside the snapshot. */
-	unfinished: number[];
-	usage?: RetroUsageTotalsV1;
-	/** Instruction files and the skill listing as attachments loaded them. */
-	instructions: RetroInstructionLoadV1[];
-};
 
 type PendingCall = {
 	ordinal: number;
@@ -78,16 +66,12 @@ const INSTRUCTION_ATTACHMENTS = new Set<unknown>([
 ]);
 /** A name may hold a plugin namespace, as in `- plugin:skill: description`. */
 const SKILL_ENTRY = /^- (\S+):(?:\s|$)/;
-/** Bytes read from the start of a record to find its working directory, in steps. */
-const HEAD_BYTES = 4 * 1024 * 1024;
-const HEAD_STEP = 256 * 1024;
-let headBuffer: Buffer | undefined;
 const SESSION_FILE_RE = /^([A-Za-z0-9-]{8,64})\.jsonl$/;
 
 export function locateClaudeSession(
 	sessionId: string | undefined,
 	env: NodeJS.ProcessEnv = process.env,
-): ClaudeSessionLocation {
+): RetroSessionLocation {
 	const id = sessionId ?? env.CLAUDE_CODE_SESSION_ID;
 	if (!id) {
 		return {
@@ -97,11 +81,15 @@ export function locateClaudeSession(
 	}
 	if (!RETRO_SESSION_ID_RE.test(id))
 		return { status: "blocked", reason: "invalid Claude session id" };
-	const matches = projectDirectories(env)
+	const listed = projectDirectories(env);
+	const matches = listed.projects
 		.map((project) => join(project, `${id}.jsonl`))
 		.filter((file) => existsSync(file) && lstatSync(file).isFile());
 	if (matches.length === 0)
-		return { status: "blocked", reason: `Claude session not found: ${id}` };
+		return {
+			status: "blocked",
+			reason: `Claude session not found: ${id}${retroUnreadableNote(listed.unreadable)}`,
+		};
 	if (matches.length > 1)
 		return {
 			status: "blocked",
@@ -120,19 +108,14 @@ export function locateClaudeSession(
 export function listClaudeSessions(options: {
 	since: number;
 	env?: NodeJS.ProcessEnv;
-}): {
-	sessions: Array<{ sessionId: string; path: string; cwd?: string }>;
-	ambiguous: string[];
-	unreadableProjects: number;
-} {
-	let unreadableProjects = 0;
-	const files = projectDirectories(options.env ?? process.env).flatMap(
-		(project) => {
-			const listed = sessionFiles(project);
-			if (!listed) unreadableProjects += 1;
-			return listed ?? [];
-		},
-	);
+}): RetroSessionListing {
+	const listed = projectDirectories(options.env ?? process.env);
+	let unreadableDirectories = listed.unreadable;
+	const files = listed.projects.flatMap((project) => {
+		const listed = sessionFiles(project);
+		if (!listed) unreadableDirectories += 1;
+		return listed ?? [];
+	});
 	const sessions = files
 		.filter((file) => file.mtime >= options.since)
 		.sort((a, b) => a.mtime - b.mtime || a.path.localeCompare(b.path))
@@ -144,21 +127,15 @@ export function listClaudeSessions(options: {
 				? [{ sessionId, path, cwd: located.cwd }]
 				: [];
 		});
-	return { sessions, ambiguous: repeatedIds(files), unreadableProjects };
+	return {
+		sessions,
+		ambiguous: repeatedSessionIds(files),
+		unreadableDirectories,
+		unreadRecords: 0,
+	};
 }
 
 type SessionFile = { sessionId: string; path: string; mtime: number };
-
-/** Ids recorded in more than one project directory, at any age, as `--session` counts them. */
-function repeatedIds(files: SessionFile[]): string[] {
-	const seen = new Set<string>();
-	const repeated = new Set<string>();
-	for (const { sessionId } of files) {
-		if (seen.has(sessionId)) repeated.add(sessionId);
-		seen.add(sessionId);
-	}
-	return [...repeated];
-}
 
 /**
  * Regular session record files directly in `project`; a directory removed
@@ -179,82 +156,54 @@ function sessionFiles(project: string): SessionFile[] | null {
 	}
 }
 
-/** Project directories under the Claude home; a symlinked one could point outside it. */
-function projectDirectories(env: NodeJS.ProcessEnv): string[] {
+/**
+ * Project directories under the Claude home; a linked one could point outside
+ * it. A `projects` directory that is a link or cannot be listed is counted.
+ */
+function projectDirectories(env: NodeJS.ProcessEnv): {
+	projects: string[];
+	unreadable: number;
+} {
 	const projects = join(
 		env.CLAUDE_CONFIG_DIR || join(env.HOME || homedir(), ".claude"),
 		"projects",
 	);
-	return existsSync(projects)
-		? readdirSync(projects, { withFileTypes: true })
+	const kind = retroDirectoryKind(projects);
+	if (kind !== "directory")
+		return { projects: [], unreadable: kind === "unreadable" ? 1 : 0 };
+	try {
+		return {
+			projects: readdirSync(projects, { withFileTypes: true })
 				.filter((project) => project.isDirectory())
-				.map((project) => join(projects, project.name))
-		: [];
+				.map((project) => join(projects, project.name)),
+			unreadable: 0,
+		};
+	} catch {
+		return { projects: [], unreadable: 1 };
+	}
 }
 
 type RecordLocation = { cwd: string; sessionId: unknown };
 
-/** The first complete record within HEAD_BYTES that has a `cwd`, if the start can be read. */
+/** The first record within the head of the file that has a `cwd`. */
 function firstWorkingDirectory(path: string): RecordLocation | undefined {
-	try {
-		const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-		try {
-			return scanHead(fd);
-		} finally {
-			closeSync(fd);
-		}
-	} catch {
-		return undefined;
-	}
-}
-
-/** Reads HEAD_STEP at a time and stops at the first located record. */
-function scanHead(fd: number): RecordLocation | undefined {
-	headBuffer ??= Buffer.allocUnsafe(HEAD_BYTES);
-	let length = 0;
-	let parsed = 0;
-	while (length < HEAD_BYTES) {
-		const read = readSync(
-			fd,
-			headBuffer,
-			length,
-			Math.min(HEAD_STEP, HEAD_BYTES - length),
-			length,
-		);
-		if (read === 0) return undefined;
-		length += read;
-		const end = headBuffer.lastIndexOf(0x0a, length - 1);
-		if (end < parsed) continue;
-		for (const line of headBuffer.toString("utf8", parsed, end).split("\n")) {
-			const located = recordLocation(line);
-			if (located) return located;
-		}
-		parsed = end + 1;
-	}
-	return undefined;
-}
-
-function recordLocation(line: string): RecordLocation | undefined {
-	try {
-		const record = JSON.parse(line) as unknown;
-		return record &&
-			typeof record === "object" &&
-			typeof (record as JsonRecord).cwd === "string"
+	return scanSessionHead(path, (record) =>
+		record &&
+		typeof record === "object" &&
+		typeof (record as JsonRecord).cwd === "string"
 			? {
 					cwd: (record as JsonRecord).cwd as string,
 					sessionId: (record as JsonRecord).sessionId,
 				}
-			: undefined;
-	} catch {
-		return undefined;
-	}
+			: undefined,
+	);
 }
 
 /** Reads one Claude session snapshot; a record that does not match the known format fails the read. */
 export function readClaudeSession(
 	path: string,
 	sessionId: string,
-): ClaudeSessionEvidence {
+): RetroSessionRead {
 	const state: ReadState = {
 		pending: new Map(),
 		usage: new Map(),
@@ -291,7 +240,7 @@ export function readClaudeSession(
 		path,
 		tools,
 		unfinished,
-		usage: usageTotals(state.usage),
+		usage: retroUsageTotals(state.usage.values()),
 		instructions: state.instructions,
 	};
 }
@@ -402,10 +351,10 @@ function readAssistant(
 		usage.set(message.id, {
 			ordinal,
 			input:
-				tokenCount(tokens.input_tokens) +
-				tokenCount(tokens.cache_creation_input_tokens) +
-				tokenCount(tokens.cache_read_input_tokens),
-			output: tokenCount(tokens.output_tokens),
+				retroTokenCount(tokens.input_tokens) +
+				retroTokenCount(tokens.cache_creation_input_tokens) +
+				retroTokenCount(tokens.cache_read_input_tokens),
+			output: retroTokenCount(tokens.output_tokens),
 		});
 	}
 	for (const block of contentBlocks(message, ordinal)) {
@@ -484,7 +433,7 @@ function toolEvent(
 	detail: JsonRecord | undefined,
 	permission: unknown,
 ): RetroToolEventV1 {
-	const text = resultText(result.content);
+	const text = retroContentText(result.content);
 	const failed = result.is_error === true;
 	const event: RetroToolEventV1 = {
 		ordinal: call.ordinal,
@@ -492,7 +441,7 @@ function toolEvent(
 		tool: call.name,
 		category: category(call, detail),
 		inputSha256: call.inputSha256,
-		outputBytes: resultBytes(result.content),
+		outputBytes: retroContentBytes(result.content),
 		failed,
 	};
 	if (call.name === "Bash") {
@@ -565,47 +514,6 @@ function blocker(permission: unknown): RetroToolEventV1["blockedBy"] {
 	return decision.source === "hook" ? "hook" : "permission";
 }
 
-function resultText(content: unknown): string {
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
-	return content
-		.map((part) =>
-			part && typeof part === "object" && typeof part.text === "string"
-				? part.text
-				: "",
-		)
-		.join("");
-}
-
-/** Text parts count their UTF-8 bytes; other parts, such as images, their serialized size. */
-function resultBytes(content: unknown): number {
-	if (typeof content === "string") return Buffer.byteLength(content);
-	if (!Array.isArray(content)) return 0;
-	return content.reduce(
-		(total: number, part) =>
-			total +
-			(part && typeof part === "object" && typeof part.text === "string"
-				? Buffer.byteLength(part.text)
-				: Buffer.byteLength(JSON.stringify(part) ?? "")),
-		0,
-	);
-}
-
-function usageTotals(
-	usage: Map<string, { ordinal: number; input: number; output: number }>,
-): RetroUsageTotalsV1 | undefined {
-	let totals: RetroUsageTotalsV1 | undefined;
-	for (const row of usage.values()) {
-		totals = {
-			firstOrdinal: Math.min(totals?.firstOrdinal ?? row.ordinal, row.ordinal),
-			lastOrdinal: Math.max(totals?.lastOrdinal ?? row.ordinal, row.ordinal),
-			inputTokens: (totals?.inputTokens ?? 0) + row.input,
-			outputTokens: (totals?.outputTokens ?? 0) + row.output,
-		};
-	}
-	return totals;
-}
-
 function contentBlocks(message: JsonRecord, ordinal: number): JsonRecord[] {
 	if (typeof message.content === "string") return [];
 	if (!Array.isArray(message.content))
@@ -613,12 +521,6 @@ function contentBlocks(message: JsonRecord, ordinal: number): JsonRecord[] {
 	return message.content.filter(
 		(block): block is JsonRecord => typeof block === "object" && block !== null,
 	);
-}
-
-function tokenCount(value: unknown): number {
-	return Number.isSafeInteger(value) && (value as number) > 0
-		? (value as number)
-		: 0;
 }
 
 function asRecord(value: unknown, label: string): JsonRecord {

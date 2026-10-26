@@ -18,12 +18,20 @@ import {
 	readClaudeSession,
 } from "./session-retro-claude";
 import {
+	listCodexSessions,
+	locateCodexSession,
+	readCodexSession,
+} from "./session-retro-codex";
+import {
 	RETRO_RULE_RE,
 	RETRO_SESSION_ID_RE,
 	RETRO_SHA256_RE,
 	type RetroEvidenceV1,
 	type RetroFacet,
 	type RetroReportV1,
+	type RetroSessionListing,
+	type RetroSessionLocation,
+	type RetroSessionRead,
 	retroSnapshotKey,
 	retroSnapshotRecords,
 	validateRetroEvidence,
@@ -64,7 +72,9 @@ export type RetroRangeResult =
 			days: number;
 			sessions: RetroRangeSession[];
 			unlocated: number;
-			unreadableProjects: number;
+			unreadableDirectories: number;
+			/** Records in the time range, of any repository, the adapter does not read. */
+			unreadRecords: number;
 	  }
 	| { status: "blocked"; reason: string };
 
@@ -80,6 +90,41 @@ type RetroProposalOutcome = {
 export type RetroProposalResult =
 	| { status: "completed"; outcomes: RetroProposalOutcome[] }
 	| { status: "blocked"; reason: string };
+
+/** The only code that knows a host's record locations and shapes. */
+type SessionAdapter = {
+	label: string;
+	locate(
+		sessionId: string | undefined,
+		env?: NodeJS.ProcessEnv,
+	): RetroSessionLocation;
+	list(options: {
+		since: number;
+		env?: NodeJS.ProcessEnv;
+	}): RetroSessionListing;
+	read(path: string, sessionId: string): RetroSessionRead;
+};
+
+const SESSION_ADAPTERS: Record<string, SessionAdapter> = {
+	claude: {
+		label: "Claude",
+		locate: locateClaudeSession,
+		list: listClaudeSessions,
+		read: readClaudeSession,
+	},
+	codex: {
+		label: "Codex",
+		locate: locateCodexSession,
+		list: listCodexSessions,
+		read: readCodexSession,
+	},
+};
+
+function sessionAdapter(host: string): SessionAdapter | undefined {
+	return Object.hasOwn(SESSION_ADAPTERS, host)
+		? SESSION_ADAPTERS[host]
+		: undefined;
+}
 
 type ProposalContext = {
 	report: RetroReportV1;
@@ -167,17 +212,21 @@ export function runRetroEvidence(options: {
 	stateRoot: string;
 	env?: NodeJS.ProcessEnv;
 }): RetroEvidenceResult {
-	if (options.host !== "claude") {
+	const adapter = sessionAdapter(options.host);
+	if (!adapter) {
 		return {
 			status: "blocked",
 			reason: `context/retro has no ${options.host} session adapter`,
 		};
 	}
-	const location = locateClaudeSession(options.sessionId, options.env);
+	const location = adapter.locate(options.sessionId, options.env);
 	if (location.status === "blocked") return location;
 	return {
 		status: "completed",
-		...analyzeSession(location.path, location.sessionId, options.stateRoot),
+		...analyzeSession(
+			adapter.read(location.path, location.sessionId),
+			options.stateRoot,
+		),
 	};
 }
 
@@ -203,14 +252,15 @@ export function runRetroRange(options: {
 			`days must be an integer from 1 to ${RETRO_MAX_RANGE_DAYS}`,
 		);
 	}
-	if (options.host !== "claude") {
+	const adapter = sessionAdapter(options.host);
+	if (!adapter) {
 		return {
 			status: "blocked",
 			reason: `context/retro has no ${options.host} session adapter`,
 		};
 	}
 	const worktrees = repositoryWorktrees(options.cwd);
-	const listed = listClaudeSessions({
+	const listed = adapter.list({
 		since: (options.now ?? Date.now()) - options.days * DAY_MS,
 		env: options.env,
 	});
@@ -230,6 +280,7 @@ export function runRetroRange(options: {
 	const sessions = rangeSessions(
 		inRange,
 		new Set(listed.ambiguous),
+		adapter,
 		options.stateRoot,
 	);
 	return {
@@ -237,30 +288,32 @@ export function runRetroRange(options: {
 		days: options.days,
 		sessions,
 		unlocated: listed.sessions.length - located.length,
-		unreadableProjects: listed.unreadableProjects,
+		unreadableDirectories: listed.unreadableDirectories,
+		unreadRecords: listed.unreadRecords,
 	};
 }
 
 /**
- * One entry per session id. An id recorded in more than one project directory
- * is ambiguous, as it is for a named session, and is not read.
+ * One entry per session id. An id recorded in more than one record file is
+ * ambiguous, as it is for a named session, and is not read.
  */
 function rangeSessions(
 	selected: Array<{ sessionId: string; path: string }>,
 	ambiguous: Set<string>,
+	adapter: SessionAdapter,
 	stateRoot: string,
 ): RetroRangeSession[] {
 	const seen = new Set<string>();
 	return selected.flatMap(({ sessionId, path }): RetroRangeSession[] => {
 		if (!ambiguous.has(sessionId))
-			return [rangeSession(path, sessionId, stateRoot)];
+			return [rangeSession(adapter, { sessionId, path }, stateRoot)];
 		if (seen.has(sessionId)) return [];
 		seen.add(sessionId);
 		return [
 			{
 				sessionId,
 				status: "failed",
-				reason: `Claude session id is ambiguous: ${sessionId}`,
+				reason: `${adapter.label} session id is ambiguous: ${sessionId}`,
 			},
 		];
 	});
@@ -268,14 +321,13 @@ function rangeSessions(
 
 /** One range entry; a session that fails to read is reported, not thrown. */
 function rangeSession(
-	path: string,
-	sessionId: string,
+	adapter: SessionAdapter,
+	{ sessionId, path }: { sessionId: string; path: string },
 	stateRoot: string,
 ): RetroRangeSession {
 	try {
 		const { report, reportPath, recordPath } = analyzeSession(
-			path,
-			sessionId,
+			adapter.read(path, sessionId),
 			stateRoot,
 		);
 		const [snapshot] = report.snapshots;
@@ -300,11 +352,9 @@ function rangeSession(
 }
 
 function analyzeSession(
-	path: string,
-	sessionId: string,
+	session: RetroSessionRead,
 	stateRoot: string,
 ): { report: RetroReportV1; reportPath: string; recordPath: string } {
-	const session = readClaudeSession(path, sessionId);
 	const report = analyzeRetroSession(session);
 	const reportPath = reportFile(stateRoot, retroSnapshotKey(session.snapshot));
 	writePrivateText(reportPath, stableJson(report));
@@ -636,7 +686,7 @@ function candidateBody(
 		...(measured.length > 0
 			? measured.map(
 					(item) =>
-						`- ${item.rule}: ${item.metric ? `${item.metric.value} ${item.metric.unit}` : "-"}` +
+						`- ${item.rule}: ${item.metric ? `${item.metric.lowerBound ? ">= " : ""}${item.metric.value} ${item.metric.unit}` : "-"}` +
 						`${measuredLabel(item)}，${ordinals(item.refs)}`,
 				)
 			: ["- 沒有與引用位置重疊的實測證據"]),
