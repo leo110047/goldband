@@ -4,9 +4,10 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { parseKnowledgeFile } from "../lib/knowledge";
+import { createKnowledgeEntry, parseKnowledgeFile, transitionKnowledgeStatus, writeKnowledgeEntry } from "../lib/knowledge";
 import { analyzeRetroSession, classifyShellCommand, isEmptyShellSearch } from "../lib/session-retro-analysis";
 import { listClaudeSessions, locateClaudeSession, readClaudeSession } from "../lib/session-retro-claude";
+import { RETRO_UNPROVEN_NOTE, runRetroEval } from "../lib/session-retro-eval";
 import type { RetroToolEventV1 } from "../lib/session-retro-evidence";
 import { readSessionSnapshot } from "../lib/session-retro-snapshot";
 import { runRetroEvidence, runRetroProposals, runRetroRange } from "../lib/session-retro-runtime";
@@ -948,7 +949,7 @@ describe("ineffective-instructions evidence", () => {
 		const id = outcome.outcomes[0].id ?? "";
 		const entry = parseKnowledgeFile(path.join(knowledge, "entries", `${id}.md`));
 		expect(entry).toMatchObject({ status: "candidate", eval_status: "unproven", check_class: "" });
-		expect(entry.body).toContain("- 驗證狀態：unproven（未經 eval，不可直接刪除或合併）");
+		expect(entry.body).toContain(RETRO_UNPROVEN_NOTE);
 		expect(entry.body).toContain(`- duplicate-paragraph: 2 count (sha256:${sha(SHARED).slice(0, 12)})，#1, #7`);
 		expect(entry.body).toContain(`- instruction-source: ${Buffer.byteLength(`${SHARED}\n\n${RELOADED}`)} bytes (user sha256:${sha(`${SHARED}\n\n${RELOADED}`).slice(0, 12)})，#1, #7`);
 		const removal = parseKnowledgeFile(path.join(knowledge, "entries", `${outcome.outcomes[3].id}.md`));
@@ -966,6 +967,205 @@ describe("ineffective-instructions evidence", () => {
 		});
 		expect(parseKnowledgeFile(path.join(knowledge, "entries", `${id}.md`))).toMatchObject({ status: "candidate", eval_status: "unproven" });
 		expect(knowledgeCli(["retire"]).status).toBe(0);
+	});
+});
+
+describe("retro instruction eval", () => {
+	/** An unproven instruction-removal candidate written through the proposal path. */
+	function instructionCandidate(): { home: string; knowledge: string; id: string } {
+		const home = tempHome();
+		writeSession(home, instructionRecords());
+		const stateRoot = path.join(home, ".goldband");
+		const evidence = runRetroEvidence({ host: "claude", sessionId: SESSION, stateRoot, env: env(home) });
+		if (evidence.status !== "completed") throw new Error(evidence.reason);
+		const snapshot = evidence.report.snapshots[0];
+		const key = `${snapshot.sessionId}@${snapshot.sha256}`;
+		const knowledge = path.join(stateRoot, "knowledge");
+		const outcome = runRetroProposals(
+			{
+				sessionId: snapshot.sessionId,
+				sha256: snapshot.sha256,
+				proposals: [
+					proposal(evidence.report, {
+						facet: "ineffective-instructions",
+						rule: "enforced-by-hook",
+						target: "instruction-removal",
+						estimatedBytes: 120,
+						refs: [`${key}#1`],
+						evidence: [],
+					}),
+				],
+			},
+			{ stateRoot, knowledgeRoot: knowledge, cwd: home },
+		);
+		if (outcome.status !== "completed" || !outcome.outcomes[0].id) throw new Error("candidate not written");
+		return { home, knowledge, id: outcome.outcomes[0].id };
+	}
+	const entryOf = (knowledge: string, id: string) => parseKnowledgeFile(path.join(knowledge, "entries", `${id}.md`));
+	const knowledgeCli = (home: string, id: string, args: string[]) =>
+		spawnSync("bun", [path.join(ROOT, "bin", "goldband-knowledge.ts"), "review", ...args, "--id", id], { cwd: home, env: env(home), encoding: "utf8" });
+
+	test("marks a change that leaves results no worse as ineffective, which may be adopted", () => {
+		const { home, knowledge, id } = instructionCandidate();
+		const before = entryOf(knowledge, id);
+		expect(before.body).toContain(RETRO_UNPROVEN_NOTE);
+		const result = runRetroEval({ candidate: id, metric: "task-pass", better: "higher", keep: [1, 1, 0, 1, 1], change: [1, 0, 1, 1, 1] }, { knowledgeRoot: knowledge });
+		expect(result).toEqual({ status: "completed", id, evalStatus: "ineffective", metric: "task-pass", better: "higher", keep: { count: 5, mean: 0.8 }, change: { count: 5, mean: 0.8 } });
+		const entry = entryOf(knowledge, id);
+		const verdict = "- 驗證狀態：ineffective（變更組平均不比保留組差，已證實無效）";
+		expect(entry).toMatchObject({ status: "candidate", eval_status: "ineffective" });
+		expect(entry.body).not.toContain("unproven");
+		expect(entry.body.startsWith(before.body.replace(RETRO_UNPROVEN_NOTE, verdict))).toBe(true);
+		expect(entry.body).toContain(
+			[
+				"### Eval：保留 vs 變更（measured，使用者執行）",
+				"",
+				"- 指標：task-pass（每次執行一個分數，越大越好）",
+				"- 保留：n=5，平均 0.8",
+				"- 變更（刪除或合併）：n=5，平均 0.8",
+				`- 判定：${verdict.slice("- 驗證狀態：".length)}`,
+				`- 日期：${entry.updated}`,
+			].join("\n"),
+		);
+		// The eval measured this content: an edited proposal cannot reuse it.
+		const evaluated = fs.readFileSync(path.join(knowledge, "entries", `${id}.md`), "utf8");
+		for (const args of [["edit", "--summary", "Another change."], ["retire", "--summary", "Another change."], ["graduate", "--to", "CLAUDE.md", "--summary", "Another change."]]) {
+			expect(knowledgeCli(home, id, args)).toMatchObject({ status: 1, stderr: expect.stringContaining(`knowledge entry ${id} has a recorded eval, so its summary cannot change`) });
+		}
+		expect(fs.readFileSync(path.join(knowledge, "entries", `${id}.md`), "utf8")).toBe(evaluated);
+		// Saving the same content back, as `review show` prints it, is not a change.
+		const same = path.join(home, "same-body.md");
+		fs.writeFileSync(same, `${entryOf(knowledge, id).body}\n`);
+		expect(knowledgeCli(home, id, ["edit", "--body-file", same]).status).toBe(0);
+		expect(knowledgeCli(home, id, ["promote"]).status).toBe(0);
+		expect(entryOf(knowledge, id)).toMatchObject({ status: "active", eval_status: "ineffective" });
+	});
+
+	test("marks a change that makes results worse as effective, which is never adopted", () => {
+		const { home, knowledge, id } = instructionCandidate();
+		const result = runRetroEval({ candidate: id, metric: "review-score", better: "higher", keep: [8, 9, 7, 9, 8, 9], change: [8, 9, 7, 9, 8, 8.5] }, { knowledgeRoot: knowledge });
+		expect(result).toMatchObject({ status: "completed", evalStatus: "effective", keep: { count: 6, mean: 25 / 3 }, change: { count: 6, mean: 8.25 } });
+		expect(entryOf(knowledge, id).body).toContain("- 驗證狀態：effective（變更組平均比保留組差，有效，保留）");
+		for (const args of [["promote"], ["graduate", "--to", "CLAUDE.md"]]) {
+			expect(knowledgeCli(home, id, args)).toMatchObject({ status: 1, stderr: expect.stringContaining("its eval showed results get worse without the instruction") });
+		}
+		expect(entryOf(knowledge, id)).toMatchObject({ status: "candidate", eval_status: "effective" });
+	});
+
+	test("compares means in the better direction, exactly, without overflow", () => {
+		const verdict = (better: string, keep: number[], change: number[]) => {
+			const { knowledge, id } = instructionCandidate();
+			const result = runRetroEval({ candidate: id, metric: "tokens", better, keep, change }, { knowledgeRoot: knowledge });
+			return result.status === "completed" ? result.evalStatus : result.reason;
+		};
+		const five = (value: number) => [value, value, value, value, value];
+		expect(verdict("lower", five(900), five(1200))).toBe("effective");
+		expect(verdict("lower", five(900), five(900))).toBe("ineffective");
+		expect(verdict("higher", five(1), five(0.9999999999999))).toBe("effective");
+		expect(verdict("higher", five(1e308), five(9e307))).toBe("effective");
+		expect(verdict("higher", five(Number.MIN_VALUE), five(0))).toBe("effective");
+		expect(verdict("lower", five(0), five(Number.MIN_VALUE))).toBe("effective");
+		expect(verdict("higher", five(-1e308), five(-1e308))).toBe("ineffective");
+		expect(verdict("higher", [-1e308, 1, 1, 1, 1e308], [-1e308, 0, 0, 0, 1e308])).toBe("effective");
+		expect(verdict("higher", [1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1])).toBe("ineffective");
+		const { knowledge, id } = instructionCandidate();
+		const cancelling = runRetroEval({ candidate: id, metric: "tokens", better: "higher", keep: [-1e308, 1, 1, 1, 1e308], change: [-1e308, 0, 0, 0, 1e308] }, { knowledgeRoot: knowledge });
+		expect(cancelling).toMatchObject({ status: "completed", evalStatus: "effective", keep: { count: 5, mean: 0.6 }, change: { count: 5, mean: 0 } });
+		expect(entryOf(knowledge, id).body).toContain("- 保留：n=5，平均 0.6\n- 變更（刪除或合併）：n=5，平均 0\n");
+		const bounds = instructionCandidate();
+		const extremes = runRetroEval({ candidate: bounds.id, metric: "tokens", better: "higher", keep: five(Number.MAX_VALUE), change: [...five(Number.MIN_VALUE), -Number.MIN_VALUE] }, { knowledgeRoot: bounds.knowledge });
+		expect(extremes).toMatchObject({ keep: { mean: Number.MAX_VALUE }, change: { mean: 5e-324 } });
+		expect(JSON.stringify(extremes)).toContain('"keep":{"count":5,"mean":1.7976931348623157e+308}');
+		expect(entryOf(bounds.knowledge, bounds.id).body).toContain("- 保留：n=5，平均 1.7976931348623157e+308\n");
+		expect(entryOf(bounds.knowledge, bounds.id).body).not.toContain("顯示精度");
+		// A difference below the shown precision is stated next to equal means.
+		const close = instructionCandidate();
+		const below = runRetroEval({ candidate: close.id, metric: "tokens", better: "higher", keep: five(1), change: [1, 1, 1, 1, 0.9999999999999999] }, { knowledgeRoot: close.knowledge });
+		expect(below).toMatchObject({ evalStatus: "effective", keep: { mean: 1 }, change: { mean: 1 } });
+		expect(entryOf(close.knowledge, close.id).body).toContain("- 變更（刪除或合併）：n=5，平均 1\n- 兩組平均的差異小於顯示精度，判定依精確比較\n- 判定：effective");
+		const m = Number.MIN_VALUE;
+		const ties = instructionCandidate();
+		const tie = runRetroEval({ candidate: ties.id, metric: "tokens", better: "higher", keep: [m, m, m, 2 * m, 2 * m, 2 * m], change: [m, m, m, m, m, 2 * m, 2 * m, 2 * m] }, { knowledgeRoot: ties.knowledge });
+		expect(tie).toMatchObject({ evalStatus: "effective", keep: { mean: 2 * m }, change: { mean: m } });
+		expect(verdict("lower", [3, 3, 3, 3, 3, 4], [3, 3, 3, 3, 4])).toBe("effective");
+		expect(verdict("higher", [0.1, 0.2, 0.3, 0.4, 0.5], [0.5, 0.4, 0.3, 0.2, 0.1])).toBe("ineffective");
+	});
+
+	test("replaces the note of a candidate written before the eval command", () => {
+		const { knowledge, id } = instructionCandidate();
+		const legacy = "- 驗證狀態：unproven（未經 eval，不可直接刪除或合併）";
+		const entry = entryOf(knowledge, id);
+		writeKnowledgeEntry({ ...entry, body: entry.body.replace(RETRO_UNPROVEN_NOTE, legacy) }, knowledge);
+		const five = [1, 1, 1, 1, 1];
+		expect(runRetroEval({ candidate: id, metric: "task-pass", better: "higher", keep: five, change: five }, { knowledgeRoot: knowledge }).status).toBe("completed");
+		expect(entryOf(knowledge, id).body).not.toContain("unproven");
+	});
+
+	test("blocks requests without a pending retro instruction eval", () => {
+		const { home, knowledge, id } = instructionCandidate();
+		const run = (request: unknown) => runRetroEval(request, { knowledgeRoot: knowledge });
+		const valid = { candidate: id, metric: "task-pass", better: "higher", keep: [1, 1, 1, 1, 1], change: [1, 1, 1, 1, 1] };
+		const blocked = (reason: string) => ({ status: "blocked", reason });
+		expect(run([])).toEqual(blocked("eval request must be an object"));
+		expect(run({ ...valid, note: "x" })).toEqual(blocked("eval request has unsupported field: note"));
+		expect(run({ ...valid, candidate: "../x" })).toEqual(blocked("candidate must be a retro candidate id"));
+		expect(run({ ...valid, metric: "Task Pass" })).toEqual(blocked("metric must be a lowercase label of at most 64 characters"));
+		expect(run({ ...valid, better: undefined })).toEqual(blocked("better must be higher or lower"));
+		for (const keep of [[1, 1, 1, 1], [1, 1, 1, 1, "1"], "11111"]) {
+			expect(run({ ...valid, keep })).toEqual(blocked("keep must hold 5 to 1000 finite numbers, one per run"));
+		}
+		expect(run({ ...valid, candidate: "retro-0000000000000000" })).toEqual(blocked("knowledge entry not found: retro-0000000000000000"));
+		expect(runRetroEval(valid, { knowledgeRoot: path.join(home, "missing") })).toEqual(blocked(`knowledge entry not found: ${id}`));
+		const lock = `${path.join(knowledge, "entries", `${id}.md`)}.lock`;
+		fs.writeFileSync(lock, "");
+		expect(run(valid)).toEqual(blocked(`knowledge entry ${id} is being updated, or an update was interrupted; remove ${lock} if none is running`));
+		// A review action waits for no one either: it fails while the entry is locked.
+		expect(knowledgeCli(home, id, ["retire"])).toMatchObject({ status: 1, stderr: expect.stringContaining(`knowledge entry ${id} is being updated`) });
+		fs.rmSync(lock);
+		// The lock takes only a valid id, and reports only a held lock as busy.
+		expect(() => transitionKnowledgeStatus("../../x", "retired", {}, knowledge)).toThrow("invalid knowledge id: ../../x");
+		expect(fs.existsSync(path.join(knowledge, "..", "x.md.lock"))).toBe(false);
+		const entries = path.join(knowledge, "entries");
+		fs.chmodSync(entries, 0o500);
+		try {
+			expect(() => run(valid)).toThrow(expect.objectContaining({ code: "EACCES" }));
+		} finally {
+			fs.chmodSync(entries, 0o700);
+		}
+		// `add` cannot replace a retro entry, so it cannot skip the eval.
+		const before = fs.readFileSync(path.join(entries, `${id}.md`), "utf8");
+		const add = spawnSync("bun", [path.join(ROOT, "bin", "goldband-knowledge.ts"), "add", "--id", id, "--title", "Replaced", "--type", "practice", "--domains", "general", "--summary", "Replaced.", "--body", "## 做法\nx\n\n## 適用情境\nx\n\n## 驗證證據\nx\n", "--status", "active"], { cwd: home, env: env(home), encoding: "utf8" });
+		expect(add).toMatchObject({ status: 1, stderr: expect.stringContaining(`knowledge entry ${id} is a retro entry`) });
+		expect(fs.readFileSync(path.join(entries, `${id}.md`), "utf8")).toBe(before);
+		expect(fs.readdirSync(entries).filter((name) => name.endsWith(".lock"))).toEqual([]);
+		const manual = createKnowledgeEntry({ ...entryOf(knowledge, id), id: "retro-1111111111111111", source: "manual" });
+		writeKnowledgeEntry(manual, knowledge);
+		expect(run({ ...valid, candidate: manual.id })).toEqual(blocked(`not a retro candidate: ${manual.id}`));
+		expect(knowledgeCli(home, id, ["retire"]).status).toBe(0);
+		expect(run(valid)).toEqual(blocked(`knowledge entry is retired, not a candidate: ${id}`));
+		const second = instructionCandidate();
+		const again = { ...valid, candidate: second.id };
+		expect(runRetroEval(again, { knowledgeRoot: second.knowledge }).status).toBe("completed");
+		expect(runRetroEval(again, { knowledgeRoot: second.knowledge })).toEqual(blocked(`candidate has no pending eval: ${second.id}`));
+		expect(entryOf(second.knowledge, second.id).eval_status).toBe("ineffective");
+		expect(fs.existsSync(`${path.join(second.knowledge, "entries", `${second.id}.md`)}.lock`)).toBe(false);
+	});
+
+	test("runs through the CLI in the knowledge home that review reads", () => {
+		const { home, knowledge, id } = instructionCandidate();
+		const input = path.join(home, "eval.json");
+		fs.writeFileSync(input, JSON.stringify({ candidate: id, metric: "task-pass", better: "higher", keep: [0, 1, 0, 1, 1], change: [1, 1, 1, 0, 1] }));
+		const cli = (args: string[]) => spawnSync("bun", [path.join(ROOT, "bin", "goldband-retro.ts"), ...args], { cwd: home, env: env(home), encoding: "utf8" });
+		const run = cli(["eval", "--input", input]);
+		expect(run.status).toBe(0);
+		expect(JSON.parse(run.stdout)).toMatchObject({ status: "completed", id, evalStatus: "ineffective" });
+		const again = cli(["eval", "--input", input]);
+		expect(again.status).toBe(3);
+		expect(JSON.parse(again.stdout)).toEqual({ status: "blocked", reason: `candidate has no pending eval: ${id}` });
+		expect(cli(["eval", "--input", input, "--host", "claude"]).status).toBe(2);
+		expect(cli(["eval"]).status).toBe(2);
+		expect(knowledgeCli(home, id, ["promote"]).status).toBe(0);
+		expect(entryOf(knowledge, id)).toMatchObject({ status: "active", eval_status: "ineffective" });
 	});
 });
 

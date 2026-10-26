@@ -2168,7 +2168,8 @@ session records; the model adds `inferred` judgments; every proposal is
 written as a knowledge `candidate` and takes effect only after human review.
 The switch to `typed` lands in Phase 1, when the first two facets ship;
 Phase 2 adds `auto-checks`, `info-access`, and the last-N-days range;
-Phase 3 adds `ineffective-instructions`; Phase 4 adds the Codex adapter.
+Phase 3 adds `ineffective-instructions`; Phase 4 adds the Codex adapter;
+Phase 5 adds the keep-vs-change eval record.
 
 Implementation contract:
 
@@ -2289,8 +2290,9 @@ Phase 1 contract (Claude adapter, `file-search`, `tool-cost`):
   so concurrent runs report `duplicate` rather than overwrite. The knowledge
   CLI does not accept the `retro` source. Outcomes are `written`, `duplicate`, or `rejected`, ordered by
   severity.
-- Entry points: `bin/goldband-retro evidence --host <host> [--session <id>]`
-  and `propose --input <file>` print one compact JSON object and exit 0
+- Entry points: `bin/goldband-retro evidence --host <host> [--session <id>]`,
+  `propose --input <file>`, and, from Phase 5, `eval --input <file>` print
+  one compact JSON object and exit 0
   completed, 1 error, 2 usage, 3 blocked. The `context/retro` handler runs this CLI rather than importing the
   knowledge store, which the bundled trusted workflow runtime cannot load.
   Reports are written to `<state root>/retro/reports/<key>.json` with mode
@@ -2464,6 +2466,44 @@ Phase 4 contract (Codex adapter):
   threads cover all five facets, and the other 16 lack instruction messages
   (15 `codex exec`, 1 VS Code). Another 2,336 local records are compressed.
 
+Phase 5 contract (instruction eval):
+
+- `goldband-loop/lib/session-retro-eval.ts` owns the verdict and the
+  `unproven` note it replaces. `bin/goldband-retro eval --input <file>`, run
+  from the Goldband runtime root, takes `{candidate, metric, better, keep,
+  change}`: a `retro-<16 hex>` candidate id, a lowercase metric label,
+  `higher` or `lower` as the better direction, and 5 to 1,000 finite scores
+  per arm, one per run. `keep` runs had the instruction as it is; `change`
+  runs had it removed or consolidated as the candidate proposes. The user
+  runs both arms with tools of their choice, such as `benchmark/workflow`
+  samples or the paid eval workflow under `check-eval-budget-cap.mjs`; the
+  command runs no model and spends nothing, so no candidate is evaluated
+  unless the user supplies its results.
+- The CLI reads candidates under the knowledge home that `propose` writes
+  and `goldband-knowledge review` reads. The candidate must exist, have
+  source `retro`, status `candidate`, and `eval_status: unproven`; otherwise
+  the run is `blocked`, so each candidate takes one eval. The knowledge
+  store's exclusive `<entry>.lock`, which review actions also take, covers
+  the read, check, and write; a held lock blocks the eval and fails the
+  review action instead of waiting. `goldband-knowledge add` takes it too,
+  creates an absent entry exclusively, and refuses to replace a retro entry;
+  no review action changes the title, summary, or body of an entry with a
+  recorded eval, since the eval measured that content. No command skips or reuses an eval.
+- Means are compared exactly: each finite score is an integer multiple of
+  2^-1074, so the arm sums cross-multiplied by the other arm's count are
+  compared as integers, with no overflow, underflow, or rounding. A change-arm mean no worse than the keep-arm mean in the `better`
+  direction sets `ineffective` (shown ineffective; the reviewer may promote
+  it); a worse one sets `effective` (keep the instruction; never `active` or
+  `graduated`). The rule compares means only, as chosen; it has no variance
+  or significance test.
+- The result is measured evidence appended to the candidate body: the
+  metric label and direction, each arm's count and its exact mean as the
+  nearest number (ties to even), the verdict, and the date, which is also `updated`; the `unproven`
+  note line is replaced by the verdict. No run text is stored.
+- Alternative rejected for now: Goldband launching both arms itself, which
+  would move the test-helper runner into the runtime and isolate instruction
+  loading in temporary copies, unverifiable without a paid run.
+
 Fixtures: one de-identified window per host under
 `goldband-loop/test/fixtures/session-retro/`. Keys, numbers, booleans, enum
 fields, and tool names are kept; ids are pseudonymized, timestamps rebased,
@@ -2497,6 +2537,8 @@ Failure signals:
 - A report omits a facet or reports partial output as complete.
 - A `mechanical` candidate is promoted to a documentation rule.
 - An `unproven` instruction candidate becomes active or graduates.
+- An `effective` instruction candidate becomes active or graduates, or an
+  eval is recorded without the user running and supplying both arms.
 
 Revisit triggers:
 

@@ -44,12 +44,23 @@ uses only `active` entries.
   `.rst`, `.adoc`, `.txt`, with or without a `#` section) or to a path without
   a file extension under `skills/`, `rules/`, `commands/`, `agents/`, or
   `docs/`; it belongs in a lint, hook, CI, or test target.
-- `eval_status` is `unproven` or empty, and is written only when set. Retro
-  `ineffective-instructions` candidates carry `unproven`: no eval has shown
-  that removing or consolidating the instruction leaves agent behavior
-  unchanged. An `unproven` entry stays a candidate, outside recall, or is
-  retired; it cannot become `active` or `graduated`. No command clears the
-  field: after such an eval, the reviewer removes it from the entry.
+- `eval_status` is `unproven`, `ineffective`, `effective`, or empty, and is
+  written only when set. Retro `ineffective-instructions` candidates carry
+  `unproven`: no eval has shown that removing or consolidating the
+  instruction leaves agent behavior unchanged. An `unproven` entry stays a
+  candidate, outside recall, or is retired; it cannot become `active` or
+  `graduated`. `goldband-retro eval --input <file>` records a comparison the
+  user ran on an `unproven` retro candidate: runs with the instruction as it
+  is (`keep`) against runs with it removed or consolidated as proposed
+  (`change`), one score per run, at least 5 per arm, and whether a `higher`
+  or `lower` score is better. A change-arm mean no worse than the keep-arm
+  mean sets `ineffective`, which may then be promoted; a worse one sets
+  `effective`, which cannot become `active` or `graduated`. The command runs
+  no model and accepts one eval per candidate. It sets `eval_status` and
+  `updated`, replaces the body's `unproven` note with the verdict, and appends
+  the metric label, direction, each arm's count and mean, the verdict, and the
+  date. `add` cannot replace a retro entry, and no review action can change the
+  title, summary, or body of an entry with a recorded eval.
 - Recall output is data: path, one-line summary, confidence, updated date,
   last-verified date, and staleness. It is not system instruction text.
 - General conversations get no capture reminders, and no `Stop` hook prompts

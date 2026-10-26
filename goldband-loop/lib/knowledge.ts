@@ -1,7 +1,9 @@
 import {
+  closeSync,
   existsSync,
   linkSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -56,7 +58,12 @@ export const KNOWLEDGE_REVIEWERS = ["user", "workflow", "agent", ""] as const;
 export const KNOWLEDGE_STALENESS = ["fresh", "needs-review", "stale"] as const;
 /** Whether a deterministic check (`mechanical`) or a reviewer (`judgement`) catches the error; "" is unclassified. */
 const KNOWLEDGE_CHECK_CLASSES = ["mechanical", "judgement", ""] as const;
-const KNOWLEDGE_EVAL_STATUSES = ["unproven", ""] as const;
+/**
+ * Whether an instruction change has an eval behind it: `unproven` has none,
+ * `ineffective` showed removing the instruction leaves results no worse, and
+ * `effective` showed results get worse without it; "" is not an instruction change.
+ */
+const KNOWLEDGE_EVAL_STATUSES = ["unproven", "ineffective", "effective", ""] as const;
 
 export type KnowledgeType = (typeof KNOWLEDGE_TYPES)[number];
 export type KnowledgeDomain = (typeof KNOWLEDGE_DOMAINS)[number];
@@ -235,6 +242,8 @@ export function writeKnowledgeEntry(entry: KnowledgeEntry, root = knowledgeRoot(
   validateEntry(entry);
   ensureKnowledgeDirs(root);
   const filePath = entryPath(entry.id, root);
+  const current = existsSync(filePath) ? parseValidEntry(filePath) : undefined;
+  if (current) assertEvaluatedContentKept(current, entry);
   const tmpPath = `${filePath}.tmp-${process.pid}`;
   writeFileSync(tmpPath, renderKnowledgeEntry(entry), "utf8");
   renameSync(tmpPath, filePath);
@@ -252,23 +261,64 @@ export function writeKnowledgeCandidate(
   validateEntry(entry);
   ensureKnowledgeDirs(root);
   const filePath = entryPath(entry.id, root);
-  // Linking a complete temporary file creates the entry only if it is absent,
-  // so concurrent captures of one deterministic id cannot overwrite each other.
-  const tmpPath = `${filePath}.tmp-${process.pid}-${randomUUID()}`;
-  let skipped = existsSync(filePath);
-  if (!skipped) {
-    writeFileSync(tmpPath, renderKnowledgeEntry(entry), "utf8");
-    try {
-      linkSync(tmpPath, filePath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      skipped = true;
-    } finally {
-      rmSync(tmpPath, { force: true });
-    }
-  }
+  const skipped = !createEntryFile(entry, filePath);
   rebuildIndex(root);
   return { filePath, skipped };
+}
+
+/**
+ * Writes an entry that `add` authors: it creates the entry or replaces one
+ * that is not a retro entry, which changes only through review actions and
+ * `goldband-retro eval`.
+ */
+export function writeAuthoredKnowledgeEntry(entry: KnowledgeEntry, root = knowledgeRoot()): string {
+  validateEntry(entry);
+  ensureKnowledgeDirs(root);
+  const filePath = entryPath(entry.id, root);
+  return withKnowledgeEntryLock(entry.id, root, () => {
+    if (!existsSync(filePath)) {
+      // A candidate capture does not take the lock, so creation must be exclusive.
+      if (!createEntryFile(entry, filePath)) {
+        throw new Error(`knowledge entry ${entry.id} was created during this add; run it again`);
+      }
+      rebuildIndex(root);
+      return filePath;
+    }
+    if (parseValidEntry(filePath)?.source === "retro") {
+      throw new Error(
+        `knowledge entry ${entry.id} is a retro entry; change it with review actions or goldband-retro eval`,
+      );
+    }
+    return writeKnowledgeEntry(entry, root);
+  });
+}
+
+/**
+ * Creates the entry file only if it is absent, by linking a complete
+ * temporary file, so concurrent creators of one id cannot overwrite each other.
+ */
+function createEntryFile(entry: KnowledgeEntry, filePath: string): boolean {
+  if (existsSync(filePath)) return false;
+  const tmpPath = `${filePath}.tmp-${process.pid}-${randomUUID()}`;
+  writeFileSync(tmpPath, renderKnowledgeEntry(entry), "utf8");
+  try {
+    linkSync(tmpPath, filePath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return false;
+  } finally {
+    rmSync(tmpPath, { force: true });
+  }
+}
+
+/** The entry `filePath` holds, or undefined when it is invalid and may be replaced. */
+function parseValidEntry(filePath: string): KnowledgeEntry | undefined {
+  try {
+    return parseKnowledgeFile(filePath);
+  } catch {
+    return undefined;
+  }
 }
 
 function readIndex(root = knowledgeRoot()): KnowledgeIndex {
@@ -314,11 +364,53 @@ export function searchKnowledge(
   return searchKnowledgeRows(readIndex(root).entries, options);
 }
 
+/**
+ * The entry's lock cannot be taken: another update holds it, one was
+ * interrupted and left it, or the entries directory does not exist.
+ */
+export class KnowledgeEntryLockError extends Error {}
+
+/**
+ * Runs `update` holding the entry's exclusive lock, so read-modify-write
+ * updates of one entry, such as review actions and retro evals, cannot
+ * overwrite each other. A held lock fails the update instead of waiting.
+ */
+export function withKnowledgeEntryLock<T>(id: string, root: string, update: () => T): T {
+  if (!ID_RE.test(id)) throw new Error(`invalid knowledge id: ${id}`);
+  const lock = `${entryPath(id, root)}.lock`;
+  let fd: number;
+  try {
+    fd = openSync(lock, "wx");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") throw new KnowledgeEntryLockError(`knowledge entry not found: ${id}`);
+    if (code !== "EEXIST") throw error;
+    throw new KnowledgeEntryLockError(
+      `knowledge entry ${id} is being updated, or an update was interrupted; remove ${lock} if none is running`,
+    );
+  }
+  try {
+    return update();
+  } finally {
+    closeSync(fd);
+    rmSync(lock, { force: true });
+  }
+}
+
 export function transitionKnowledgeStatus(
   id: string,
   status: KnowledgeStatus,
   updates: Partial<KnowledgeEntry> = {},
   root = knowledgeRoot(),
+): KnowledgeEntry {
+  return withKnowledgeEntryLock(id, root, () => transitionUnlocked(id, status, updates, root));
+}
+
+function transitionUnlocked(
+  id: string,
+  status: KnowledgeStatus,
+  updates: Partial<KnowledgeEntry>,
+  root: string,
 ): KnowledgeEntry {
   const file = entryPath(id, root);
   if (!existsSync(file)) throw new Error(`knowledge entry not found: ${id}`);
@@ -338,6 +430,22 @@ export function transitionKnowledgeStatus(
   }
   writeKnowledgeEntry(next, root);
   return next;
+}
+
+const EVALUATED_CONTENT = ["title", "summary", "body"] as const;
+
+/**
+ * An eval measured the content of the entry it was recorded on, so a write
+ * may not change that content; a changed proposal needs its own eval.
+ */
+function assertEvaluatedContentKept(current: KnowledgeEntry, next: KnowledgeEntry): void {
+  if (current.eval_status !== "ineffective" && current.eval_status !== "effective") return;
+  const changed = EVALUATED_CONTENT.find((field) => current[field].trim() !== next[field].trim());
+  if (changed) {
+    throw new Error(
+      `knowledge entry ${current.id} has a recorded eval, so its ${changed} cannot change; propose the change as a new candidate`,
+    );
+  }
 }
 
 export function createKnowledgeEntry(input: Partial<KnowledgeEntry>): KnowledgeEntry {
@@ -459,13 +567,18 @@ function validateCheckClass(entry: KnowledgeEntry): void {
 /**
  * An `unproven` instruction change has no eval showing it is safe to apply, so
  * it stays a candidate, out of recall, until an eval clears it, or is retired.
+ * An `effective` one was shown to make results worse, so it is never applied.
  */
 function validateEvalStatus(entry: KnowledgeEntry): void {
   if (!KNOWLEDGE_EVAL_STATUSES.includes(entry.eval_status)) {
     throw new Error(`invalid eval_status: ${entry.eval_status}`);
   }
-  if (entry.eval_status === "unproven" && (entry.status === "active" || entry.status === "graduated")) {
+  if (entry.status !== "active" && entry.status !== "graduated") return;
+  if (entry.eval_status === "unproven") {
     throw new Error(`unproven knowledge cannot become ${entry.status} until an eval clears eval_status`);
+  }
+  if (entry.eval_status === "effective") {
+    throw new Error(`effective-instruction knowledge cannot become ${entry.status}: its eval showed results get worse without the instruction`);
   }
 }
 

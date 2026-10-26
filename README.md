@@ -76,7 +76,7 @@ Claude 使用 `/goldband review code`，Codex 使用 `$goldband review code`。�
 
 專案原有的 test、lint、typecheck、CI 及需要的實際環境驗證仍須照常執行。報告中的「無 findings」不代表這些驗證已通過。
 
-`context/retro` 從本機的 Claude Code session 紀錄或未壓縮的 Codex session 紀錄計算可量測的證據（目前的 session、指定的 session，或此 repo 最近 N 天），只把數值、hash 與紀錄位置存成報告。建議只寫成待審的 knowledge 候選，不修改指令、規則、hooks 或設定。Claude 使用 `/goldband context retro`，Codex 使用 `$goldband context retro`。
+`context/retro` 從本機的 Claude Code session 紀錄或未壓縮的 Codex session 紀錄計算可量測的證據（目前的 session、指定的 session，或此 repo 最近 N 天），只把數值、hash 與紀錄位置存成報告。建議只寫成待審的 knowledge 候選，不修改指令、規則、hooks 或設定。刪除或合併指令的候選，要先在已安裝的 Goldband runtime 根目錄（`goldband` skill 的安裝目錄）執行 `bin/goldband-retro eval --input <file>`，記錄你自己跑的「保留 vs 變更」比較，才能採用。Claude 使用 `/goldband context retro`，Codex 使用 `$goldband context retro`。
 
 ## 更新與移除
 

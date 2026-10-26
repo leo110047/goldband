@@ -22,6 +22,7 @@ import {
 	locateCodexSession,
 	readCodexSession,
 } from "./session-retro-codex";
+import { RETRO_UNPROVEN_NOTE } from "./session-retro-eval";
 import {
 	RETRO_RULE_RE,
 	RETRO_SESSION_ID_RE,
@@ -645,7 +646,7 @@ function adoptionNotes(proposal: Proposal): string[] {
 	if (proposal.target === "read-only-permission")
 		notes.push("- 需安全審查：只提議唯讀存取，不授予寫入權限或密鑰");
 	if (proposal.facet === "ineffective-instructions")
-		notes.push("- 驗證狀態：unproven（未經 eval，不可直接刪除或合併）");
+		notes.push(RETRO_UNPROVEN_NOTE);
 	return notes;
 }
 

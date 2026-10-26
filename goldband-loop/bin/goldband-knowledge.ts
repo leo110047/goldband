@@ -23,6 +23,8 @@ import {
   searchKnowledge,
   todayIsoDate,
   transitionKnowledgeStatus,
+  withKnowledgeEntryLock,
+  writeAuthoredKnowledgeEntry,
   writeKnowledgeCandidate,
   writeKnowledgeEntry,
   type KnowledgeDomain,
@@ -145,7 +147,7 @@ function runAdd(args: Args): void {
     summary: requiredString(args, "summary"),
     body,
   });
-  const filePath = writeKnowledgeEntry(entry);
+  const filePath = writeAuthoredKnowledgeEntry(entry);
   process.stdout.write(`WROTE ${filePath}\n`);
 }
 
@@ -303,17 +305,19 @@ function runReviewEdit(args: Args): void {
   const id = requiredString(args, "id");
   const root = knowledgeRoot();
   const file = entryPath(id, root);
-  const current = parseKnowledgeFile(file);
-  const summary = stringArg(args, "summary", current.summary);
-  const bodyFile = stringArg(args, "body-file", "");
-  const body = bodyFile ? readFileSync(bodyFile, "utf8") : current.body;
-  const next = createKnowledgeEntry({
-    ...current,
-    summary,
-    body,
-    updated: todayIsoDate(),
+  withKnowledgeEntryLock(id, root, () => {
+    const current = parseKnowledgeFile(file);
+    const summary = stringArg(args, "summary", current.summary);
+    const bodyFile = stringArg(args, "body-file", "");
+    const body = bodyFile ? readFileSync(bodyFile, "utf8") : current.body;
+    const next = createKnowledgeEntry({
+      ...current,
+      summary,
+      body,
+      updated: todayIsoDate(),
+    });
+    writeKnowledgeEntry(next, root);
   });
-  writeKnowledgeEntry(next, root);
   process.stdout.write(`UPDATED ${file}\n`);
 }
 
