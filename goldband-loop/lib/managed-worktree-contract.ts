@@ -183,12 +183,14 @@ export function writeLease(lease: ManagedWorktreeLease): void {
 }
 
 export function writePrivateJson(filePath: string, value: unknown): void {
+	writePrivateText(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+/** Atomically writes an owner-only file through a fresh, exclusive temporary file. */
+export function writePrivateText(filePath: string, content: string): void {
 	fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
 	const temporary = `${filePath}.tmp.${process.pid}.${randomUUID()}`;
-	fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
-		mode: 0o600,
-		flag: "wx",
-	});
+	fs.writeFileSync(temporary, content, { mode: 0o600, flag: "wx" });
 	fs.renameSync(temporary, filePath);
 	if (process.platform !== "win32") fs.chmodSync(filePath, 0o600);
 }

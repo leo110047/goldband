@@ -1,13 +1,15 @@
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "fs";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { basename, dirname, join, resolve } from "path";
 import { execFileSync } from "child_process";
 import { createRequire } from "module";
@@ -41,6 +43,7 @@ export const KNOWLEDGE_SOURCES = [
   "telemetry-miner",
   "workflow-evidence",
   "hook-advisory",
+  "retro",
 ] as const;
 export const KNOWLEDGE_TRUST_LEVELS = [
   "user-stated",
@@ -236,14 +239,26 @@ export function writeKnowledgeCandidate(
   if (entry.status !== "candidate") {
     throw new Error("candidate capture must write status=candidate");
   }
+  validateEntry(entry);
   ensureKnowledgeDirs(root);
   const filePath = entryPath(entry.id, root);
-  if (existsSync(filePath)) {
-    rebuildIndex(root);
-    return { filePath, skipped: true };
+  // Linking a complete temporary file creates the entry only if it is absent,
+  // so concurrent captures of one deterministic id cannot overwrite each other.
+  const tmpPath = `${filePath}.tmp-${process.pid}-${randomUUID()}`;
+  let skipped = existsSync(filePath);
+  if (!skipped) {
+    writeFileSync(tmpPath, renderKnowledgeEntry(entry), "utf8");
+    try {
+      linkSync(tmpPath, filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      skipped = true;
+    } finally {
+      rmSync(tmpPath, { force: true });
+    }
   }
-  writeKnowledgeEntry(entry, root);
-  return { filePath, skipped: false };
+  rebuildIndex(root);
+  return { filePath, skipped };
 }
 
 function readIndex(root = knowledgeRoot()): KnowledgeIndex {
@@ -589,10 +604,11 @@ function stalenessField(data: Record<string, unknown>): KnowledgeStaleness {
   return (stringField(data, "staleness") || "fresh") as KnowledgeStaleness;
 }
 
-function defaultTrustLevel(source: KnowledgeSource): KnowledgeTrustLevel {
+export function defaultTrustLevel(source: KnowledgeSource): KnowledgeTrustLevel {
   if (source === "telemetry-miner") return "telemetry-derived";
   if (source === "workflow-evidence") return "verified";
   if (source === "hook-advisory") return "observed";
+  if (source === "retro") return "inferred";
   return "user-stated";
 }
 
@@ -660,7 +676,7 @@ function validateSafeKnowledgeText(field: string, value: string): void {
   }
 }
 
-function detectSecretLikeContent(value: string): string[] {
+export function detectSecretLikeContent(value: string): string[] {
   return detectSecrets(value).map((finding) => finding.name);
 }
 

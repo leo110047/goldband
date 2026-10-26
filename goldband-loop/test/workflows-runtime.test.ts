@@ -134,6 +134,7 @@ describe('workflow runtime', () => {
       'safety/unfreeze',
       'context/save',
       'context/restore',
+      'context/retro',
       'knowledge/recall',
       'benchmark/workflow',
       'system/health',

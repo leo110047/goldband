@@ -13,6 +13,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { stableJson } from "../lib/stable-json";
 import { resolveGoldbandStateRoot } from "../lib/state-root";
 import {
 	assertWorkMapTransition,
@@ -21,7 +22,6 @@ import {
 	calculateFrontier,
 	parseWorkMap,
 	parseWorkMapCreateInput,
-	stableJson,
 	ticketContractDigest,
 	type EvidenceReference,
 	type WorkMapCreateInput,

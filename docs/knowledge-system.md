@@ -19,6 +19,7 @@ uses only `active` entries.
 | Candidate review/promotion | `goldband-knowledge-review` runtime binary | `goldband-knowledge-review` runtime binary | direct wrapper smoke; `./install.sh status` readback |
 | Active knowledge recall | Explicit `knowledge/recall` contract and runtime CLI | Same capability contract and runtime CLI | `goldband-loop/test/goldband-knowledge.test.ts`; `node scripts/test-workflow-contracts.mjs` |
 | Telemetry-derived candidates | Offline miner writes local candidate files only when run | same offline miner | `node scripts/test-telemetry-miner.mjs`; `npm run test:telemetry` |
+| Retro candidates | `goldband-retro propose` after `context/retro` evidence, Claude sessions only | Not available until the Codex session adapter exists | `goldband-loop/test/session-retro.test.ts` |
 | MCP `knowledge-query` | Available through first-party MCP server when enabled by host | Available through first-party MCP server when enabled by host | `mcp/server/test/knowledge-query.test.ts`; `npm test` in `mcp/server` |
 | Prompt-time knowledge advisory | Claude UserPromptSubmit advisory for active entries | Not equivalent; Codex has workflow/MCP recall only. Codex `Stop` hooks do not prompt knowledge capture. | `npm run test:hook-router`; `node scripts/test-codex-hook-router.mjs` |
 | Install/status readback | `./install.sh status` shows CLI, candidate review, workflow recall, MCP repo availability | same | `./install.sh status` |
@@ -26,7 +27,10 @@ uses only `active` entries.
 ## Trust Rules
 
 - Candidate ids are `<source_type>-<YYYYMMDD>-<hash8>`, derived from source
-  type, sanitized source pointer, and summary.
+  type, sanitized source pointer, and summary. Retro candidates are
+  `retro-<hash16>`, derived from the session snapshot SHA-256, facet, and rule
+  code only, so a rerun or reworded proposal for the same snapshot is a
+  duplicate. Their default `trust_level` is `inferred`.
 - Duplicate candidate ids are skipped rather than overwritten.
 - Candidate review can list overdue candidates first, show entries, promote to
   active, edit summary/body, retire, or graduate.

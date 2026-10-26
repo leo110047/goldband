@@ -2159,3 +2159,177 @@ check that cannot run reports failure, never success.
   the call continue. Glob walks run in a child process killed at a 2-second
   deadline, because a directory read can block, as on a macOS
   privacy-protected folder, where no in-process check interrupts it.
+
+## 2026-10-26: Retro Becomes a Typed Owner over Session Snapshots
+
+Decision: `context/retro` moves from `compatibility` to `typed` with the owner
+`session-retro-evidence`. The runtime computes `measured` evidence from host
+session records; the model adds `inferred` judgments; every proposal is
+written as a knowledge `candidate` and takes effect only after human review.
+The switch to `typed` lands in Phase 1, when the first two facets ship.
+
+Implementation contract:
+
+- `goldband-loop/lib/session-retro-evidence.ts` owns the provider-neutral
+  contract: `RetroToolEventV1` (adapter output, in memory only) and
+  `RetroReportV1` (the only persisted shape). Validation rejects unknown keys.
+- Snapshot identity: at run start each analyzed session gets host, session id,
+  byte length up to the last complete line, its record count, and the SHA-256
+  of that range. A ref whose ordinal is not below the record count is
+  rejected.
+  Evidence reads only that range and cites
+  `<session id>@<snapshot sha256>#<record ordinal>`, where the ordinal is the
+  0-based JSONL record index. Records appended during the run are outside the
+  snapshot. The record path is used in memory and never persisted.
+- Grades: every evidence item is `measured` (deterministic over the snapshot)
+  or `inferred` (heuristic or model judgment); a missing grade is rejected.
+  `measured` evidence is emitted in a deterministic order, so a rerun over the
+  same snapshot is byte-identical.
+- Persistence allowlist: numbers, tool names, input SHA-256, exit codes, and
+  record positions. Prompts, tool output, stderr, attachments, file content,
+  and instruction text are read in memory and never copied to storage.
+  Candidate summary and body pass `secret-patterns` filtering and a length cap.
+- Facet coverage: every report lists `file-search`, `auto-checks`,
+  `tool-cost`, `info-access`, and `ineffective-instructions` as `covered` or
+  `unavailable` (`not-implemented` | `host-unsupported`). Evidence for an
+  `unavailable` facet is rejected.
+- Knowledge: `KNOWLEDGE_SOURCES` gains `retro` with default `trust_level`
+  `inferred`. A retro candidate id is `retro-<hash>` over snapshot SHA-256,
+  facet, and rule code, with no date or summary, so a rerun or reworded
+  proposal is `SKIPPED duplicate`. `docs/knowledge-system.md` changes with it.
+- Host record formats stay inside one adapter per host. Codex adapter work
+  follows the Claude adapter by one phase; a schema change needed by Codex
+  updates this ADR first.
+
+Phase 0 sampling (10 Claude and 8 Codex local sessions, field names only):
+
+| Signal | Claude Code | Codex |
+|--------|-------------|-------|
+| Tool call and result | `tool_use` / `tool_result` blocks linked by id | `item_completed` items: `CommandExecution`, `FileChange`, `McpToolCall`; script calls as `custom_tool_call` |
+| Exit code | No structured field: `is_error` plus a leading `Exit code N` line; success implies 0 | `exit_code` and `status` on `CommandExecution` |
+| Hook or permission block | `permissionDecision.decision` `reject`; `source` `hook` marks a hook | Not observed |
+| Search and read | Tool names (`Grep`, `Glob`, `Read`) | `parsed_cmd` type (`read`, `search`, `list_files`); 1,392 of 2,168 sampled entries are `unknown` |
+| Edit | `Edit`, `Write`, `NotebookEdit` | `FileChange` |
+| Truncation | `persistedOutputPath` on Bash results; `truncated` on Grep | `…N tokens truncated…` in model-facing output, per script call, not per command |
+| Token usage | Per assistant message | Per turn (`token_count`, `token_usage_record`) |
+| Loaded instructions | `instructions` attachment with file paths; `skill_listing` | AGENTS.md as a user message per directory; skills in a developer message |
+| Tool definitions | `prompt_snapshot` and `deferred_tools_delta` attachments | `additional_tools` response item |
+
+Consequences of the sampling:
+
+- Neither host records tokens per tool output, so per-call `tool-cost`
+  metrics use bytes and only session or turn totals use tokens.
+- `ineffective-instructions` measures loaded instruction sources from the
+  snapshot, not from the current disk, so the result reflects what that
+  session loaded and stays reproducible.
+- Tool-definition size is available on both hosts and may enter `tool-cost`
+  evidence as bytes.
+- Codex `file-search` evidence can classify only commands whose `parsed_cmd`
+  is not `unknown`. Phase 4 decides whether that is `covered` or
+  `host-unsupported`.
+
+Phase 1 contract (Claude adapter, `file-search`, `tool-cost`):
+
+- `hostSupport` is `["claude"]` until the Codex adapter lands in Phase 4; a
+  non-Claude host is `blocked`.
+- Location: `<CLAUDE_CONFIG_DIR or ~/.claude>/projects/*/<session id>.jsonl`,
+  skipping symlinked project directories; the default session is
+  `CLAUDE_CODE_SESSION_ID`. Subagent transcripts under
+  `<project>/<session id>/subagents/` are separate records outside the
+  snapshot; their work appears only as the parent's `Agent` call. A missing, invalid,
+  unknown, or ambiguous id is `blocked`. The snapshot is read in 4 MiB chunks
+  through `O_NOFOLLOW`; a blank or non-JSON record, a record of another
+  session, a `tool_result` without its `tool_use`, or non-list content fails
+  the run.
+- Event mapping: the event ordinal is the `tool_use` record. Output bytes
+  count text parts as UTF-8 and other parts, such as images, by their
+  serialized size. Exit code is the
+  leading `Exit code N` line of an `is_error` result, and 0 for a result
+  without `is_error`. `truncated` comes
+  from Bash `persistedOutputPath` and Grep `truncated`. `emptyResult` comes
+  from Glob `numFiles` and Grep `numFiles`, `numLines`, or `numMatches` by
+  mode, and for Bash only from a single grep-family command (exit 1 empty,
+  0 not). Usage is deduplicated by message id and persisted only as
+  `RetroUsageTotalsV1` session totals.
+- Categories: `Edit`, `MultiEdit`, `Write`, `NotebookEdit`, and Bash with
+  `bashEditDiff.changedFiles` are `edit`; `Grep` is `search`; `Glob` and `LS`
+  are `list`; `Read` is `read`; `mcp__*` is `mcp`. Other Bash is classified
+  without a shell: a list of plain pipelines joined by `;`, `&&`, or newlines
+  is a lookup only when every pipeline is `cd <dir>` or starts with a search
+  (`rg`, grep family, `ag`, `ack`, `git grep`), list (`ls`, `find`, `fd`,
+  `tree`, `git ls-files`), or read (`cat`, `head`, `tail`, `less`, `bat`,
+  `nl`, `wc`, `sed -n <line range>p`) program followed only by filters. A
+  program with an option that runs commands or writes files (`find` actions
+  and `-fprint*`/`-fls`, `fd -x`, `rg --pre`, `git grep -O`, `tree -o`,
+  `sort -o`/`--compress-program`, `less -o`, `uniq` with an output operand) is
+  `command`. Only redirections to `/dev/null` or a standard stream are
+  allowed; expansions, substitutions, and other syntax make it `command`. The
+  list takes the first of search, list, read that it contains.
+- Rules: `file-search` emits `first-edit`, `pre-edit-searches`,
+  `pre-edit-reads`, `pre-edit-lookup-output` (bytes), `duplicate-search`, and
+  `empty-search` over the calls before the first edit that neither failed nor
+  was blocked, or the whole snapshot without one. `tool-cost` emits
+  `top-output` (10 largest, bytes), `duplicate-call`, `truncated-output`,
+  `output-by-tool` (bytes), and `session-input-tokens` /
+  `session-output-tokens`, and `unfinished-call` counts calls whose result is
+  outside the snapshot, which are not events. Duplicate rules list the 20
+  largest groups and add `<rule>-groups` counting every group. Metrics are
+  exact; each item cites at most 20 positions in order.
+- Proposals: at most 20 per run. Targets are `instruction-path-guidance`
+  (requires `estimatedBytes`) or `file-structure` for `file-search`, and
+  `command-usage`, `mcp-config`, or `tool-retirement` for `tool-cost`.
+  Proposal evidence may only be `inferred`, at most 5 items; refs, at most 20
+  per proposal or evidence item, must cite records of the reported snapshot.
+  A secret-shaped rule is invalid and is never echoed as an outcome label. Proposal text may not contain heading or section-break
+  lines, email addresses, or home-directory paths. A rejection reason that
+  quotes secret-shaped input is withheld. Candidates are created exclusively,
+  so concurrent runs report `duplicate` rather than overwrite. The knowledge
+  CLI does not accept the `retro` source. Outcomes are `written`, `duplicate`, or `rejected`, ordered by
+  severity.
+- Entry points: `bin/goldband-retro evidence --host <host> [--session <id>]`
+  and `propose --input <file>` print one compact JSON object and exit 0
+  completed, 1 error, 2 usage, 3 blocked. The `context/retro` handler runs this CLI rather than importing the
+  knowledge store, which the bundled trusted workflow runtime cannot load.
+  Reports are written to `<state root>/retro/reports/<key>.json` with mode
+  0600.
+- Scale: a 717,638,576-byte Claude record (66,751 records, 4,533 tool
+  calls) is read and analyzed in 1.47-1.49 s at about 194 MB maximum RSS, and
+  its report is 50,122 bytes (3 runs, Bun 1.3.11, macOS arm64); reading it as
+  one string fails with `ERR_STRING_TOO_LONG`.
+
+Fixtures: one de-identified window per host under
+`goldband-loop/test/fixtures/session-retro/`. Keys, numbers, booleans, enum
+fields, and tool names are kept; ids are pseudonymized, timestamps rebased,
+and other strings replaced by same-length filler capped at 512 bytes. The
+leading `Exit code N` line and truncation markers are kept because adapters
+read them. Byte metrics from these fixtures are not real sizes; metric tests
+use synthetic fixtures. A test rejects any text outside enum fields and tool
+names.
+
+Why: a prompt contract cannot prove a retro claim. Counting, ordering, and
+exit codes are deterministic and belong in code; judgment stays with the
+model and is labeled as such. Binding evidence to a hashed snapshot keeps
+citations valid while the session continues to grow.
+
+Alternatives considered:
+
+| Alternative | Why rejected |
+|-------------|--------------|
+| Let the model read the transcript and judge everything | Counts and exit codes become unverifiable and unrepeatable. |
+| Persist excerpts of tool output as evidence | Copies prompts, secrets, and file content into Goldband state. |
+| Statically scan the target repo's build, hook, and CI files | A file's presence does not prove the check ran; the session record does. |
+| Scheduled retro runs | No evidence that manual runs are insufficient; adds install, state, cursor, lock, and uninstall surfaces. |
+
+Failure signals:
+
+- A persisted report or candidate contains text outside the allowlist, or the
+  canary strings from the privacy fixture.
+- Two runs over the same snapshot produce different `measured` evidence.
+- A report omits a facet or reports partial output as complete.
+- A `mechanical` candidate is promoted to a documentation rule.
+
+Revisit triggers:
+
+- A host adds structured per-call tokens, exit codes, or truncation fields.
+- Phase 2 is live, the user reports manual runs are insufficient, and
+  `workflow-entry` telemetry shows retro going unrun.

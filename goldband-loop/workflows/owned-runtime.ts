@@ -4,14 +4,16 @@ import {
 	existsSync,
 	lstatSync,
 	mkdirSync,
+	mkdtempSync,
 	readdirSync,
 	readFileSync,
 	realpathSync,
 	renameSync,
+	rmSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { stateRoot } from "./evidence";
 import { workflowAssetPath } from "./paths";
@@ -68,6 +70,7 @@ const OWNED_HANDLERS: Record<
 	"safety/unfreeze": runSafetyUnfreeze,
 	"context/save": runContextSave,
 	"context/restore": runContextRestore,
+	"context/retro": runContextRetro,
 	"knowledge/recall": runKnowledgeRecall,
 	"benchmark/workflow": runBenchmarkWorkflow,
 	"system/health": runSystemHealth,
@@ -607,6 +610,123 @@ function isMissingWorkMapError(error: unknown): boolean {
 		(error.message.includes("Work Map state is missing") ||
 			error.message.includes("required directory is missing"))
 	);
+}
+
+function runContextRetro(ctx: WorkflowContext): OwnedRuntimeResult {
+	const input = optionalRecord(ctx.input, "context/retro input");
+	const operation = optionalString(input.mode, "mode") || "evidence";
+	if (!ctx.workflow.runtimeContract?.modes.includes(operation)) {
+		// The rejected value is not echoed: run evidence persists error text.
+		throw new Error(
+			`context/retro mode must be one of: ${ctx.workflow.runtimeContract?.modes.join(", ")}`,
+		);
+	}
+	if (!isReal(ctx)) {
+		return completed(
+			"session-retro-evidence",
+			operation,
+			"Validated retro request without reading session records.",
+			[`mode=${operation}`],
+		);
+	}
+	return operation === "evidence"
+		? runContextRetroEvidence(ctx, input)
+		: runContextRetroProposals(ctx, input);
+}
+
+function runContextRetroEvidence(
+	ctx: WorkflowContext,
+	input: Record<string, unknown>,
+): OwnedRuntimeResult {
+	const sessionId = optionalString(input.sessionId, "sessionId");
+	// runWorkflow admits real mode only with an explicit host.
+	const args = ["evidence", "--host", ctx.options.host ?? "mock"];
+	if (sessionId) args.push("--session", sessionId);
+	const result = retroCommand(ctx, "evidence", args);
+	if (result.status === "blocked") return result.blocked;
+	const { report, reportPath } = result.output as {
+		report: { facets: Record<string, { status: string }>; evidence: unknown[] };
+		reportPath: string;
+	};
+	ctx.artifacts.push(reportPath);
+	const facets = Object.entries(report.facets).map(
+		([facet, value]) => `${facet}=${value.status}`,
+	);
+	return completed(
+		"session-retro-evidence",
+		"evidence",
+		"Snapshotted the session and persisted its measured report.",
+		[...facets, `evidence=${report.evidence.length}`],
+		[reportPath],
+		{ report },
+	);
+}
+
+function runContextRetroProposals(
+	ctx: WorkflowContext,
+	input: Record<string, unknown>,
+): OwnedRuntimeResult {
+	const { mode: _mode, ...request } = input;
+	const directory = mkdtempSync(join(tmpdir(), "goldband-retro-input-"));
+	try {
+		const file = join(directory, "proposals.json");
+		writeFileSync(file, JSON.stringify(request), { mode: 0o600 });
+		const result = retroCommand(ctx, "propose", ["propose", "--input", file]);
+		if (result.status === "blocked") return result.blocked;
+		const { outcomes } = result.output as {
+			outcomes: Array<{ facet: string; rule: string; status: string }>;
+		};
+		return completed(
+			"session-retro-evidence",
+			"propose",
+			"Validated retro proposals and wrote knowledge candidates.",
+			outcomes.map(
+				(outcome) => `${outcome.facet}/${outcome.rule}=${outcome.status}`,
+			),
+			[],
+			{ outcomes },
+		);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+}
+
+/**
+ * Runs the retro owner CLI, which keeps the knowledge store out of the bundled
+ * workflow runtime. Exit 0 is completed and 3 is the owner's blocked result.
+ */
+function retroCommand(
+	ctx: WorkflowContext,
+	operation: string,
+	args: string[],
+):
+	| { status: "completed"; output: Record<string, unknown> }
+	| { status: "blocked"; blocked: OwnedRuntimeResult } {
+	const result = commandResult(
+		"bun",
+		["run", workflowAssetPath("bin/goldband-retro.ts"), ...args],
+		ctx.cwd,
+		120_000,
+		{ GOLDBAND_HOME: stateRoot(ctx.options) },
+	);
+	if (result.status === 0 || result.status === 3) {
+		const output = record(JSON.parse(result.stdout), "goldband-retro output");
+		if (result.status === 0) return { status: "completed", output };
+		const reason = String(output.reason);
+		return {
+			status: "blocked",
+			blocked: blocked("session-retro-evidence", operation, reason, [reason]),
+		};
+	}
+	return {
+		status: "blocked",
+		blocked: blocked(
+			"session-retro-evidence",
+			operation,
+			"Retro owner rejected the request.",
+			[compact(result.stderr || result.stdout)],
+		),
+	};
 }
 
 function runKnowledgeRecall(ctx: WorkflowContext): OwnedRuntimeResult {

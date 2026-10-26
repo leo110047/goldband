@@ -5,6 +5,7 @@ import {
   createKnowledgeEntry,
   currentCanonicalRemote,
   currentProjectSlug,
+  defaultTrustLevel,
   deterministicCandidateId,
   entryPath,
   KNOWLEDGE_DOMAINS,
@@ -35,6 +36,10 @@ import {
 } from "../lib/knowledge";
 
 type Args = Record<string, string | boolean>;
+
+// Retro entries are written only by the session-retro-evidence owner, which
+// binds them to a reported snapshot.
+const CLI_SOURCES = KNOWLEDGE_SOURCES.filter((source) => source !== "retro");
 
 function parseArgs(tokens: string[]): { command: string; args: Args } {
   const [command = "help", ...rest] = tokens;
@@ -71,7 +76,7 @@ Commands:
 Add options:
   --id <slug> --title <title> --type <problem-solution|decision|practice>
   --domains <qa,review,...> --summary <line> --body-file <path>
-  --scope <global|project> --confidence <1-10> --source <manual|telemetry-miner|workflow-evidence>
+  --scope <global|project> --confidence <1-10> --source <manual|telemetry-miner|workflow-evidence|hook-advisory>
   --status <candidate|active|graduated|retired> --project-slug <slug>
   --source-evidence <sanitized pointer> --trust-level <level> --reviewed-by <user|workflow|agent>
 
@@ -124,13 +129,13 @@ function runAdd(args: Args): void {
     confidence: intArg(args, "confidence", 5),
     created: stringArg(args, "created", todayIsoDate()),
     updated: stringArg(args, "updated", todayIsoDate()),
-    source: enumArg(args, "source", KNOWLEDGE_SOURCES, "manual") as KnowledgeSource,
+    source: enumArg(args, "source", CLI_SOURCES, "manual") as KnowledgeSource,
     source_evidence: stringArg(args, "source-evidence", ""),
     trust_level: enumArg(
       args,
       "trust-level",
       KNOWLEDGE_TRUST_LEVELS,
-      defaultTrustForSource(stringArg(args, "source", "manual") as KnowledgeSource),
+      defaultTrustLevel(stringArg(args, "source", "manual") as KnowledgeSource),
     ) as KnowledgeTrustLevel,
     reviewed_by: enumArg(args, "reviewed-by", KNOWLEDGE_REVIEWERS, "") as KnowledgeReviewer,
     last_verified: nullableDateArg(args, "last-verified"),
@@ -148,7 +153,7 @@ function runCaptureCandidate(args: Args): void {
   const sourceType = enumArg(
     args,
     "source-type",
-    KNOWLEDGE_SOURCES,
+    CLI_SOURCES,
     undefined,
   ) as KnowledgeSource;
   const summary = requiredString(args, "summary");
@@ -177,7 +182,7 @@ function runCaptureCandidate(args: Args): void {
       args,
       "trust-level",
       KNOWLEDGE_TRUST_LEVELS,
-      defaultTrustForSource(sourceType),
+      defaultTrustLevel(sourceType),
     ) as KnowledgeTrustLevel,
     reviewed_by: "",
     last_verified: null,
@@ -376,13 +381,6 @@ function listArg<T extends readonly string[]>(args: Args, key: string, allowed: 
 function nullableDateArg(args: Args, key: string): string | null {
   const value = stringArg(args, key, "");
   return value || null;
-}
-
-function defaultTrustForSource(source: KnowledgeSource): KnowledgeTrustLevel {
-  if (source === "telemetry-miner") return "telemetry-derived";
-  if (source === "workflow-evidence") return "verified";
-  if (source === "hook-advisory") return "observed";
-  return "user-stated";
 }
 
 function commaList(value: string): string[] {

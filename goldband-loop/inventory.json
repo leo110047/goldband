@@ -354,10 +354,39 @@
         {
           "id": "retro",
           "description": "Summarize recent work and lessons.",
-          "runtime": "compatibility",
-          "owner": "prompt-contract-dispatch",
+          "runtime": "typed",
+          "owner": "session-retro-evidence",
           "risk": "low",
-          "dispatch": "prompt-contract"
+          "hostSupport": [
+            "claude"
+          ],
+          "runtimeContract": {
+            "modes": [
+              "evidence",
+              "propose"
+            ],
+            "requiredInputs": {
+              "evidence": [
+                "mode"
+              ],
+              "propose": [
+                "mode",
+                "sessionId",
+                "sha256",
+                "proposals"
+              ]
+            },
+            "outputs": [
+              "retro-report",
+              "facet-coverage",
+              "candidate-outcomes"
+            ],
+            "sideEffects": {
+              "local-retro-report-write": "runtime-owner",
+              "local-knowledge-candidate-write": "runtime-owner"
+            }
+          },
+          "dispatch": "host-runtime"
         }
       ]
     },
@@ -609,6 +638,7 @@
     "goldband-question-log",
     "goldband-question-preference",
     "goldband-repo-mode",
+    "goldband-retro",
     "goldband-review-log",
     "goldband-review-read",
     "goldband-session-update",
