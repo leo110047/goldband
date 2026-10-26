@@ -4,6 +4,7 @@ import {
 	type RetroEvidenceV1,
 	type RetroFacet,
 	type RetroFacetStatusV1,
+	type RetroInstructionLoadV1,
 	type RetroReportV1,
 	type RetroSnapshotRefV1,
 	type RetroToolCategory,
@@ -11,14 +12,15 @@ import {
 	type RetroUsageTotalsV1,
 	validateRetroReport,
 } from "./session-retro-evidence";
+import { instructionEvidence } from "./session-retro-instructions";
 
 /**
  * Deterministic `measured` evidence over adapter events. Every value here is
  * computed from one snapshot; judgments are left to `inferred` proposals.
  */
 
-/** Facets this runtime computes; the rest are reported `unavailable`. */
-const COVERED_FACETS: readonly RetroFacet[] = [
+/** Facets computed from tool events; `ineffective-instructions` needs instruction loads. */
+const TOOL_FACETS: readonly RetroFacet[] = [
 	"file-search",
 	"auto-checks",
 	"tool-cost",
@@ -279,6 +281,8 @@ export function analyzeRetroSession(input: {
 	tools: RetroToolEventV1[];
 	unfinished?: number[];
 	usage?: RetroUsageTotalsV1;
+	/** Absent when the host does not record which instructions it loaded. */
+	instructions?: RetroInstructionLoadV1[];
 	topOutputs?: number;
 }): RetroReportV1 {
 	const ref = (ordinal: number) => formatRetroRef(input.snapshot, ordinal);
@@ -304,13 +308,12 @@ export function analyzeRetroSession(input: {
 		),
 		...autoCheckEvidence(input.tools, ref),
 		...infoAccessEvidence(input.tools, ref),
+		...(input.instructions ? instructionEvidence(input.instructions, ref) : []),
 	];
 	const facets = Object.fromEntries(
 		RETRO_FACETS.map((facet): [RetroFacet, RetroFacetStatusV1] => [
 			facet,
-			COVERED_FACETS.includes(facet)
-				? { status: "covered" }
-				: { status: "unavailable", reason: "not-implemented" },
+			facetCoverage(facet, input.instructions),
 		]),
 	) as Record<RetroFacet, RetroFacetStatusV1>;
 	return validateRetroReport({
@@ -319,6 +322,24 @@ export function analyzeRetroSession(input: {
 		facets,
 		evidence,
 	});
+}
+
+/**
+ * A host that records instruction loads but recorded none for a session, such
+ * as a Claude SDK session, did not show what it loaded.
+ */
+function facetCoverage(
+	facet: RetroFacet,
+	instructions: RetroInstructionLoadV1[] | undefined,
+): RetroFacetStatusV1 {
+	if (TOOL_FACETS.includes(facet)) return { status: "covered" };
+	if (facet !== "ineffective-instructions")
+		return { status: "unavailable", reason: "not-implemented" };
+	if (!instructions)
+		return { status: "unavailable", reason: "host-unsupported" };
+	if (instructions.length === 0)
+		return { status: "unavailable", reason: "not-recorded" };
+	return { status: "covered" };
 }
 
 type Ref = (ordinal: number) => string;

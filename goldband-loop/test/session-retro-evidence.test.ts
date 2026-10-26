@@ -68,6 +68,27 @@ describe("retro report contract", () => {
 		expect(() => validateRetroReport(snapshot)).toThrow("unsupported field: path");
 	});
 
+	test("accepts instruction source kinds and content hashes only in their shapes", () => {
+		const value = report();
+		value.facets["ineffective-instructions"] = { status: "covered" };
+		value.evidence.push({
+			facet: "ineffective-instructions",
+			grade: "measured",
+			rule: "instruction-source",
+			refs: [formatRetroRef(SNAPSHOT, 2)],
+			metric: { value: 120, unit: "bytes" },
+			sourceKind: "project",
+			contentSha256: HASH,
+		});
+		expect(validateRetroReport(value)).toEqual(value);
+		const evidence = value.evidence[2] as unknown as Record<string, unknown>;
+		evidence.sourceKind = "/repo/CLAUDE.md";
+		expect(() => validateRetroReport(value)).toThrow("invalid evidence sourceKind");
+		evidence.sourceKind = "project";
+		evidence.contentSha256 = "Use plain Traditional Chinese";
+		expect(() => validateRetroReport(value)).toThrow("contentSha256");
+	});
+
 	test("requires all five facets", () => {
 		for (const facet of RETRO_FACETS) {
 			const value = report() as unknown as { facets: Record<string, unknown> };

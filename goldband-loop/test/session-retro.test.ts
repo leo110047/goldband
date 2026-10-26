@@ -307,7 +307,10 @@ describe("Claude session adapter", () => {
 		expect(session.tools.length).toBe(23);
 		expect(session.tools.filter((event) => event.category === "edit").length).toBeGreaterThan(0);
 		expect(session.tools.filter((event) => event.exitCode !== undefined && event.exitCode !== 0)).toHaveLength(1);
-		expect(analyzeRetroSession(session).facets["tool-cost"]).toEqual({ status: "covered" });
+		const value = analyzeRetroSession(session);
+		expect(Object.values(value.facets).every((facet) => facet.status === "covered")).toBe(true);
+		expect(new Set(session.instructions.map((load) => load.kind))).toContain("skills");
+		expect(value.evidence.filter((item) => item.rule === "instruction-source").length).toBe(new Set(session.instructions.map((load) => load.source)).size);
 	});
 });
 
@@ -386,13 +389,18 @@ describe("measured retro evidence", () => {
 			...(item.tool ? { tool: item.tool } : {}),
 		}));
 
-	test("covers four facets and marks ineffective instructions unavailable", () => {
+	test("covers the tool facets and reports unrecorded instruction loads as unavailable", () => {
 		expect(report().report.facets).toEqual({
 			"file-search": { status: "covered" },
 			"auto-checks": { status: "covered" },
 			"tool-cost": { status: "covered" },
 			"info-access": { status: "covered" },
-			"ineffective-instructions": { status: "unavailable", reason: "not-implemented" },
+			"ineffective-instructions": { status: "unavailable", reason: "not-recorded" },
+		});
+		const { session } = report();
+		expect(analyzeRetroSession({ snapshot: session.snapshot, tools: session.tools }).facets["ineffective-instructions"]).toEqual({
+			status: "unavailable",
+			reason: "host-unsupported",
 		});
 		expect(report().report.evidence.every((item) => item.grade === "measured")).toBe(true);
 	});
@@ -701,6 +709,224 @@ describe("auto-checks and info-access proposals", () => {
 		expect(entry.body).toContain("- 需安全審查：只提議唯讀存取，不授予寫入權限或密鑰");
 		expect(entry.body).toContain("- failed-call: 1 count (WebFetch)，#13");
 		expect(fs.readFileSync(path.join(knowledge, "entries", `${outcomes[0].id}.md`), "utf8")).not.toContain("check_class");
+	});
+});
+
+const SHARED = "Use plain Traditional Chinese for discussion and English for code.";
+const RULE = "Never weaken, skip, or delete a test to make it pass.";
+const ASK = "Ask before irreversible or outward-facing actions every time.";
+const RELOADED = "Reloaded guidance that is long enough to count as a paragraph.";
+
+function attachment(value: Json): Json {
+	return { type: "attachment", sessionId: SESSION, attachment: value };
+}
+
+/**
+ * Instruction loads. Ordinals: four files at 1, a nested memory file at 4,
+ * an initial skill listing at 5 and a later one adding a skill at 6, and the
+ * user file reloaded without RULE at 7. Latest contents repeat SHARED in the
+ * user and project files (7, 1), RULE in the project and nested files (1, 4),
+ * and ASK in two files loaded by record 1.
+ */
+function instructionRecords(): Json[] {
+	return [
+		{ type: "user", sessionId: SESSION, message: { role: "user", content: CANARY.prompt } },
+		attachment({
+			type: "instructions",
+			files: [
+				{ path: "/home/u/.claude/CLAUDE.md", type: "User", content: `# Style\n\n${SHARED}\n\n- ${RULE}\n- Keep it short.` },
+				{
+					path: "/repo/CLAUDE.md",
+					type: "Project",
+					content: `${SHARED.replace(" for ", "  for\n")}\n\n* ${RULE}\n* Keep it short.\n* ${ASK}\n\n${SHARED}`,
+				},
+				{ path: "/home/u/.claude/projects/x/memory/MEMORY.md", type: "AutoMem", content: `- [Note](n.md) — ${CANARY.file} memory index line` },
+				{ path: "/etc/claude/odd.md", type: "constructor", content: ASK },
+			],
+		}),
+		call("m1", "t1", "Read", { file_path: "/repo/a.ts" }),
+		result("t1", "ok"),
+		attachment({
+			type: "nested_memory",
+			path: "/repo/sub/CLAUDE.md",
+			content: { path: "/repo/sub/CLAUDE.md", type: "Project", content: `1. ${RULE}` },
+		}),
+		attachment({
+			type: "skill_listing",
+			isInitial: true,
+			content: "- alpha: Alpha skill description that is long enough\n- beta: Beta skill\n  continued on a second line",
+		}),
+		attachment({ type: "skill_listing", isInitial: false, content: "- gamma: Gamma skill description also long enough" }),
+		attachment({ type: "instructions", files: [{ path: "/home/u/.claude/CLAUDE.md", type: "User", content: `${SHARED}\n\n${RELOADED}` }] }),
+	];
+}
+
+describe("ineffective-instructions evidence", () => {
+	const sha = (value: string) => createHash("sha256").update(value).digest("hex");
+	const ordinals = (refs: string[]) => refs.map((ref) => Number(ref.slice(ref.lastIndexOf("#") + 1)));
+	function report(records = instructionRecords()) {
+		const home = tempHome();
+		const session = readClaudeSession(writeSession(home, records), SESSION);
+		return { session, report: analyzeRetroSession(session) };
+	}
+
+	test("lists each source with its latest content and covers all five facets", () => {
+		const { session, report: value } = report();
+		expect(Object.values(value.facets).every((facet) => facet.status === "covered")).toBe(true);
+		const user = `${SHARED}\n\n${RELOADED}`;
+		const skills = "- alpha: Alpha skill description that is long enough\n- beta: Beta skill\n  continued on a second line\n- gamma: Gamma skill description also long enough";
+		expect(session.instructions.find((load) => load.ordinal === 6)?.content).toBe(skills);
+		const sources = value.evidence.filter((item) => item.rule === "instruction-source");
+		const latest = [user, session.instructions[1].content, session.instructions[2].content, ASK, `1. ${RULE}`, skills];
+		expect(sources.map((item) => ({ kind: item.sourceKind, refs: ordinals(item.refs), value: item.metric?.value, sha: item.contentSha256 }))).toEqual([
+			{ kind: "user", refs: [1, 7], value: Buffer.byteLength(user), sha: sha(user) },
+			{ kind: "project", refs: [1], value: Buffer.byteLength(latest[1]), sha: sha(latest[1]) },
+			{ kind: "memory", refs: [1], value: Buffer.byteLength(latest[2]), sha: sha(latest[2]) },
+			{ kind: "other", refs: [1], value: Buffer.byteLength(ASK), sha: sha(ASK) },
+			{ kind: "project", refs: [4], value: Buffer.byteLength(latest[4]), sha: sha(latest[4]) },
+			{ kind: "skills", refs: [5, 6], value: Buffer.byteLength(skills), sha: sha(skills) },
+		]);
+		const bytes = value.evidence.find((item) => item.rule === "instruction-bytes");
+		expect({ refs: ordinals(bytes?.refs ?? []), value: bytes?.metric?.value }).toEqual({
+			refs: [1, 4, 6, 7],
+			value: latest.reduce((sum, content) => sum + Buffer.byteLength(content), 0),
+		});
+	});
+
+	test("counts paragraphs repeated verbatim across sources", () => {
+		const { report: value } = report();
+		const duplicates = value.evidence.filter((item) => item.rule === "duplicate-paragraph");
+		expect(duplicates.map((item) => ({ sha: item.contentSha256, count: item.metric?.value, refs: ordinals(item.refs) }))).toEqual([
+			{ sha: sha(SHARED), count: 2, refs: [1, 7] },
+			{ sha: sha(ASK), count: 2, refs: [1] },
+			{ sha: sha(RULE), count: 2, refs: [1, 4] },
+		]);
+		const metric = (rule: string) => value.evidence.find((item) => item.rule === rule)?.metric?.value;
+		expect(metric("duplicate-paragraph-groups")).toBe(3);
+		expect(metric("duplicate-paragraph-bytes")).toBe(Buffer.byteLength(SHARED + ASK + RULE));
+		expect(value.evidence.every((item) => item.grade === "measured")).toBe(true);
+	});
+
+	test("reports no duplicates when a repeated paragraph is short or stays in one source", () => {
+		const records = [
+			{ type: "user", sessionId: SESSION, message: { role: "user", content: "hi" } },
+			attachment({
+				type: "instructions",
+				files: [
+					{ path: "/a/CLAUDE.md", type: "User", content: `${SHARED}\n\n${SHARED}\n\n- Keep it short.` },
+					{ path: "/b/CLAUDE.md", type: "Project", content: "Keep it short." },
+				],
+			}),
+		];
+		const { report: value } = report(records);
+		expect(value.evidence.filter((item) => item.rule.startsWith("duplicate-paragraph"))).toEqual([]);
+		expect(value.facets["ineffective-instructions"]).toEqual({ status: "covered" });
+	});
+
+	test("cites the latest load of a source reloaded more than 20 times", () => {
+		const reload = (index: number) =>
+			attachment({ type: "instructions", files: [{ path: "/a/CLAUDE.md", type: "User", content: `${RELOADED} ${index}` }] });
+		const records = [{ type: "user", sessionId: SESSION, message: { role: "user", content: "hi" } }, ...Array.from({ length: 21 }, (_, index) => reload(index))];
+		const source = report(records).report.evidence.find((item) => item.rule === "instruction-source");
+		expect(ordinals(source?.refs ?? [])).toEqual([...Array.from({ length: 19 }, (_, index) => index + 1), 21]);
+		expect(source?.contentSha256).toBe(sha(`${RELOADED} 20`));
+	});
+
+	test("keeps namespaced skills apart and ignores other attachments whatever their shape", () => {
+		const records = [
+			{ type: "user", sessionId: SESSION, message: { role: "user", content: "hi" } },
+			attachment({ type: "skill_listing", isInitial: true, content: "- plugin:docx: Word files\n- plugin:pdf: PDF files\n- plain: Plain skill" }),
+			{ type: "attachment", sessionId: SESSION, attachment: null },
+			{ type: "attachment", sessionId: SESSION },
+			attachment({ type: "skill_listing", isInitial: false, content: "- plugin:pdf: PDF files, updated" }),
+		];
+		const { session } = report(records);
+		expect(session.instructions.at(-1)?.content).toBe("- plugin:docx: Word files\n- plain: Plain skill\n- plugin:pdf: PDF files, updated");
+	});
+
+	test("rejects instruction attachments without the fields it reads", () => {
+		const home = tempHome();
+		const read = (value: Json) =>
+			() => readClaudeSession(writeSession(home, [{ type: "user", sessionId: SESSION, message: { role: "user", content: "hi" } }, attachment(value)]), SESSION);
+		expect(read({ type: "instructions" })).toThrow("claude session record 1 has instructions without a file list");
+		expect(read({ type: "instructions", files: [{ path: "/a", type: "User" }] })).toThrow("has a memory file without path or content");
+		expect(read({ type: "nested_memory", path: "/a" })).toThrow("claude session record 1 memory file");
+		expect(read({ type: "skill_listing", isInitial: true })).toThrow("has a skill listing without content");
+		expect(read({ type: "queued_command", prompt: CANARY.prompt })().instructions).toEqual([]);
+	});
+
+	test("persists hashes and kinds but no instruction text or paths", () => {
+		const home = tempHome();
+		writeSession(home, instructionRecords());
+		const evidence = runRetroEvidence({ host: "claude", sessionId: SESSION, stateRoot: path.join(home, ".goldband"), env: env(home) });
+		if (evidence.status !== "completed") throw new Error(evidence.reason);
+		const persisted = fs.readFileSync(evidence.reportPath, "utf8");
+		for (const text of [SHARED, RULE, ASK, RELOADED, CANARY.file, CANARY.prompt, "/repo/", "/home/u", "CLAUDE.md", "MEMORY.md", "alpha", "Keep it short"]) {
+			expect({ text, found: persisted.includes(text) }).toEqual({ text, found: false });
+		}
+		expect(persisted).toContain(sha(SHARED));
+	});
+
+	test("writes instruction proposals as unproven candidates that cannot graduate", () => {
+		const home = tempHome();
+		writeSession(home, instructionRecords());
+		const stateRoot = path.join(home, ".goldband");
+		const evidence = runRetroEvidence({ host: "claude", sessionId: SESSION, stateRoot, env: env(home) });
+		if (evidence.status !== "completed") throw new Error(evidence.reason);
+		const snapshot = evidence.report.snapshots[0];
+		const key = `${snapshot.sessionId}@${snapshot.sha256}`;
+		const knowledge = path.join(stateRoot, "knowledge");
+		const instruction = (overrides: Json = {}) =>
+			proposal(evidence.report, {
+				facet: "ineffective-instructions",
+				rule: "duplicate-paragraph",
+				target: "instruction-consolidation",
+				estimatedBytes: undefined,
+				refs: [`${key}#1`, `${key}#7`],
+				evidence: [{ facet: "ineffective-instructions", grade: "inferred", rule: "semantic-duplicate", refs: [`${key}#1`] }],
+				...overrides,
+			});
+		const outcome = runRetroProposals(
+			{
+				sessionId: snapshot.sessionId,
+				sha256: snapshot.sha256,
+				proposals: [
+					instruction(),
+					instruction({ rule: "case-a", target: "lint" }),
+					instruction({ rule: "case-b", checkClass: "mechanical" }),
+					instruction({ rule: "enforced-by-hook", target: "instruction-removal", estimatedBytes: 120 }),
+				],
+			},
+			{ stateRoot, knowledgeRoot: knowledge, cwd: home },
+		);
+		if (outcome.status !== "completed") throw new Error(outcome.reason);
+		expect(outcome.outcomes.map(({ rule, status, reason }) => ({ rule, status, reason }))).toEqual([
+			{ rule: "duplicate-paragraph", status: "written", reason: undefined },
+			{ rule: "case-a", status: "rejected", reason: "target for ineffective-instructions must be one of: instruction-removal, instruction-consolidation" },
+			{ rule: "case-b", status: "rejected", reason: "checkClass applies only to auto-checks proposals" },
+			{ rule: "enforced-by-hook", status: "written", reason: undefined },
+		]);
+		const id = outcome.outcomes[0].id ?? "";
+		const entry = parseKnowledgeFile(path.join(knowledge, "entries", `${id}.md`));
+		expect(entry).toMatchObject({ status: "candidate", eval_status: "unproven", check_class: "" });
+		expect(entry.body).toContain("- 驗證狀態：unproven（未經 eval，不可直接刪除或合併）");
+		expect(entry.body).toContain(`- duplicate-paragraph: 2 count (sha256:${sha(SHARED).slice(0, 12)})，#1, #7`);
+		expect(entry.body).toContain(`- instruction-source: ${Buffer.byteLength(`${SHARED}\n\n${RELOADED}`)} bytes (user sha256:${sha(`${SHARED}\n\n${RELOADED}`).slice(0, 12)})，#1, #7`);
+		const removal = parseKnowledgeFile(path.join(knowledge, "entries", `${outcome.outcomes[3].id}.md`));
+		expect(removal.body).toContain("採用目標：instruction-removal（預估減少 120 bytes）");
+
+		const knowledgeCli = (args: string[]) =>
+			spawnSync("bun", [path.join(ROOT, "bin", "goldband-knowledge.ts"), "review", ...args, "--id", id], { cwd: home, env: env(home), encoding: "utf8" });
+		expect(knowledgeCli(["graduate", "--to", "CLAUDE.md"])).toMatchObject({
+			status: 1,
+			stderr: expect.stringContaining("unproven knowledge cannot become graduated until an eval clears eval_status"),
+		});
+		expect(knowledgeCli(["promote"])).toMatchObject({
+			status: 1,
+			stderr: expect.stringContaining("unproven knowledge cannot become active until an eval clears eval_status"),
+		});
+		expect(parseKnowledgeFile(path.join(knowledge, "entries", `${id}.md`))).toMatchObject({ status: "candidate", eval_status: "unproven" });
+		expect(knowledgeCli(["retire"]).status).toBe(0);
 	});
 });
 

@@ -56,6 +56,7 @@ export const KNOWLEDGE_REVIEWERS = ["user", "workflow", "agent", ""] as const;
 export const KNOWLEDGE_STALENESS = ["fresh", "needs-review", "stale"] as const;
 /** Whether a deterministic check (`mechanical`) or a reviewer (`judgement`) catches the error; "" is unclassified. */
 const KNOWLEDGE_CHECK_CLASSES = ["mechanical", "judgement", ""] as const;
+const KNOWLEDGE_EVAL_STATUSES = ["unproven", ""] as const;
 
 export type KnowledgeType = (typeof KNOWLEDGE_TYPES)[number];
 export type KnowledgeDomain = (typeof KNOWLEDGE_DOMAINS)[number];
@@ -65,6 +66,7 @@ export type KnowledgeTrustLevel = (typeof KNOWLEDGE_TRUST_LEVELS)[number];
 export type KnowledgeReviewer = (typeof KNOWLEDGE_REVIEWERS)[number];
 export type KnowledgeStaleness = (typeof KNOWLEDGE_STALENESS)[number];
 type KnowledgeCheckClass = (typeof KNOWLEDGE_CHECK_CLASSES)[number];
+type KnowledgeEvalStatus = (typeof KNOWLEDGE_EVAL_STATUSES)[number];
 export type KnowledgeScope = "global" | "project";
 
 export interface KnowledgeEntry {
@@ -87,6 +89,7 @@ export interface KnowledgeEntry {
   staleness: KnowledgeStaleness;
   graduated_to: string;
   check_class: KnowledgeCheckClass;
+  eval_status: KnowledgeEvalStatus;
   links: string[];
   summary: string;
   body: string;
@@ -339,7 +342,7 @@ export function transitionKnowledgeStatus(
 
 export function createKnowledgeEntry(input: Partial<KnowledgeEntry>): KnowledgeEntry {
   const today = todayIsoDate();
-  const { check_class = "" } = input;
+  const { check_class = "", eval_status = "" } = input;
   const entry: KnowledgeEntry = {
     id: input.id || "",
     title: input.title || "",
@@ -361,6 +364,7 @@ export function createKnowledgeEntry(input: Partial<KnowledgeEntry>): KnowledgeE
     staleness: input.staleness || "fresh",
     graduated_to: input.graduated_to || "",
     check_class,
+    eval_status,
     links: input.links || [],
     summary: input.summary || "",
     body: input.body || "",
@@ -416,6 +420,7 @@ function validateEntry(entry: KnowledgeEntry): void {
     throw new Error("graduated entries require graduated_to");
   }
   validateCheckClass(entry);
+  validateEvalStatus(entry);
   if (!entry.summary.trim()) throw new Error("summary is required");
   if (!entry.body.trim()) throw new Error("body is required");
   validateSafeKnowledgeText("summary", entry.summary);
@@ -448,6 +453,19 @@ function validateCheckClass(entry: KnowledgeEntry): void {
     isDocumentationTarget(entry.graduated_to)
   ) {
     throw new Error("mechanical knowledge graduates only to a lint, hook, CI, or test target, not documentation");
+  }
+}
+
+/**
+ * An `unproven` instruction change has no eval showing it is safe to apply, so
+ * it stays a candidate, out of recall, until an eval clears it, or is retired.
+ */
+function validateEvalStatus(entry: KnowledgeEntry): void {
+  if (!KNOWLEDGE_EVAL_STATUSES.includes(entry.eval_status)) {
+    throw new Error(`invalid eval_status: ${entry.eval_status}`);
+  }
+  if (entry.eval_status === "unproven" && (entry.status === "active" || entry.status === "graduated")) {
+    throw new Error(`unproven knowledge cannot become ${entry.status} until an eval clears eval_status`);
   }
 }
 
@@ -494,7 +512,8 @@ function frontmatterToEntry(frontmatter: string, body: string): KnowledgeEntry {
     last_verified: data.last_verified === null ? null : stringField(data, "last_verified"),
     staleness: stalenessField(data),
     graduated_to: stringField(data, "graduated_to"),
-    check_class: stringField(data, "check_class") as KnowledgeCheckClass,
+    check_class: optionalField(data, "check_class") as KnowledgeCheckClass,
+    eval_status: optionalField(data, "eval_status") as KnowledgeEvalStatus,
     links: arrayField(data, "links"),
     summary: stringField(data, "summary"),
     body,
@@ -537,6 +556,12 @@ function stringField(data: Record<string, unknown>, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+/** Empty only when absent, so a present non-string value fails enum validation instead of reading as unset. */
+function optionalField(data: Record<string, unknown>, key: string): string {
+  const value = data[key];
+  return value === undefined ? "" : typeof value === "string" ? value : JSON.stringify(value);
+}
+
 function arrayField(data: Record<string, unknown>, key: string): string[] {
   return Array.isArray(data[key]) ? (data[key] as unknown[]).map(String) : [];
 }
@@ -564,6 +589,7 @@ function renderKnowledgeEntry(entry: KnowledgeEntry): string {
     `graduated_to: ${entry.graduated_to}`,
     // Written only when set, so unclassified entries keep their existing form.
     ...(entry.check_class ? [`check_class: ${entry.check_class}`] : []),
+    ...(entry.eval_status ? [`eval_status: ${entry.eval_status}`] : []),
     `links: [${entry.links.join(", ")}]`,
     `summary: ${yamlString(entry.summary)}`,
     "---",

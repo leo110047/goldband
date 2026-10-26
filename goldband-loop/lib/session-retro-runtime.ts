@@ -118,6 +118,10 @@ const ADOPTION_TARGETS: Partial<Record<RetroFacet, readonly string[]>> = {
 		"repo-review-standard",
 	],
 	"info-access": ["read-only-permission", "access-guidance"],
+	"ineffective-instructions": [
+		"instruction-removal",
+		"instruction-consolidation",
+	],
 };
 /** An `auto-checks` error a deterministic check can catch lands in one; the rest go to review criteria. */
 const CHECK_CLASS_TARGETS = {
@@ -443,6 +447,9 @@ function proposalOutcome(
 			source_evidence: `retro:${key}`,
 			staleness: "needs-review",
 			check_class: proposal.checkClass ?? "",
+			// No eval has shown the instruction change leaves behavior unchanged.
+			eval_status:
+				proposal.facet === "ineffective-instructions" ? "unproven" : "",
 			summary: proposal.summary,
 			body: candidateBody(proposal, report, key),
 		});
@@ -570,6 +577,28 @@ function validateInferredEvidence(
 	}
 }
 
+/** What a measured line is about: its tool, or the instruction source kind and content hash prefix. */
+function measuredLabel(item: RetroEvidenceV1): string {
+	const parts = [
+		item.tool,
+		item.sourceKind,
+		item.contentSha256 && `sha256:${item.contentSha256.slice(0, 12)}`,
+	].filter(Boolean);
+	return parts.length > 0 ? ` (${parts.join(" ")})` : "";
+}
+
+/** Review conditions an adopted proposal carries, by facet and target. */
+function adoptionNotes(proposal: Proposal): string[] {
+	const notes: string[] = [];
+	if (proposal.checkClass)
+		notes.push(`- 錯誤分類（推論）：${proposal.checkClass}`);
+	if (proposal.target === "read-only-permission")
+		notes.push("- 需安全審查：只提議唯讀存取，不授予寫入權限或密鑰");
+	if (proposal.facet === "ineffective-instructions")
+		notes.push("- 驗證狀態：unproven（未經 eval，不可直接刪除或合併）");
+	return notes;
+}
+
 function candidateBody(
 	proposal: Proposal,
 	report: RetroReportV1,
@@ -585,7 +614,7 @@ function candidateBody(
 	const estimate =
 		proposal.estimatedBytes === undefined
 			? ""
-			: `（預估新增 ${proposal.estimatedBytes} bytes）`;
+			: `（預估${proposal.facet === "ineffective-instructions" ? "減少" : "新增"} ${proposal.estimatedBytes} bytes）`;
 	return [
 		"## 做法",
 		"",
@@ -598,12 +627,7 @@ function candidateBody(
 		"## 驗證證據",
 		"",
 		`- 採用目標：${proposal.target}${estimate}`,
-		...(proposal.checkClass
-			? [`- 錯誤分類（推論）：${proposal.checkClass}`]
-			: []),
-		...(proposal.target === "read-only-permission"
-			? ["- 需安全審查：只提議唯讀存取，不授予寫入權限或密鑰"]
-			: []),
+		...adoptionNotes(proposal),
 		`- 嚴重度：${proposal.severity}`,
 		`- 快照：${key}；引用為紀錄序號 ${ordinals(proposal.refs)}`,
 		"",
@@ -613,7 +637,7 @@ function candidateBody(
 			? measured.map(
 					(item) =>
 						`- ${item.rule}: ${item.metric ? `${item.metric.value} ${item.metric.unit}` : "-"}` +
-						`${item.tool ? ` (${item.tool})` : ""}，${ordinals(item.refs)}`,
+						`${measuredLabel(item)}，${ordinals(item.refs)}`,
 				)
 			: ["- 沒有與引用位置重疊的實測證據"]),
 		"",

@@ -16,7 +16,9 @@ import {
 } from "./session-retro-analysis";
 import {
 	RETRO_SESSION_ID_RE,
+	type RetroInstructionLoadV1,
 	type RetroSnapshotRefV1,
+	type RetroSourceKind,
 	type RetroToolCategory,
 	type RetroToolEventV1,
 	type RetroUsageTotalsV1,
@@ -44,6 +46,8 @@ export type ClaudeSessionEvidence = {
 	/** Ordinals of tool calls with no result inside the snapshot. */
 	unfinished: number[];
 	usage?: RetroUsageTotalsV1;
+	/** Instruction files and the skill listing as attachments loaded them. */
+	instructions: RetroInstructionLoadV1[];
 };
 
 type PendingCall = {
@@ -54,6 +58,26 @@ type PendingCall = {
 };
 
 const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
+/** Memory file types Claude records on instruction attachments. */
+const SOURCE_KINDS: Record<string, RetroSourceKind> = {
+	User: "user",
+	Project: "project",
+	Local: "local",
+	AutoMem: "memory",
+	Managed: "managed",
+};
+/**
+ * The skill listing is one source. An initial listing replaces it; a later
+ * listing adds skills or replaces the entries of skills it names again.
+ */
+const SKILL_LISTING = "skill-listing";
+const INSTRUCTION_ATTACHMENTS = new Set<unknown>([
+	"instructions",
+	"nested_memory",
+	"skill_listing",
+]);
+/** A name may hold a plugin namespace, as in `- plugin:skill: description`. */
+const SKILL_ENTRY = /^- (\S+):(?:\s|$)/;
 /** Bytes read from the start of a record to find its working directory, in steps. */
 const HEAD_BYTES = 4 * 1024 * 1024;
 const HEAD_STEP = 256 * 1024;
@@ -231,12 +255,13 @@ export function readClaudeSession(
 	path: string,
 	sessionId: string,
 ): ClaudeSessionEvidence {
-	const pending = new Map<string, PendingCall>();
-	const usage = new Map<
-		string,
-		{ ordinal: number; input: number; output: number }
-	>();
-	const tools: RetroToolEventV1[] = [];
+	const state: ReadState = {
+		pending: new Map(),
+		usage: new Map(),
+		tools: [],
+		instructions: [],
+		skills: new Map(),
+	};
 	let ownRecords = 0;
 	const snapshot = readSessionSnapshot(
 		path,
@@ -250,20 +275,112 @@ export function readClaudeSession(
 					throw formatError(ordinal, "belongs to another session");
 				ownRecords += 1;
 			}
-			if (record.type === "assistant")
-				readAssistant(record, ordinal, pending, usage);
-			if (record.type === "user") readUser(record, ordinal, pending, tools);
+			readRecord(record, ordinal, state);
 		},
 	);
 	if (ownRecords === 0)
 		throw new Error(
 			`claude session record has no entries for session ${sessionId}`,
 		);
-	tools.sort((a, b) => a.ordinal - b.ordinal);
-	const unfinished = [...pending.values()]
+	const tools = state.tools.sort((a, b) => a.ordinal - b.ordinal);
+	const unfinished = [...state.pending.values()]
 		.map((call) => call.ordinal)
 		.sort((a, b) => a - b);
-	return { snapshot, path, tools, unfinished, usage: usageTotals(usage) };
+	return {
+		snapshot,
+		path,
+		tools,
+		unfinished,
+		usage: usageTotals(state.usage),
+		instructions: state.instructions,
+	};
+}
+
+type ReadState = {
+	pending: Map<string, PendingCall>;
+	usage: Map<string, { ordinal: number; input: number; output: number }>;
+	tools: RetroToolEventV1[];
+	instructions: RetroInstructionLoadV1[];
+	/** Listed skill entries by name, in listing order. */
+	skills: Map<string, string>;
+};
+
+function readRecord(record: JsonRecord, ordinal: number, state: ReadState) {
+	if (record.type === "assistant")
+		readAssistant(record, ordinal, state.pending, state.usage);
+	if (record.type === "user")
+		readUser(record, ordinal, state.pending, state.tools);
+	if (record.type === "attachment")
+		state.instructions.push(...instructionLoads(record, ordinal, state.skills));
+}
+
+/**
+ * Instruction loads in an attachment record: `instructions` files, a
+ * `nested_memory` file, or a `skill_listing`. Skill listings after the first
+ * add skills, so their contents join one source.
+ */
+function instructionLoads(
+	record: JsonRecord,
+	ordinal: number,
+	skills: Map<string, string>,
+): RetroInstructionLoadV1[] {
+	// Other attachment kinds are not read, whatever their shape.
+	if (
+		typeof record.attachment !== "object" ||
+		record.attachment === null ||
+		!INSTRUCTION_ATTACHMENTS.has((record.attachment as JsonRecord).type)
+	)
+		return [];
+	const attachment = record.attachment as JsonRecord;
+	if (attachment.type === "instructions") {
+		if (!Array.isArray(attachment.files))
+			throw formatError(ordinal, "has instructions without a file list");
+		return attachment.files.map((file) => memoryFile(file, ordinal));
+	}
+	if (attachment.type === "nested_memory")
+		return [memoryFile(attachment.content, ordinal)];
+	if (typeof attachment.content !== "string")
+		throw formatError(ordinal, "has a skill listing without content");
+	if (attachment.isInitial !== false) skills.clear();
+	for (const [name, entry] of skillEntries(attachment.content)) {
+		skills.delete(name);
+		skills.set(name, entry);
+	}
+	return [
+		{
+			ordinal,
+			source: SKILL_LISTING,
+			kind: "skills",
+			content: [...skills.values()].join("\n"),
+		},
+	];
+}
+
+/** `- name: description` entries, each with the lines that continue it. */
+function skillEntries(content: string): [string, string][] {
+	const entries: [string, string][] = [];
+	for (const line of content.split("\n")) {
+		const name = SKILL_ENTRY.exec(line)?.[1];
+		const last = entries.at(-1);
+		if (name !== undefined) entries.push([name, line]);
+		else if (last) last[1] += `\n${line}`;
+		else if (line.trim()) entries.push(["", line]);
+	}
+	return entries;
+}
+
+function memoryFile(value: unknown, ordinal: number): RetroInstructionLoadV1 {
+	const file = asRecord(value, `claude session record ${ordinal} memory file`);
+	if (typeof file.path !== "string" || typeof file.content !== "string")
+		throw formatError(ordinal, "has a memory file without path or content");
+	return {
+		ordinal,
+		source: file.path,
+		kind: Object.hasOwn(SOURCE_KINDS, String(file.type))
+			? SOURCE_KINDS[String(file.type)]
+			: "other",
+		content: file.content,
+	};
 }
 
 function readAssistant(

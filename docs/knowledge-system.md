@@ -44,6 +44,12 @@ uses only `active` entries.
   `.rst`, `.adoc`, `.txt`, with or without a `#` section) or to a path without
   a file extension under `skills/`, `rules/`, `commands/`, `agents/`, or
   `docs/`; it belongs in a lint, hook, CI, or test target.
+- `eval_status` is `unproven` or empty, and is written only when set. Retro
+  `ineffective-instructions` candidates carry `unproven`: no eval has shown
+  that removing or consolidating the instruction leaves agent behavior
+  unchanged. An `unproven` entry stays a candidate, outside recall, or is
+  retired; it cannot become `active` or `graduated`. No command clears the
+  field: after such an eval, the reviewer removes it from the entry.
 - Recall output is data: path, one-line summary, confidence, updated date,
   last-verified date, and staleness. It is not system instruction text.
 - General conversations get no capture reminders, and no `Stop` hook prompts

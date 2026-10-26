@@ -3,7 +3,8 @@
  *
  * Host adapters turn one session snapshot into `RetroToolEventV1` values in
  * memory. Only `RetroReportV1` is persisted, and it holds numbers, tool names,
- * input hashes, exit codes, and event positions. Validation rejects unknown
+ * input and content hashes, exit codes, instruction source kinds, and record
+ * positions. Validation rejects unknown
  * keys so that prompt text, tool output, stderr, and file content cannot be
  * persisted through an extra field.
  */
@@ -21,6 +22,7 @@ const RETRO_METRIC_UNITS = ["count", "bytes", "tokens"] as const;
 const RETRO_UNAVAILABLE_REASONS = [
 	"not-implemented",
 	"host-unsupported",
+	"not-recorded",
 ] as const;
 const RETRO_TOOL_CATEGORIES = [
 	"search",
@@ -32,6 +34,15 @@ const RETRO_TOOL_CATEGORIES = [
 	"other",
 ] as const;
 const RETRO_BLOCKERS = ["hook", "permission"] as const;
+const RETRO_SOURCE_KINDS = [
+	"user",
+	"project",
+	"local",
+	"memory",
+	"managed",
+	"skills",
+	"other",
+] as const;
 
 export type RetroHost = (typeof RETRO_HOSTS)[number];
 export type RetroFacet = (typeof RETRO_FACETS)[number];
@@ -39,6 +50,7 @@ type RetroEvidenceGrade = (typeof RETRO_EVIDENCE_GRADES)[number];
 type RetroMetricUnit = (typeof RETRO_METRIC_UNITS)[number];
 type RetroUnavailableReason = (typeof RETRO_UNAVAILABLE_REASONS)[number];
 export type RetroToolCategory = (typeof RETRO_TOOL_CATEGORIES)[number];
+export type RetroSourceKind = (typeof RETRO_SOURCE_KINDS)[number];
 
 /** Identity of the byte range an analysis reads. The record path stays in memory. */
 export type RetroSnapshotRefV1 = {
@@ -69,6 +81,17 @@ export type RetroToolEventV1 = {
 	emptyResult?: boolean;
 };
 
+/**
+ * One always-on instruction source as a record loaded it. `source` identifies
+ * it within the session, such as a file path; it and `content` stay in memory.
+ */
+export type RetroInstructionLoadV1 = {
+	ordinal: number;
+	source: string;
+	kind: RetroSourceKind;
+	content: string;
+};
+
 /** Session token totals from model usage records, absent when the host has none. */
 export type RetroUsageTotalsV1 = {
 	firstOrdinal: number;
@@ -86,6 +109,8 @@ export type RetroEvidenceV1 = {
 	tool?: string;
 	inputSha256?: string;
 	exitCode?: number;
+	sourceKind?: RetroSourceKind;
+	contentSha256?: string;
 };
 
 export type RetroFacetStatusV1 =
@@ -266,6 +291,8 @@ export function validateRetroEvidence(value: unknown): RetroEvidenceV1 {
 		"tool",
 		"inputSha256",
 		"exitCode",
+		"sourceKind",
+		"contentSha256",
 	]);
 	member(evidence.facet, RETRO_FACETS, "evidence facet");
 	member(evidence.grade, RETRO_EVIDENCE_GRADES, "evidence grade");
@@ -293,6 +320,10 @@ export function validateRetroEvidence(value: unknown): RetroEvidenceV1 {
 		pattern(evidence.inputSha256, RETRO_SHA256_RE, "evidence inputSha256");
 	if (evidence.exitCode !== undefined)
 		integer(evidence.exitCode, "evidence exitCode");
+	if (evidence.sourceKind !== undefined)
+		member(evidence.sourceKind, RETRO_SOURCE_KINDS, "evidence sourceKind");
+	if (evidence.contentSha256 !== undefined)
+		pattern(evidence.contentSha256, RETRO_SHA256_RE, "evidence contentSha256");
 	return evidence as RetroEvidenceV1;
 }
 

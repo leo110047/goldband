@@ -208,6 +208,48 @@ describe("goldband-knowledge CLI", () => {
     expect(fail(["review", "edit", "--id", "lint-unused-import"]).stderr).toContain("invalid check_class: lint");
   });
 
+  test("review keeps an unproven instruction change from becoming active or graduating", () => {
+    run([
+      "capture",
+      "--id",
+      "drop-duplicate-rule",
+      "--title",
+      "Duplicate rule candidate",
+      "--type",
+      "practice",
+      "--domains",
+      "general",
+      "--summary",
+      "Remove a paragraph repeated across instruction files.",
+      "--body-file",
+      bodyFile,
+    ]);
+    const file = path.join(tmpHome, "knowledge", "entries", "drop-duplicate-rule.md");
+    expect(fs.readFileSync(file, "utf8")).not.toContain("eval_status:");
+    const unproven = fs.readFileSync(file, "utf8").replace("\nlinks:", "\neval_status: unproven\nlinks:");
+    fs.writeFileSync(file, unproven);
+    expect(fail(["review", "edit", "--id", "drop-duplicate-rule"]).stderr).toContain(
+      "unproven knowledge cannot become active until an eval clears eval_status",
+    );
+    fs.writeFileSync(file, unproven.replace("status: active", "status: candidate"));
+
+    const result = fail(["review", "graduate", "--id", "drop-duplicate-rule", "--to", "CLAUDE.md"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("unproven knowledge cannot become graduated until an eval clears eval_status");
+    expect(fail(["review", "promote", "--id", "drop-duplicate-rule"]).stderr).toContain("unproven knowledge cannot become active");
+    expect(fs.readFileSync(file, "utf8")).toContain("status: candidate");
+    expect(run(["review", "retire", "--id", "drop-duplicate-rule"])).toContain("RETIRED");
+    expect(fs.readFileSync(file, "utf8")).toContain("eval_status: unproven");
+
+    const retired = fs.readFileSync(file, "utf8");
+    for (const [value, shown] of [["proven", "proven"], ["null", "null"], ["123", "123"], ["[]", "[]"]]) {
+      fs.writeFileSync(file, retired.replace("eval_status: unproven", `eval_status: ${value}`));
+      expect(fail(["review", "edit", "--id", "drop-duplicate-rule"]).stderr).toContain(`invalid eval_status: ${shown}`);
+    }
+    fs.writeFileSync(file, retired.replace("eval_status: unproven", "check_class: null"));
+    expect(fail(["review", "edit", "--id", "drop-duplicate-rule"]).stderr).toContain("invalid check_class: null");
+  });
+
   test("schema validation rejects practice entries missing required sections", () => {
     const invalidBody = path.join(tmpHome, "invalid.md");
     fs.writeFileSync(invalidBody, "## 做法\nOnly one section.\n", "utf8");

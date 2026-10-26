@@ -2167,7 +2167,8 @@ Decision: `context/retro` moves from `compatibility` to `typed` with the owner
 session records; the model adds `inferred` judgments; every proposal is
 written as a knowledge `candidate` and takes effect only after human review.
 The switch to `typed` lands in Phase 1, when the first two facets ship;
-Phase 2 adds `auto-checks`, `info-access`, and the last-N-days range.
+Phase 2 adds `auto-checks`, `info-access`, and the last-N-days range;
+Phase 3 adds `ineffective-instructions`.
 
 Implementation contract:
 
@@ -2186,13 +2187,14 @@ Implementation contract:
   or `inferred` (heuristic or model judgment); a missing grade is rejected.
   `measured` evidence is emitted in a deterministic order, so a rerun over the
   same snapshot is byte-identical.
-- Persistence allowlist: numbers, tool names, input SHA-256, exit codes, and
-  record positions. Prompts, tool output, stderr, attachments, file content,
+- Persistence allowlist: numbers, tool names, input and content SHA-256,
+  instruction source kinds, exit codes, and record positions. Prompts, tool output, stderr, attachments, file content,
   and instruction text are read in memory and never copied to storage.
   Candidate summary and body pass `secret-patterns` filtering and a length cap.
 - Facet coverage: every report lists `file-search`, `auto-checks`,
   `tool-cost`, `info-access`, and `ineffective-instructions` as `covered` or
-  `unavailable` (`not-implemented` | `host-unsupported`). Evidence for an
+  `unavailable` (`not-implemented` | `host-unsupported` | `not-recorded`).
+  Evidence for an
   `unavailable` facet is rejected.
 - Knowledge: `KNOWLEDGE_SOURCES` gains `retro` with default `trust_level`
   `inferred`. A retro candidate id is `retro-<hash>` over snapshot SHA-256,
@@ -2350,6 +2352,40 @@ Phase 2 contract (`auto-checks`, `info-access`, last N days):
   Candidate ids stay per snapshot, so rerunning an unchanged session is
   `duplicate`; a session that grew since is a new snapshot.
 
+Phase 3 contract (`ineffective-instructions`):
+
+- An ineffective instruction is always-on instruction content that does not
+  change agent behavior. Claude sources are the files of `instructions`
+  attachments and `nested_memory` attachments, keyed by path, and the skill
+  listing as one source: an initial `skill_listing` replaces it, and a later
+  one adds `- name:` entries, where a name may hold a plugin namespace, or
+  replaces those it names again. Other attachments are not read. A source
+  counts with the content of its latest load. A host that records instruction
+  loads but recorded none for a session, as in Claude SDK sessions, reports
+  the facet `unavailable` `not-recorded`; a host without loads is
+  `host-unsupported`.
+- `instruction-source` gives per source its bytes, `sourceKind` (`user`,
+  `project`, `local`, `memory`, `managed`, `skills`, `other`), the SHA-256 of
+  its latest content, and the records that loaded it (past 20, the first 19
+  and the latest), in order of first load;
+  `instruction-bytes` sums them. Paths are not persisted: the cited records
+  name them, and a path names the user's home and projects.
+- Paragraphs are blocks between blank lines and headings; each list item is
+  its own paragraph without its marker; whitespace runs collapse to one space;
+  paragraphs under 40 bytes are dropped. A paragraph in the latest content of
+  two or more sources is a `duplicate-paragraph` with the source count, the
+  paragraph's SHA-256, and the loading records; the 20 with the most repeated
+  bytes are listed, then `duplicate-paragraph-groups` and
+  `duplicate-paragraph-bytes` over every group. A repeat within one source
+  does not count.
+- Semantic duplicates, content a hook or gate already enforces, and host
+  default behavior are `inferred`. Proposals target `instruction-removal` or
+  `instruction-consolidation`, with `estimatedBytes` read as bytes removed;
+  candidate bodies label measured lines with the source kind and a 12-digit
+  content hash prefix. Candidates carry `eval_status: unproven`, which keeps
+  them out of `active` and `graduated`, so only an eval the user starts can
+  make a candidate an instruction change.
+
 Fixtures: one de-identified window per host under
 `goldband-loop/test/fixtures/session-retro/`. Keys, numbers, booleans, enum
 fields, and tool names are kept; ids are pseudonymized, timestamps rebased,
@@ -2380,6 +2416,7 @@ Failure signals:
 - Two runs over the same snapshot produce different `measured` evidence.
 - A report omits a facet or reports partial output as complete.
 - A `mechanical` candidate is promoted to a documentation rule.
+- An `unproven` instruction candidate becomes active or graduates.
 
 Revisit triggers:
 
