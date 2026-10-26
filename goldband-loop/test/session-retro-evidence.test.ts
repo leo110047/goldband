@@ -96,7 +96,7 @@ describe("retro report contract", () => {
 });
 
 describe("retro tool event contract", () => {
-	const event = { ordinal: 3, tool: "Bash", category: "command", inputSha256: HASH, outputBytes: 120, failed: true };
+	const event = { ordinal: 3, resultOrdinal: 4, tool: "Bash", category: "command", inputSha256: HASH, outputBytes: 120, failed: true };
 
 	test("leaves host-unrecorded fields absent", () => {
 		expect(validateRetroToolEvent(event)).toEqual(event);
@@ -106,6 +106,7 @@ describe("retro tool event contract", () => {
 	test("rejects raw output and unknown categories", () => {
 		expect(() => validateRetroToolEvent({ ...event, output: "text" })).toThrow("unsupported field: output");
 		expect(() => validateRetroToolEvent({ ...event, category: "shell" })).toThrow("invalid tool event category");
+		expect(() => validateRetroToolEvent({ ...event, resultOrdinal: 2 })).toThrow("resultOrdinal must not precede its ordinal");
 	});
 });
 

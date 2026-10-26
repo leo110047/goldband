@@ -459,15 +459,15 @@
           },
           "promptContract": {
             "relevantContext": [
-              "From the installed Goldband runtime root containing this contract, run `bin/goldband-retro evidence --host claude`, adding `--session <id>` for a session other than the current one. It prints the measured report, facet coverage, and the session record path; record N is line N+1.",
-              "Judge `inferred` causes only from the cited records: unused reads, missing path guidance, hidden file dependencies, cheaper commands, MCP settings, tools to retire."
+              "From the installed Goldband runtime root containing this contract, run `bin/goldband-retro evidence --host claude` for the current session, `--session <id>`, or `--days <N>` (this repository, last N days). Record N is line N+1 of the record path.",
+              "Infer causes only from cited records: unused reads, missing path guidance, cheaper commands or MCP settings, whether a deterministic check could catch an error (`mechanical`) or not (`judgement`), and failure causes (permission, auth, network, timeout)."
             ],
             "hardBoundaries": [
-              "Report `unavailable` facets as not covered. Keep measured values and inferences in separate sections and phrase inferences as such. Without evidence, state that the cause is unknown.",
-              "Never copy prompts, tool output, or file content into proposals. Proposals only become knowledge candidates; do not edit instructions, rules, hooks, or configuration."
+              "Report `unavailable` facets as not covered. Keep inferences apart from measured values and phrase them as such. Without evidence, say the cause is unknown.",
+              "Never copy prompts, tool output, or file content into proposals; they only become knowledge candidates. Edit no instructions, rules, hooks, or settings. Propose read-only access only, never write access or secrets."
             ],
             "verification": [
-              "Write a JSON file with `sessionId`, `sha256`, and `proposals` (`facet`, `rule`, `severity`, `target`, `summary`, `practice`, `context`, `refs`, `estimatedBytes` for path guidance, `evidence` graded `inferred`), run `bin/goldband-retro propose --input <file>`, and report each written, duplicate, or rejected result. With no proposal worth adopting, skip propose and say so."
+              "Per snapshot, write JSON with `sessionId`, `sha256`, and `proposals` (`facet`, `rule`, `severity`, `target`, `summary`, `practice`, `context`, `refs`, `estimatedBytes` for path guidance, `checkClass` for auto-checks, `inferred` `evidence`), run `bin/goldband-retro propose --input <file>`, and report each outcome. With nothing worth adopting, skip propose and say so."
             ]
           }
         }

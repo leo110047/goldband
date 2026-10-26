@@ -18,7 +18,12 @@ import {
  */
 
 /** Facets this runtime computes; the rest are reported `unavailable`. */
-const COVERED_FACETS: readonly RetroFacet[] = ["file-search", "tool-cost"];
+const COVERED_FACETS: readonly RetroFacet[] = [
+	"file-search",
+	"auto-checks",
+	"tool-cost",
+	"info-access",
+];
 const DEFAULT_TOP_OUTPUTS = 10;
 /** Evidence keeps the metric exact and cites at most this many positions, in order. */
 const REF_LIMIT = 20;
@@ -297,6 +302,8 @@ export function analyzeRetroSession(input: {
 			input.topOutputs ?? DEFAULT_TOP_OUTPUTS,
 			ref,
 		),
+		...autoCheckEvidence(input.tools, ref),
+		...infoAccessEvidence(input.tools, ref),
 	];
 	const facets = Object.fromEntries(
 		RETRO_FACETS.map((facet): [RetroFacet, RetroFacetStatusV1] => [
@@ -322,9 +329,7 @@ function fileSearchEvidence(
 	ref: Ref,
 ): RetroEvidenceV1[] {
 	// A failed or blocked edit changed nothing, so the search window continues.
-	const firstEdit = tools.find(
-		(event) => event.category === "edit" && !event.failed && !event.blockedBy,
-	);
+	const firstEdit = tools.find(isAppliedEdit);
 	const window = firstEdit
 		? tools.filter((event) => event.ordinal < firstEdit.ordinal)
 		: tools;
@@ -419,6 +424,246 @@ function toolCostEvidence(
 	}
 	if (usage) evidence.push(...usageEvidence(usage, ref));
 	return evidence;
+}
+
+/**
+ * Commands in order and their exit codes relative to edits. A command runs
+ * after an edit only when it starts after the edit's result, since calls
+ * issued together finish in any order. Which commands are checks, and whether
+ * a check could have caught an error, is `inferred`.
+ */
+function autoCheckEvidence(
+	tools: RetroToolEventV1[],
+	ref: Ref,
+): RetroEvidenceV1[] {
+	const edits = tools.filter(isAppliedEdit);
+	const commands = tools.filter(
+		(event) => event.category === "command" && !event.blockedBy,
+	);
+	const evidence: RetroEvidenceV1[] = [];
+	const lastEdit = edits.reduce<RetroToolEventV1 | undefined>(
+		(last, edit) =>
+			!last || edit.resultOrdinal > last.resultOrdinal ? edit : last,
+		undefined,
+	);
+	if (lastEdit) {
+		const after = commands.filter(
+			(event) => event.ordinal > lastEdit.resultOrdinal,
+		);
+		evidence.push(
+			measured("auto-checks", "last-edit", [ref(lastEdit.ordinal)], {
+				value: edits.length,
+				unit: "count",
+			}),
+			// No command after the last edit still cites that edit.
+			measured(
+				"auto-checks",
+				"commands-after-last-edit",
+				after.length > 0 ? refs(after, ref) : [ref(lastEdit.ordinal)],
+				{ value: after.length, unit: "count" },
+			),
+		);
+	}
+	const runs = commandRuns(commands, edits);
+	evidence.push(
+		...runEvidence("failed-then-passed", runs.fixed, ref),
+		...runEvidence("unresolved-failure", runs.unresolved, ref),
+	);
+	return evidence;
+}
+
+/** An edit that neither failed nor was blocked. */
+function isAppliedEdit(event: RetroToolEventV1): boolean {
+	return event.category === "edit" && !event.failed && !event.blockedBy;
+}
+
+function isNonZeroExit(event: RetroToolEventV1): boolean {
+	return event.exitCode !== undefined && event.exitCode !== 0;
+}
+
+/** Failed runs of one command input, with the run that passed after an edit, if any. */
+type CommandRun = { failures: RetroToolEventV1[]; passed?: RetroToolEventV1 };
+
+/**
+ * Per command input: failures followed by an edit and then a passing run are
+ * `fixed`; failures that no later run passes are `unresolved`. A pass with no
+ * such edit ends the run without counting it.
+ */
+function commandRuns(
+	commands: RetroToolEventV1[],
+	edits: RetroToolEventV1[],
+): { fixed: CommandRun[]; unresolved: CommandRun[] } {
+	const byInput = new Map<string, RetroToolEventV1[]>();
+	for (const event of commands) {
+		if (event.exitCode !== undefined)
+			appendTo(byInput, `${event.tool}\n${event.inputSha256}`, event);
+	}
+	const runs = { fixed: [] as CommandRun[], unresolved: [] as CommandRun[] };
+	for (const events of byInput.values()) splitRuns(events, edits, runs);
+	return runs;
+}
+
+function splitRuns(
+	events: RetroToolEventV1[],
+	edits: RetroToolEventV1[],
+	runs: { fixed: CommandRun[]; unresolved: CommandRun[] },
+): void {
+	let failures: RetroToolEventV1[] = [];
+	for (const event of events) {
+		if (isNonZeroExit(event)) {
+			failures.push(event);
+			continue;
+		}
+		// An edit counts when it starts after the first failure is seen and
+		// finishes after the last failing run starts and before this run starts.
+		const [first, last] = [failures[0], failures[failures.length - 1]];
+		if (
+			first &&
+			edits.some(
+				(edit) =>
+					edit.ordinal > first.resultOrdinal &&
+					edit.resultOrdinal > last.ordinal &&
+					edit.resultOrdinal < event.ordinal,
+			)
+		)
+			runs.fixed.push({ failures, passed: event });
+		failures = [];
+	}
+	if (failures.length > 0) runs.unresolved.push({ failures });
+}
+
+/**
+ * One item per run, earliest first, up to GROUP_LIMIT, citing its failures and
+ * the passing run, then `<rule>-groups` counting every run.
+ */
+function runEvidence(
+	rule: string,
+	runs: CommandRun[],
+	ref: Ref,
+): RetroEvidenceV1[] {
+	if (runs.length === 0) return [];
+	const ordered = [...runs].sort(
+		(a, b) => a.failures[0].ordinal - b.failures[0].ordinal,
+	);
+	return [
+		...ordered.slice(0, GROUP_LIMIT).map((run) => {
+			const cited = [
+				...run.failures.slice(0, REF_LIMIT - 1),
+				...(run.passed ? [run.passed] : []),
+			];
+			const last = run.failures[run.failures.length - 1];
+			return {
+				...measured("auto-checks", rule, refs(cited, ref), {
+					value: run.failures.length,
+					unit: "count" as const,
+				}),
+				...identity(last),
+				exitCode: last.exitCode,
+			};
+		}),
+		measured(
+			"auto-checks",
+			`${rule}-groups`,
+			refs(
+				ordered.map((run) => run.failures[0]),
+				ref,
+			),
+			{ value: runs.length, unit: "count" },
+		),
+	];
+}
+
+/**
+ * Calls that did not get what they asked for: non-zero exits other than a
+ * search that matched nothing, failed calls without an exit code, and blocked
+ * calls. Why each failed is `inferred`.
+ */
+function infoAccessEvidence(
+	tools: RetroToolEventV1[],
+	ref: Ref,
+): RetroEvidenceV1[] {
+	const nonZero = tools.filter(
+		(event) =>
+			isNonZeroExit(event) && !event.blockedBy && event.emptyResult !== true,
+	);
+	const failedCalls = tools.filter(
+		(event) => event.failed && event.exitCode === undefined && !event.blockedBy,
+	);
+	const evidence: RetroEvidenceV1[] = [
+		...countEvidence("info-access", "nonzero-exit", nonZero, ref),
+	];
+	evidence.push(
+		...groupedEvidence("exit-code", nonZero, ref, (event) => ({
+			exitCode: event.exitCode,
+		})),
+		...groupedEvidence("failed-call", failedCalls, ref, (event) => ({
+			tool: event.tool,
+		})),
+	);
+	const blocked = tools.filter((event) => event.blockedBy);
+	for (const blocker of ["hook", "permission"] as const) {
+		evidence.push(
+			...countEvidence(
+				"info-access",
+				`${blocker}-blocked`,
+				blocked.filter((event) => event.blockedBy === blocker),
+				ref,
+			),
+		);
+	}
+	evidence.push(
+		...duplicateEvidence(
+			"info-access",
+			"repeated-failure",
+			[...nonZero, ...failedCalls, ...blocked].sort(
+				(a, b) => a.ordinal - b.ordinal,
+			),
+			ref,
+		),
+	);
+	return evidence;
+}
+
+/**
+ * One `info-access` count per distinct key, the GROUP_LIMIT largest first, then
+ * `<rule>-groups` counting every key; the key is the identifying field the
+ * item carries, such as an exit code or a tool name.
+ */
+function groupedEvidence(
+	rule: string,
+	events: RetroToolEventV1[],
+	ref: Ref,
+	keyOf: (
+		event: RetroToolEventV1,
+	) => Pick<RetroEvidenceV1, "exitCode" | "tool">,
+): RetroEvidenceV1[] {
+	const groups = new Map<string, RetroToolEventV1[]>();
+	for (const event of events)
+		appendTo(groups, JSON.stringify(keyOf(event)), event);
+	const ordered = [...groups.entries()].sort(
+		([a, x], [b, y]) => y.length - x.length || (a < b ? -1 : a > b ? 1 : 0),
+	);
+	if (ordered.length === 0) return [];
+	return [
+		...ordered.slice(0, GROUP_LIMIT).map(([, group]) => ({
+			...measured("info-access", rule, refs(group, ref), {
+				value: group.length,
+				unit: "count" as const,
+			}),
+			...keyOf(group[0]),
+		})),
+		measured(
+			"info-access",
+			`${rule}-groups`,
+			refs(
+				ordered
+					.map(([, group]) => group[0])
+					.sort((a, b) => a.ordinal - b.ordinal),
+				ref,
+			),
+			{ value: ordered.length, unit: "count" },
+		),
+	];
 }
 
 /** Session token totals; the span cites the first and last assistant records that carry usage. */

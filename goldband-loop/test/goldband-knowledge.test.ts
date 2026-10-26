@@ -162,6 +162,52 @@ describe("goldband-knowledge CLI", () => {
     );
   });
 
+  test("review graduates a mechanical entry only to a deterministic check", () => {
+    run([
+      "capture",
+      "--id",
+      "lint-unused-import",
+      "--title",
+      "Unused import lint candidate",
+      "--type",
+      "practice",
+      "--domains",
+      "review",
+      "--summary",
+      "Catch unused imports with a lint rule.",
+      "--body-file",
+      bodyFile,
+    ]);
+    const file = path.join(tmpHome, "knowledge", "entries", "lint-unused-import.md");
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("\nlinks:", "\ncheck_class: mechanical\nlinks:"));
+
+    for (const target of [
+      "rules/coding-style.md",
+      "CLAUDE.md",
+      "CLAUDE.md ",
+      "docs/review.mdx",
+      ".cursor/rules/lint.mdc",
+      "skills/global/review",
+      "rules/common",
+      "docs/",
+      "docs/review.md#checks",
+    ]) {
+      const result = fail(["review", "graduate", "--id", "lint-unused-import", "--to", target]);
+      expect({ target, status: result.status, stderr: result.stderr }).toMatchObject({
+        target,
+        status: 1,
+        stderr: expect.stringContaining("mechanical knowledge graduates only to a lint, hook, CI, or test target"),
+      });
+    }
+    expect(fs.readFileSync(file, "utf8")).toContain("status: active");
+
+    expect(run(["review", "graduate", "--id", "lint-unused-import", "--to", "codex/rules/default.rules"])).toContain("GRADUATED");
+    expect(fs.readFileSync(file, "utf8")).toContain("check_class: mechanical");
+
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("check_class: mechanical", "check_class: lint"));
+    expect(fail(["review", "edit", "--id", "lint-unused-import"]).stderr).toContain("invalid check_class: lint");
+  });
+
   test("schema validation rejects practice entries missing required sections", () => {
     const invalidBody = path.join(tmpHome, "invalid.md");
     fs.writeFileSync(invalidBody, "## 做法\nOnly one section.\n", "utf8");

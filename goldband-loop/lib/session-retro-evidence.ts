@@ -54,7 +54,10 @@ export type RetroSnapshotRefV1 = {
  * host does not record them; adapters never default them.
  */
 export type RetroToolEventV1 = {
+	/** The call's record; refs cite it. */
 	ordinal: number;
+	/** The result's record, at or after the call; calls issued together finish in any order. */
+	resultOrdinal: number;
 	tool: string;
 	category: RetroToolCategory;
 	inputSha256: string;
@@ -122,6 +125,7 @@ export function validateRetroToolEvent(value: unknown): RetroToolEventV1 {
 	const event = record(value, "tool event");
 	onlyKeys(event, "tool event", [
 		"ordinal",
+		"resultOrdinal",
 		"tool",
 		"category",
 		"inputSha256",
@@ -133,6 +137,9 @@ export function validateRetroToolEvent(value: unknown): RetroToolEventV1 {
 		"emptyResult",
 	]);
 	count(event.ordinal, "tool event ordinal");
+	count(event.resultOrdinal, "tool event resultOrdinal");
+	if ((event.resultOrdinal as number) < (event.ordinal as number))
+		throw new Error("tool event resultOrdinal must not precede its ordinal");
 	pattern(event.tool, TOOL_RE, "tool event tool");
 	member(event.category, RETRO_TOOL_CATEGORIES, "tool event category");
 	pattern(event.inputSha256, RETRO_SHA256_RE, "tool event inputSha256");

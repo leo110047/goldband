@@ -1,16 +1,20 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
 import {
+	RETRO_MAX_RANGE_DAYS,
 	runRetroEvidence,
 	runRetroProposals,
+	runRetroRange,
 } from "../lib/session-retro-runtime";
 import { readStableRegularFile } from "../lib/stable-file-read";
 import { resolveGoldbandStateRoot } from "../lib/state-root";
 
 const MAX_INPUT_BYTES = 256 * 1024;
 const USAGE = `Usage:
-  goldband-retro evidence --host <claude|codex> [--session <id>]
+  goldband-retro evidence --host <claude|codex> [--session <id> | --days <1-90>]
     Snapshot the session (default: the current one) and print its measured report.
+    With --days, analyze every session in a worktree of the current repository
+    changed in that many days and print where each report was written.
   goldband-retro propose --input <file>
     Validate proposals for a reported snapshot and write them as knowledge candidates.`;
 
@@ -24,19 +28,14 @@ export function main(args: string[]): number {
 		(options.host === "claude" || options.host === "codex") &&
 		!options.input
 	) {
-		const result = runRetroEvidence({
-			host: options.host,
-			sessionId: options.session,
-			stateRoot: resolveGoldbandStateRoot(),
-		});
-		console.log(JSON.stringify(result));
-		return result.status === "completed" ? 0 : 3;
+		return evidence(options.host, options);
 	}
 	if (
 		command === "propose" &&
 		options.input &&
 		!options.host &&
-		!options.session
+		!options.session &&
+		!options.days
 	) {
 		const input = readStableRegularFile(resolve(options.input), {
 			label: "goldband-retro propose --input",
@@ -56,22 +55,49 @@ export function main(args: string[]): number {
 	return usage();
 }
 
+function evidence(host: string, options: Options): number {
+	if (options.days === undefined) {
+		const result = runRetroEvidence({
+			host,
+			sessionId: options.session,
+			stateRoot: resolveGoldbandStateRoot(),
+		});
+		console.log(JSON.stringify(result));
+		return result.status === "completed" ? 0 : 3;
+	}
+	const days = /^[1-9][0-9]{0,5}$/.test(options.days)
+		? Number(options.days)
+		: 0;
+	if (options.session || days < 1 || days > RETRO_MAX_RANGE_DAYS)
+		return usage();
+	const result = runRetroRange({
+		host,
+		days,
+		cwd: process.cwd(),
+		stateRoot: resolveGoldbandStateRoot(),
+	});
+	console.log(JSON.stringify(result));
+	return result.status === "completed" ? 0 : 3;
+}
+
 function usage(): number {
 	console.error(USAGE);
 	return 2;
 }
 
+type OptionName = "host" | "session" | "input" | "days";
+type Options = Partial<Record<OptionName, string>>;
+
 /** Parsed options, or null for a usage error. */
-function parseOptions(
-	args: string[],
-): Partial<Record<"host" | "session" | "input", string>> | null {
-	const options: Partial<Record<"host" | "session" | "input", string>> = {};
+function parseOptions(args: string[]): Options | null {
+	const options: Options = {};
 	for (let index = 0; index < args.length; index += 2) {
 		const name = {
 			"--host": "host",
 			"--session": "session",
 			"--input": "input",
-		}[args[index]] as "host" | "session" | "input" | undefined;
+			"--days": "days",
+		}[args[index]] as OptionName | undefined;
 		const value = args[index + 1];
 		if (
 			!name ||

@@ -1,6 +1,7 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import {
 	createKnowledgeEntry,
 	currentCanonicalRemote,
@@ -11,7 +12,11 @@ import {
 } from "./knowledge";
 import { writePrivateText } from "./managed-worktree-contract";
 import { analyzeRetroSession } from "./session-retro-analysis";
-import { locateClaudeSession, readClaudeSession } from "./session-retro-claude";
+import {
+	listClaudeSessions,
+	locateClaudeSession,
+	readClaudeSession,
+} from "./session-retro-claude";
 import {
 	RETRO_RULE_RE,
 	RETRO_SESSION_ID_RE,
@@ -38,6 +43,28 @@ export type RetroEvidenceResult =
 			report: RetroReportV1;
 			reportPath: string;
 			recordPath: string;
+	  }
+	| { status: "blocked"; reason: string };
+
+type RetroRangeSession =
+	| {
+			sessionId: string;
+			status: "completed";
+			sha256: string;
+			records: number;
+			evidence: number;
+			reportPath: string;
+			recordPath: string;
+	  }
+	| { sessionId: string; status: "failed"; reason: string };
+
+export type RetroRangeResult =
+	| {
+			status: "completed";
+			days: number;
+			sessions: RetroRangeSession[];
+			unlocated: number;
+			unreadableProjects: number;
 	  }
 	| { status: "blocked"; reason: string };
 
@@ -71,15 +98,36 @@ type Proposal = {
 	context: string;
 	refs: string[];
 	estimatedBytes?: number;
+	checkClass?: CheckClass;
 	evidence: RetroEvidenceV1[];
 };
+
+type CheckClass = keyof typeof CHECK_CLASS_TARGETS;
 
 const SEVERITIES = ["high", "medium", "low"] as const;
 /** Where an adopted proposal may land, per facet. */
 const ADOPTION_TARGETS: Partial<Record<RetroFacet, readonly string[]>> = {
 	"file-search": ["instruction-path-guidance", "file-structure"],
 	"tool-cost": ["command-usage", "mcp-config", "tool-retirement"],
+	"auto-checks": [
+		"lint",
+		"hook",
+		"ci",
+		"test",
+		"semantic-review-criteria",
+		"repo-review-standard",
+	],
+	"info-access": ["read-only-permission", "access-guidance"],
 };
+/** An `auto-checks` error a deterministic check can catch lands in one; the rest go to review criteria. */
+const CHECK_CLASS_TARGETS = {
+	mechanical: ["lint", "hook", "ci", "test"],
+	judgement: ["semantic-review-criteria", "repo-review-standard"],
+} as const;
+/** Days a range run may cover, and the sessions it may analyze. */
+export const RETRO_MAX_RANGE_DAYS = 90;
+const MAX_RANGE_SESSIONS = 200;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_PROPOSALS = 20;
 const MAX_CITATIONS = 20;
 const MAX_INFERRED_EVIDENCE = 5;
@@ -105,6 +153,7 @@ const PROPOSAL_KEYS = [
 	"context",
 	"refs",
 	"estimatedBytes",
+	"checkClass",
 	"evidence",
 ];
 
@@ -122,14 +171,190 @@ export function runRetroEvidence(options: {
 	}
 	const location = locateClaudeSession(options.sessionId, options.env);
 	if (location.status === "blocked") return location;
-	const session = readClaudeSession(location.path, location.sessionId);
-	const report = analyzeRetroSession(session);
-	const reportPath = reportFile(
-		options.stateRoot,
-		retroSnapshotKey(session.snapshot),
+	return {
+		status: "completed",
+		...analyzeSession(location.path, location.sessionId, options.stateRoot),
+	};
+}
+
+/**
+ * Analyzes every session in a worktree of the current repository whose record
+ * changed in the last `days` days, each under its own snapshot and report. A session
+ * that fails to read is reported as failed; the others still complete.
+ */
+export function runRetroRange(options: {
+	host: string;
+	days: number;
+	cwd: string;
+	stateRoot: string;
+	env?: NodeJS.ProcessEnv;
+	now?: number;
+}): RetroRangeResult {
+	if (
+		!Number.isSafeInteger(options.days) ||
+		options.days < 1 ||
+		options.days > RETRO_MAX_RANGE_DAYS
+	) {
+		throw new Error(
+			`days must be an integer from 1 to ${RETRO_MAX_RANGE_DAYS}`,
+		);
+	}
+	if (options.host !== "claude") {
+		return {
+			status: "blocked",
+			reason: `context/retro has no ${options.host} session adapter`,
+		};
+	}
+	const worktrees = repositoryWorktrees(options.cwd);
+	const listed = listClaudeSessions({
+		since: (options.now ?? Date.now()) - options.days * DAY_MS,
+		env: options.env,
+	});
+	const located = listed.sessions.filter(
+		(session): session is typeof session & { cwd: string } =>
+			session.cwd !== undefined,
 	);
+	const inRange = located.filter((session) =>
+		worktrees.some((root) => isInWorktree(root, session.cwd)),
+	);
+	if (inRange.length > MAX_RANGE_SESSIONS) {
+		return {
+			status: "blocked",
+			reason: `${inRange.length} sessions in the last ${options.days} days exceed ${MAX_RANGE_SESSIONS}; use fewer days`,
+		};
+	}
+	const sessions = rangeSessions(
+		inRange,
+		new Set(listed.ambiguous),
+		options.stateRoot,
+	);
+	return {
+		status: "completed",
+		days: options.days,
+		sessions,
+		unlocated: listed.sessions.length - located.length,
+		unreadableProjects: listed.unreadableProjects,
+	};
+}
+
+/**
+ * One entry per session id. An id recorded in more than one project directory
+ * is ambiguous, as it is for a named session, and is not read.
+ */
+function rangeSessions(
+	selected: Array<{ sessionId: string; path: string }>,
+	ambiguous: Set<string>,
+	stateRoot: string,
+): RetroRangeSession[] {
+	const seen = new Set<string>();
+	return selected.flatMap(({ sessionId, path }): RetroRangeSession[] => {
+		if (!ambiguous.has(sessionId))
+			return [rangeSession(path, sessionId, stateRoot)];
+		if (seen.has(sessionId)) return [];
+		seen.add(sessionId);
+		return [
+			{
+				sessionId,
+				status: "failed",
+				reason: `Claude session id is ambiguous: ${sessionId}`,
+			},
+		];
+	});
+}
+
+/** One range entry; a session that fails to read is reported, not thrown. */
+function rangeSession(
+	path: string,
+	sessionId: string,
+	stateRoot: string,
+): RetroRangeSession {
+	try {
+		const { report, reportPath, recordPath } = analyzeSession(
+			path,
+			sessionId,
+			stateRoot,
+		);
+		const [snapshot] = report.snapshots;
+		return {
+			sessionId,
+			status: "completed",
+			sha256: snapshot.sha256,
+			records: snapshot.recordCount,
+			evidence: report.evidence.length,
+			reportPath,
+			recordPath,
+		};
+	} catch (error) {
+		// Read errors may name the record path, which is not persisted.
+		const reason = error instanceof Error ? error.message : String(error);
+		return {
+			sessionId,
+			status: "failed",
+			reason: reason.split(path).join("<session record>"),
+		};
+	}
+}
+
+function analyzeSession(
+	path: string,
+	sessionId: string,
+	stateRoot: string,
+): { report: RetroReportV1; reportPath: string; recordPath: string } {
+	const session = readClaudeSession(path, sessionId);
+	const report = analyzeRetroSession(session);
+	const reportPath = reportFile(stateRoot, retroSnapshotKey(session.snapshot));
 	writePrivateText(reportPath, stableJson(report));
-	return { status: "completed", report, reportPath, recordPath: session.path };
+	return { report, reportPath, recordPath: session.path };
+}
+
+/**
+ * An absolute `cwd` is `root` or below it with no other worktree or repository between:
+ * no directory from `cwd` up to `root` holds `.git`. A removed directory keeps
+ * its recorded path and is judged by the directories that remain.
+ */
+function isInWorktree(root: string, cwd: string): boolean {
+	if (!isAbsolute(cwd)) return false;
+	let resolved = cwd;
+	try {
+		resolved = realpathSync(cwd);
+	} catch {
+		// Keep the recorded path.
+	}
+	const rel = relative(root, resolved);
+	if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`))
+		return false;
+	for (
+		let dir = resolved;
+		dir !== root && dirname(dir) !== dir;
+		dir = dirname(dir)
+	) {
+		if (existsSync(join(dir, ".git"))) return false;
+	}
+	return true;
+}
+
+/**
+ * Every worktree of the Git repository containing `cwd` that still exists,
+ * resolved through links, or `cwd` alone outside a repository.
+ */
+function repositoryWorktrees(cwd: string): string[] {
+	// NUL-separated fields keep a path with a newline whole.
+	const result = spawnSync("git", ["worktree", "list", "--porcelain", "-z"], {
+		cwd,
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	});
+	if (result.status !== 0) return [realpathSync(cwd)];
+	return result.stdout
+		.split("\0")
+		.filter((field) => field.startsWith("worktree "))
+		.flatMap((field) => {
+			try {
+				return [realpathSync(field.slice("worktree ".length))];
+			} catch {
+				return [];
+			}
+		});
 }
 
 export function runRetroProposals(
@@ -217,6 +442,7 @@ function proposalOutcome(
 			source: "retro",
 			source_evidence: `retro:${key}`,
 			staleness: "needs-review",
+			check_class: proposal.checkClass ?? "",
 			summary: proposal.summary,
 			body: candidateBody(proposal, report, key),
 		});
@@ -241,6 +467,7 @@ function validateProposal(
 	if (!SEVERITIES.includes(proposal.severity as Proposal["severity"]))
 		throw new Error("severity must be high, medium, or low");
 	validateTarget(proposal, facet);
+	validateCheckClass(proposal, facet);
 	validateText(proposal);
 	const snapshots = retroSnapshotRecords(report.snapshots);
 	// Refs and evidence are rendered into the candidate body, so both are bounded.
@@ -273,6 +500,29 @@ function validateTarget(
 	) {
 		throw new Error(
 			"estimatedBytes must be a positive integer for instruction-path-guidance",
+		);
+	}
+}
+
+/** `auto-checks` proposals classify the error, and the class limits the target; other facets have no class. */
+function validateCheckClass(
+	proposal: Record<string, unknown>,
+	facet: RetroFacet,
+): void {
+	if (facet !== "auto-checks") {
+		if (proposal.checkClass !== undefined)
+			throw new Error("checkClass applies only to auto-checks proposals");
+		return;
+	}
+	const targets: readonly string[] | undefined =
+		typeof proposal.checkClass === "string" &&
+		Object.hasOwn(CHECK_CLASS_TARGETS, proposal.checkClass)
+			? CHECK_CLASS_TARGETS[proposal.checkClass as CheckClass]
+			: undefined;
+	if (!targets) throw new Error("checkClass must be mechanical or judgement");
+	if (!targets.includes(proposal.target as string)) {
+		throw new Error(
+			`target for a ${proposal.checkClass} error must be one of: ${targets.join(", ")}`,
 		);
 	}
 }
@@ -348,6 +598,12 @@ function candidateBody(
 		"## 驗證證據",
 		"",
 		`- 採用目標：${proposal.target}${estimate}`,
+		...(proposal.checkClass
+			? [`- 錯誤分類（推論）：${proposal.checkClass}`]
+			: []),
+		...(proposal.target === "read-only-permission"
+			? ["- 需安全審查：只提議唯讀存取，不授予寫入權限或密鑰"]
+			: []),
 		`- 嚴重度：${proposal.severity}`,
 		`- 快照：${key}；引用為紀錄序號 ${ordinals(proposal.refs)}`,
 		"",

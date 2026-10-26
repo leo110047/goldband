@@ -54,6 +54,8 @@ export const KNOWLEDGE_TRUST_LEVELS = [
 ] as const;
 export const KNOWLEDGE_REVIEWERS = ["user", "workflow", "agent", ""] as const;
 export const KNOWLEDGE_STALENESS = ["fresh", "needs-review", "stale"] as const;
+/** Whether a deterministic check (`mechanical`) or a reviewer (`judgement`) catches the error; "" is unclassified. */
+const KNOWLEDGE_CHECK_CLASSES = ["mechanical", "judgement", ""] as const;
 
 export type KnowledgeType = (typeof KNOWLEDGE_TYPES)[number];
 export type KnowledgeDomain = (typeof KNOWLEDGE_DOMAINS)[number];
@@ -62,6 +64,7 @@ export type KnowledgeSource = (typeof KNOWLEDGE_SOURCES)[number];
 export type KnowledgeTrustLevel = (typeof KNOWLEDGE_TRUST_LEVELS)[number];
 export type KnowledgeReviewer = (typeof KNOWLEDGE_REVIEWERS)[number];
 export type KnowledgeStaleness = (typeof KNOWLEDGE_STALENESS)[number];
+type KnowledgeCheckClass = (typeof KNOWLEDGE_CHECK_CLASSES)[number];
 export type KnowledgeScope = "global" | "project";
 
 export interface KnowledgeEntry {
@@ -83,6 +86,7 @@ export interface KnowledgeEntry {
   last_verified: string | null;
   staleness: KnowledgeStaleness;
   graduated_to: string;
+  check_class: KnowledgeCheckClass;
   links: string[];
   summary: string;
   body: string;
@@ -127,6 +131,9 @@ export interface KnowledgeSearchOptions {
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{1,80}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** Prose a `mechanical` entry may not graduate to: documentation files, and instruction directories without a file. */
+const DOCUMENTATION_FILE_RE = /\.(?:md|mdx|mdc|markdown|rst|adoc|txt)$/i;
+const INSTRUCTION_DIRECTORY_RE = /(?:^|\/)(?:skills|rules|commands|agents|docs)(?:\/|$)/i;
 const require = createRequire(import.meta.url);
 // Generated from hooks/scripts/lib/hook-router/secret-patterns.js by
 // scripts/sync-plugin-assets.mjs so linked and copied runtimes carry the rules.
@@ -332,6 +339,7 @@ export function transitionKnowledgeStatus(
 
 export function createKnowledgeEntry(input: Partial<KnowledgeEntry>): KnowledgeEntry {
   const today = todayIsoDate();
+  const { check_class = "" } = input;
   const entry: KnowledgeEntry = {
     id: input.id || "",
     title: input.title || "",
@@ -352,6 +360,7 @@ export function createKnowledgeEntry(input: Partial<KnowledgeEntry>): KnowledgeE
       input.last_verified === undefined ? null : input.last_verified,
     staleness: input.staleness || "fresh",
     graduated_to: input.graduated_to || "",
+    check_class,
     links: input.links || [],
     summary: input.summary || "",
     body: input.body || "",
@@ -406,6 +415,7 @@ function validateEntry(entry: KnowledgeEntry): void {
   if (entry.status === "graduated" && !entry.graduated_to) {
     throw new Error("graduated entries require graduated_to");
   }
+  validateCheckClass(entry);
   if (!entry.summary.trim()) throw new Error("summary is required");
   if (!entry.body.trim()) throw new Error("body is required");
   validateSafeKnowledgeText("summary", entry.summary);
@@ -425,6 +435,32 @@ export function renderSearchRows(rows: KnowledgeIndexRow[]): string {
     );
   }
   return `${lines.join("\n")}\n`;
+}
+
+/** A `mechanical` error belongs in a deterministic check, so documentation is not a graduation target. */
+function validateCheckClass(entry: KnowledgeEntry): void {
+  if (!KNOWLEDGE_CHECK_CLASSES.includes(entry.check_class)) {
+    throw new Error(`invalid check_class: ${entry.check_class}`);
+  }
+  if (
+    entry.status === "graduated" &&
+    entry.check_class === "mechanical" &&
+    isDocumentationTarget(entry.graduated_to)
+  ) {
+    throw new Error("mechanical knowledge graduates only to a lint, hook, CI, or test target, not documentation");
+  }
+}
+
+/**
+ * A documentation file, with or without a `#` section, or a path without a
+ * file extension under an instruction directory such as `rules/` or `skills/`.
+ * A check file there, such as `codex/rules/default.rules`, is not documentation.
+ */
+function isDocumentationTarget(target: string): boolean {
+  const path = target.split("#")[0].trim().replace(/\/+$/, "");
+  if (DOCUMENTATION_FILE_RE.test(path)) return true;
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return !name.includes(".") && INSTRUCTION_DIRECTORY_RE.test(`${path}/`);
 }
 
 function splitFrontmatter(raw: string, filePath: string): { frontmatter: string; body: string } {
@@ -458,6 +494,7 @@ function frontmatterToEntry(frontmatter: string, body: string): KnowledgeEntry {
     last_verified: data.last_verified === null ? null : stringField(data, "last_verified"),
     staleness: stalenessField(data),
     graduated_to: stringField(data, "graduated_to"),
+    check_class: stringField(data, "check_class") as KnowledgeCheckClass,
     links: arrayField(data, "links"),
     summary: stringField(data, "summary"),
     body,
@@ -525,6 +562,8 @@ function renderKnowledgeEntry(entry: KnowledgeEntry): string {
     `last_verified: ${entry.last_verified === null ? "null" : entry.last_verified}`,
     `staleness: ${entry.staleness}`,
     `graduated_to: ${entry.graduated_to}`,
+    // Written only when set, so unclassified entries keep their existing form.
+    ...(entry.check_class ? [`check_class: ${entry.check_class}`] : []),
     `links: [${entry.links.join(", ")}]`,
     `summary: ${yamlString(entry.summary)}`,
     "---",

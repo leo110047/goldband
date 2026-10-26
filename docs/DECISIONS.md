@@ -2166,7 +2166,8 @@ Decision: `context/retro` moves from `compatibility` to `typed` with the owner
 `session-retro-evidence`. The runtime computes `measured` evidence from host
 session records; the model adds `inferred` judgments; every proposal is
 written as a knowledge `candidate` and takes effect only after human review.
-The switch to `typed` lands in Phase 1, when the first two facets ship.
+The switch to `typed` lands in Phase 1, when the first two facets ship;
+Phase 2 adds `auto-checks`, `info-access`, and the last-N-days range.
 
 Implementation contract:
 
@@ -2296,6 +2297,58 @@ Phase 1 contract (Claude adapter, `file-search`, `tool-cost`):
   calls) is read and analyzed in 1.47-1.49 s at about 194 MB maximum RSS, and
   its report is 50,122 bytes (3 runs, Bun 1.3.11, macOS arm64); reading it as
   one string fails with `ERR_STRING_TOO_LONG`.
+
+Phase 2 contract (`auto-checks`, `info-access`, last N days):
+
+- Events carry `resultOrdinal`, the record of their result, because calls
+  issued in one message finish in any order; it is not persisted. A Bash
+  call's input hash covers only its `command`, so a rerun with another
+  description or timeout is the same input.
+- `auto-checks` uses only commands that ran: `command` events that were not
+  blocked. A command is after an edit only when it starts after the edit's
+  result. `last-edit` counts applied edits and cites the one whose result is
+  last; `commands-after-last-edit` counts the commands after it and cites that
+  edit when there are none. Per tool and input, failures and then a passing
+  run are `failed-then-passed` when an applied edit starts after the first
+  failure's result and finishes after the last failing run starts and before
+  the pass starts; failures no later run passes are `unresolved-failure`. Each lists 20 runs,
+  earliest first, with the last failure's exit code, and `<rule>-groups`
+  counts every run.
+- `info-access` emits `nonzero-exit` over calls with a non-zero exit code
+  that were not blocked and are not a search that matched nothing, `exit-code`
+  per code, `failed-call` per tool for failed calls without an exit code,
+  `hook-blocked`, `permission-blocked`, and `repeated-failure` over all of
+  these by tool and input. `exit-code` and `failed-call` list 20 groups and
+  add `<rule>-groups`. Failure causes, retries of the same target, and the
+  missing information are `inferred`.
+- `auto-checks` proposals require `checkClass`: `mechanical` targets `lint`,
+  `hook`, `ci`, or `test`; `judgement` targets `semantic-review-criteria` or
+  `repo-review-standard`. The class is stored as the knowledge entry's
+  `check_class`, and the knowledge store refuses to graduate a `mechanical`
+  entry to a documentation file (with or without a `#` section) or to a path
+  without a file extension under `skills/`, `rules/`, `commands/`, `agents/`,
+  or `docs/`. Other facets reject `checkClass`.
+  `info-access` targets `read-only-permission`, whose candidate body is marked
+  as needing security review and limited to read-only access, or
+  `access-guidance`.
+- `evidence --days <N>` (1-90) analyzes every Claude session record directly
+  in a project directory, changed in the last N days, whose first recorded
+  `cwd` within the first 4 MiB, read in 256 KiB steps, is in an existing
+  worktree of the current repository (`git worktree list -z`, or the current
+  directory outside Git) with no directory holding `.git` between it and that
+  worktree, so a nested repository or unregistered worktree is excluded; a
+  removed directory is judged by the directories that remain. A file whose
+  located record names another session, such as a sidechain, is left out; an
+  id found in more than one project directory, at any age, is one `failed`
+  entry, ambiguous as it is for `--session`. Each session gets its own snapshot and report; the
+  output lists per session its snapshot, evidence count, and report path, or
+  `failed` with the read error, its record path replaced by
+  `<session record>`. Records with no `cwd` or an unreadable start are counted
+  as `unlocated`, and project directories that cannot be listed as
+  `unreadableProjects`. More than 200 sessions is `blocked`; the workflow
+  handler allows a range 600 s instead of 120 s.
+  Candidate ids stay per snapshot, so rerunning an unchanged session is
+  `duplicate`; a session that grew since is a new snapshot.
 
 Fixtures: one de-identified window per host under
 `goldband-loop/test/fixtures/session-retro/`. Keys, numbers, booleans, enum

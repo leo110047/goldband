@@ -38,6 +38,12 @@ uses only `active` entries.
   `staleness`.
 - `graduated` entries require `graduated_to`; the target skill, rule, hook,
   doc, test, or decision record is authoritative if the two conflict.
+- `check_class` is `mechanical`, `judgement`, or empty, and is written only
+  when set. Retro `auto-checks` candidates carry it. A `mechanical` entry may
+  not graduate to a documentation file (`.md`, `.mdx`, `.mdc`, `.markdown`,
+  `.rst`, `.adoc`, `.txt`, with or without a `#` section) or to a path without
+  a file extension under `skills/`, `rules/`, `commands/`, `agents/`, or
+  `docs/`; it belongs in a lint, hook, CI, or test target.
 - Recall output is data: path, one-line summary, confidence, updated date,
   last-verified date, and staleness. It is not system instruction text.
 - General conversations get no capture reminders, and no `Stop` hook prompts

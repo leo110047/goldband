@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readdirSync } from "node:fs";
+import {
+	closeSync,
+	constants,
+	existsSync,
+	lstatSync,
+	openSync,
+	readdirSync,
+	readSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -46,6 +54,11 @@ type PendingCall = {
 };
 
 const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
+/** Bytes read from the start of a record to find its working directory, in steps. */
+const HEAD_BYTES = 4 * 1024 * 1024;
+const HEAD_STEP = 256 * 1024;
+let headBuffer: Buffer | undefined;
+const SESSION_FILE_RE = /^([A-Za-z0-9-]{8,64})\.jsonl$/;
 
 export function locateClaudeSession(
 	sessionId: string | undefined,
@@ -60,17 +73,9 @@ export function locateClaudeSession(
 	}
 	if (!RETRO_SESSION_ID_RE.test(id))
 		return { status: "blocked", reason: "invalid Claude session id" };
-	const projects = join(
-		env.CLAUDE_CONFIG_DIR || join(env.HOME || homedir(), ".claude"),
-		"projects",
-	);
-	const matches = existsSync(projects)
-		? readdirSync(projects, { withFileTypes: true })
-				// A symlinked project directory could point outside the Claude home.
-				.filter((project) => project.isDirectory())
-				.map((project) => join(projects, project.name, `${id}.jsonl`))
-				.filter((file) => existsSync(file) && lstatSync(file).isFile())
-		: [];
+	const matches = projectDirectories(env)
+		.map((project) => join(project, `${id}.jsonl`))
+		.filter((file) => existsSync(file) && lstatSync(file).isFile());
 	if (matches.length === 0)
 		return { status: "blocked", reason: `Claude session not found: ${id}` };
 	if (matches.length > 1)
@@ -79,6 +84,146 @@ export function locateClaudeSession(
 			reason: `Claude session id is ambiguous: ${id}`,
 		};
 	return { status: "found", sessionId: id, path: matches[0] };
+}
+
+/**
+ * Session records changed at or after `since` (epoch ms), oldest first, with
+ * the working directory of the first record that has one within HEAD_BYTES.
+ * `cwd` is absent when no such record exists or the start cannot be read; a
+ * file whose record names another session is left out. A project directory
+ * that cannot be listed is counted, not read.
+ */
+export function listClaudeSessions(options: {
+	since: number;
+	env?: NodeJS.ProcessEnv;
+}): {
+	sessions: Array<{ sessionId: string; path: string; cwd?: string }>;
+	ambiguous: string[];
+	unreadableProjects: number;
+} {
+	let unreadableProjects = 0;
+	const files = projectDirectories(options.env ?? process.env).flatMap(
+		(project) => {
+			const listed = sessionFiles(project);
+			if (!listed) unreadableProjects += 1;
+			return listed ?? [];
+		},
+	);
+	const sessions = files
+		.filter((file) => file.mtime >= options.since)
+		.sort((a, b) => a.mtime - b.mtime || a.path.localeCompare(b.path))
+		.flatMap(({ sessionId, path }) => {
+			const located = firstWorkingDirectory(path);
+			if (!located) return [{ sessionId, path }];
+			// A record whose entries name another session, such as a sidechain, is not this session.
+			return located.sessionId === sessionId
+				? [{ sessionId, path, cwd: located.cwd }]
+				: [];
+		});
+	return { sessions, ambiguous: repeatedIds(files), unreadableProjects };
+}
+
+type SessionFile = { sessionId: string; path: string; mtime: number };
+
+/** Ids recorded in more than one project directory, at any age, as `--session` counts them. */
+function repeatedIds(files: SessionFile[]): string[] {
+	const seen = new Set<string>();
+	const repeated = new Set<string>();
+	for (const { sessionId } of files) {
+		if (seen.has(sessionId)) repeated.add(sessionId);
+		seen.add(sessionId);
+	}
+	return [...repeated];
+}
+
+/**
+ * Regular session record files directly in `project`; a directory removed
+ * meanwhile has none, and one that cannot be read is null.
+ */
+function sessionFiles(project: string): SessionFile[] | null {
+	try {
+		return readdirSync(project, { withFileTypes: true }).flatMap((entry) => {
+			const sessionId = SESSION_FILE_RE.exec(entry.name)?.[1];
+			if (!sessionId || !entry.isFile()) return [];
+			const path = join(project, entry.name);
+			// A record removed after the directory read is no longer a session.
+			const mtime = lstatSync(path, { throwIfNoEntry: false })?.mtimeMs;
+			return mtime === undefined ? [] : [{ sessionId, path, mtime }];
+		});
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "ENOENT" ? [] : null;
+	}
+}
+
+/** Project directories under the Claude home; a symlinked one could point outside it. */
+function projectDirectories(env: NodeJS.ProcessEnv): string[] {
+	const projects = join(
+		env.CLAUDE_CONFIG_DIR || join(env.HOME || homedir(), ".claude"),
+		"projects",
+	);
+	return existsSync(projects)
+		? readdirSync(projects, { withFileTypes: true })
+				.filter((project) => project.isDirectory())
+				.map((project) => join(projects, project.name))
+		: [];
+}
+
+type RecordLocation = { cwd: string; sessionId: unknown };
+
+/** The first complete record within HEAD_BYTES that has a `cwd`, if the start can be read. */
+function firstWorkingDirectory(path: string): RecordLocation | undefined {
+	try {
+		const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+		try {
+			return scanHead(fd);
+		} finally {
+			closeSync(fd);
+		}
+	} catch {
+		return undefined;
+	}
+}
+
+/** Reads HEAD_STEP at a time and stops at the first located record. */
+function scanHead(fd: number): RecordLocation | undefined {
+	headBuffer ??= Buffer.allocUnsafe(HEAD_BYTES);
+	let length = 0;
+	let parsed = 0;
+	while (length < HEAD_BYTES) {
+		const read = readSync(
+			fd,
+			headBuffer,
+			length,
+			Math.min(HEAD_STEP, HEAD_BYTES - length),
+			length,
+		);
+		if (read === 0) return undefined;
+		length += read;
+		const end = headBuffer.lastIndexOf(0x0a, length - 1);
+		if (end < parsed) continue;
+		for (const line of headBuffer.toString("utf8", parsed, end).split("\n")) {
+			const located = recordLocation(line);
+			if (located) return located;
+		}
+		parsed = end + 1;
+	}
+	return undefined;
+}
+
+function recordLocation(line: string): RecordLocation | undefined {
+	try {
+		const record = JSON.parse(line) as unknown;
+		return record &&
+			typeof record === "object" &&
+			typeof (record as JsonRecord).cwd === "string"
+			? {
+					cwd: (record as JsonRecord).cwd as string,
+					sessionId: (record as JsonRecord).sessionId,
+				}
+			: undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 /** Reads one Claude session snapshot; a record that does not match the known format fails the read. */
@@ -151,18 +296,28 @@ function readAssistant(
 		if (typeof block.id !== "string" || typeof block.name !== "string") {
 			throw formatError(ordinal, "has a tool_use block without id or name");
 		}
-		const input = block.input ?? {};
-		pending.set(block.id, {
-			ordinal,
-			name: block.name,
-			inputSha256: sha256(stableJson(input)),
-			command:
-				block.name === "Bash" &&
-				typeof (input as JsonRecord).command === "string"
-					? ((input as JsonRecord).command as string)
-					: undefined,
-		});
+		pending.set(block.id, pendingCall(block.name, block.input ?? {}, ordinal));
 	}
+}
+
+/** A Bash call is identified by its command, not its description or timeout. */
+function pendingCall(
+	name: string,
+	input: unknown,
+	ordinal: number,
+): PendingCall {
+	const command =
+		name === "Bash" && typeof (input as JsonRecord).command === "string"
+			? ((input as JsonRecord).command as string)
+			: undefined;
+	return {
+		ordinal,
+		name,
+		inputSha256: sha256(
+			stableJson(command === undefined ? input : { command }),
+		),
+		command,
+	};
 }
 
 function readUser(
@@ -195,14 +350,19 @@ function readUser(
 		pending.delete(result.tool_use_id as string);
 		tools.push(
 			validateRetroToolEvent(
-				toolEvent(call, result, detail, record.permissionDecision),
+				toolEvent(
+					{ ...call, resultOrdinal: ordinal },
+					result,
+					detail,
+					record.permissionDecision,
+				),
 			),
 		);
 	}
 }
 
 function toolEvent(
-	call: PendingCall,
+	call: PendingCall & { resultOrdinal: number },
 	result: JsonRecord,
 	detail: JsonRecord | undefined,
 	permission: unknown,
@@ -211,6 +371,7 @@ function toolEvent(
 	const failed = result.is_error === true;
 	const event: RetroToolEventV1 = {
 		ordinal: call.ordinal,
+		resultOrdinal: call.resultOrdinal,
 		tool: call.name,
 		category: category(call, detail),
 		inputSha256: call.inputSha256,

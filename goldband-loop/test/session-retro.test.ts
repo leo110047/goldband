@@ -9,7 +9,7 @@ import { analyzeRetroSession, classifyShellCommand, isEmptyShellSearch } from ".
 import { locateClaudeSession, readClaudeSession } from "../lib/session-retro-claude";
 import type { RetroToolEventV1 } from "../lib/session-retro-evidence";
 import { readSessionSnapshot } from "../lib/session-retro-snapshot";
-import { runRetroEvidence, runRetroProposals } from "../lib/session-retro-runtime";
+import { runRetroEvidence, runRetroProposals, runRetroRange } from "../lib/session-retro-runtime";
 import { getWorkflow } from "../workflows/registry";
 import { runWorkflow } from "../workflows/runtime";
 
@@ -81,6 +81,51 @@ function sessionRecords(): Json[] {
 		result("t10", [{ type: "text", text: "mcp out" }]),
 		call("m10", "t11", "Bash", { command: "sed -i s/a/b/ x" }),
 		result("t11", "", { toolUseResult: { stdout: "", stderr: "", bashEditDiff: { changedFiles: ["x"], files: [], moreFiles: 0 } } }),
+	];
+}
+
+/**
+ * Commands around edits. Ordinals: `npm test` fails at 1 and passes at 5
+ * after the edit at 3; `npm run lint` fails at 7 and 9 and never passes; `gh`
+ * exits 4 at 11; WebFetch fails without an exit code at 13; an empty `rg` at
+ * 15; a permission block at 17 and a hook block at 19; the last edit at 21;
+ * then `npm test` at 23 and `curl` failing at 25 and passing at 27 with no
+ * edit between.
+ */
+function checkRecords(): Json[] {
+	const bash = (message: string, id: string, command: string) => call(message, id, "Bash", { command });
+	const exit = (id: string, code: number) => result(id, `Exit code ${code}\n${CANARY.file}`, { toolUseResult: { stdout: "", stderr: "" } }, true);
+	const ok = (id: string) => result(id, "ok", { toolUseResult: { stdout: "ok", stderr: "" } });
+	return [
+		{ type: "user", sessionId: SESSION, message: { role: "user", content: CANARY.prompt } },
+		bash("m1", "c1", "npm test"),
+		exit("c1", 1),
+		call("m2", "c2", "Edit", { file_path: "/repo/a.ts", old_string: "a", new_string: "b" }),
+		result("c2", "ok"),
+		bash("m3", "c3", "npm test"),
+		ok("c3"),
+		bash("m4", "c4", "npm run lint"),
+		exit("c4", 2),
+		bash("m5", "c5", "npm run lint"),
+		exit("c5", 2),
+		bash("m6", "c6", "gh api repos/x"),
+		exit("c6", 4),
+		call("m7", "c7", "WebFetch", { url: "https://example.invalid/doc" }),
+		result("c7", "Request failed with status 403", {}, true),
+		bash("m8", "c8", "rg nothing src"),
+		exit("c8", 1),
+		call("m9", "c9", "Read", { file_path: "/repo/.env" }),
+		result("c9", "Permission denied by user", { permissionDecision: { decision: "reject" } }, true),
+		bash("m10", "c10", "./deploy.sh"),
+		result("c10", "PreToolUse:Bash hook denied", { permissionDecision: { decision: "reject", source: "hook" } }, true),
+		call("m11", "c11", "Write", { file_path: "/repo/b.ts", content: CANARY.file }),
+		result("c11", "ok"),
+		bash("m12", "c12", "npm test"),
+		ok("c12"),
+		bash("m13", "c13", "curl -fsS https://example.invalid"),
+		exit("c13", 7),
+		bash("m14", "c14", "curl -fsS https://example.invalid"),
+		ok("c14"),
 	];
 }
 
@@ -341,12 +386,12 @@ describe("measured retro evidence", () => {
 			...(item.tool ? { tool: item.tool } : {}),
 		}));
 
-	test("covers two facets and marks the other three unavailable", () => {
+	test("covers four facets and marks ineffective instructions unavailable", () => {
 		expect(report().report.facets).toEqual({
 			"file-search": { status: "covered" },
-			"auto-checks": { status: "unavailable", reason: "not-implemented" },
+			"auto-checks": { status: "covered" },
 			"tool-cost": { status: "covered" },
-			"info-access": { status: "unavailable", reason: "not-implemented" },
+			"info-access": { status: "covered" },
 			"ineffective-instructions": { status: "unavailable", reason: "not-implemented" },
 		});
 		expect(report().report.evidence.every((item) => item.grade === "measured")).toBe(true);
@@ -366,6 +411,7 @@ describe("measured retro evidence", () => {
 		const snapshot = { host: "claude" as const, sessionId: SESSION, byteLength: 1, recordCount: 100, sha256: "c".repeat(64) };
 		const event = (ordinal: number, tool: string, category: RetroToolEventV1["category"], extra = {}): RetroToolEventV1 => ({
 			ordinal,
+			resultOrdinal: ordinal,
 			tool,
 			category,
 			inputSha256: String(ordinal).padStart(64, "0"),
@@ -393,6 +439,7 @@ describe("measured retro evidence", () => {
 			for (let call = 0; call < group + 2; call += 1) {
 				tools.push({
 					ordinal: tools.length,
+					resultOrdinal: tools.length,
 					tool: "Grep",
 					category: "search",
 					inputSha256: String(group).padStart(64, "0"),
@@ -421,6 +468,484 @@ describe("measured retro evidence", () => {
 		expect(pick(value, "output-by-tool")[0]).toMatchObject({ tool: "Bash", unit: "bytes" });
 		expect(pick(value, "session-input-tokens")).toEqual([{ value: 100, unit: "tokens", refs: [1, 21] }]);
 		expect(pick(value, "session-output-tokens")).toEqual([{ value: 30, unit: "tokens", refs: [1, 21] }]);
+	});
+});
+
+describe("auto-checks and info-access evidence", () => {
+	function checkReport() {
+		const home = tempHome();
+		return analyzeRetroSession(readClaudeSession(writeSession(home, checkRecords()), SESSION));
+	}
+	const pick = (value: ReturnType<typeof checkReport>, rule: string) =>
+		value.evidence.filter((item) => item.rule === rule).map((item) => ({
+			facet: item.facet,
+			value: item.metric?.value,
+			refs: item.refs.map((ref) => Number(ref.slice(ref.lastIndexOf("#") + 1))),
+			...(item.tool ? { tool: item.tool } : {}),
+			...(item.exitCode !== undefined ? { exitCode: item.exitCode } : {}),
+		}));
+
+	test("orders commands and exit codes against edits", () => {
+		const value = checkReport();
+		expect(pick(value, "last-edit")).toEqual([{ facet: "auto-checks", value: 2, refs: [21] }]);
+		expect(pick(value, "commands-after-last-edit")).toEqual([{ facet: "auto-checks", value: 3, refs: [23, 25, 27] }]);
+		expect(pick(value, "failed-then-passed")).toEqual([{ facet: "auto-checks", value: 1, refs: [1, 5], tool: "Bash", exitCode: 1 }]);
+		expect(pick(value, "failed-then-passed-groups")).toEqual([{ facet: "auto-checks", value: 1, refs: [1] }]);
+		expect(pick(value, "unresolved-failure")).toEqual([
+			{ facet: "auto-checks", value: 2, refs: [7, 9], tool: "Bash", exitCode: 2 },
+			{ facet: "auto-checks", value: 1, refs: [11], tool: "Bash", exitCode: 4 },
+		]);
+		expect(pick(value, "unresolved-failure-groups")).toEqual([{ facet: "auto-checks", value: 2, refs: [7, 11] }]);
+	});
+
+	test("counts a command as after an edit only when it starts after the edit's result", () => {
+		// The retry and the edit are issued in one message; the retry passes before the edit's result.
+		const bashOk = (id: string) => result(id, "ok", { toolUseResult: { stdout: "ok", stderr: "" } });
+		const records: Json[] = [
+			{ type: "user", sessionId: SESSION, message: { role: "user", content: "go" } },
+			call("m1", "p1", "Bash", { command: "npm test" }),
+			result("p1", "Exit code 1", { toolUseResult: { stdout: "", stderr: "" } }, true),
+			{
+				type: "assistant",
+				sessionId: SESSION,
+				message: {
+					id: "m2",
+					role: "assistant",
+					content: [
+						{ type: "tool_use", id: "p2", name: "Edit", input: { file_path: "/repo/a.ts", old_string: "a", new_string: "b" } },
+						{ type: "tool_use", id: "p3", name: "Bash", input: { command: "npm test" } },
+					],
+				},
+			},
+			bashOk("p3"),
+			result("p2", "ok"),
+		];
+		const value = analyzeRetroSession(readClaudeSession(writeSession(tempHome(), records), SESSION));
+		expect(pick(value, "failed-then-passed")).toEqual([]);
+		expect(pick(value, "commands-after-last-edit")).toEqual([{ facet: "auto-checks", value: 0, refs: [3] }]);
+		// The same retry failing before the edit's result leaves the run open until a later pass.
+		const failedRetry = [...records.slice(0, 4), result("p3", "Exit code 1", { toolUseResult: { stdout: "", stderr: "" } }, true), records[5]];
+		const later = analyzeRetroSession(
+			readClaudeSession(writeSession(tempHome(), [...failedRetry, call("m3", "p4", "Bash", { command: "npm test" }), bashOk("p4")]), SESSION),
+		);
+		expect(pick(later, "failed-then-passed")).toEqual([{ facet: "auto-checks", value: 2, refs: [1, 3, 6], tool: "Bash", exitCode: 1 }]);
+		expect(pick(later, "commands-after-last-edit")).toEqual([{ facet: "auto-checks", value: 1, refs: [6] }]);
+	});
+
+	test("identifies a Bash call by its command, not its description", () => {
+		const records: Json[] = [
+			{ type: "user", sessionId: SESSION, message: { role: "user", content: "go" } },
+			call("m1", "d1", "Bash", { command: "bun test", description: "Run tests" }),
+			result("d1", "Exit code 1", { toolUseResult: { stdout: "", stderr: "" } }, true),
+			call("m2", "d2", "Edit", { file_path: "/repo/a.ts", old_string: "a", new_string: "b" }),
+			result("d2", "ok"),
+			call("m3", "d3", "Bash", { command: "bun test", description: "Re-run tests after the fix", timeout: 60000 }),
+			result("d3", "ok", { toolUseResult: { stdout: "ok", stderr: "" } }),
+		];
+		const value = analyzeRetroSession(readClaudeSession(writeSession(tempHome(), records), SESSION));
+		expect(pick(value, "failed-then-passed")).toEqual([{ facet: "auto-checks", value: 1, refs: [1, 5], tool: "Bash", exitCode: 1 }]);
+		expect(pick(value, "unresolved-failure")).toEqual([]);
+	});
+
+	test("lists at most 20 failed-call tools and counts every tool", () => {
+		const snapshot = { host: "claude" as const, sessionId: SESSION, byteLength: 1, recordCount: 100, sha256: "c".repeat(64) };
+		const tools: RetroToolEventV1[] = Array.from({ length: 25 }, (_, n) => ({
+			ordinal: n,
+			resultOrdinal: n,
+			tool: `mcp__s__t${n}`,
+			category: "mcp",
+			inputSha256: String(n).padStart(64, "0"),
+			outputBytes: 1,
+			failed: true,
+		}));
+		const value = analyzeRetroSession({ snapshot, tools });
+		expect(pick(value, "failed-call")).toHaveLength(20);
+		expect(pick(value, "failed-call-groups")).toEqual([{ facet: "info-access", value: 25, refs: Array.from({ length: 20 }, (_, n) => n) }]);
+	});
+
+	test("cites the last edit when no command follows it", () => {
+		const records = checkRecords().slice(0, 23);
+		const value = analyzeRetroSession(readClaudeSession(writeSession(tempHome(), records), SESSION));
+		expect(pick(value, "commands-after-last-edit")).toEqual([{ facet: "auto-checks", value: 0, refs: [21] }]);
+		expect(value.evidence.some((item) => item.rule === "last-edit")).toBe(true);
+		const noEdits = analyzeRetroSession(readClaudeSession(writeSession(tempHome(), records.slice(0, 3)), SESSION));
+		expect(noEdits.evidence.filter((item) => item.facet === "auto-checks").map((item) => item.rule)).toEqual([
+			"unresolved-failure",
+			"unresolved-failure-groups",
+		]);
+	});
+
+	test("counts failed, non-zero, and blocked calls without an empty search", () => {
+		const value = checkReport();
+		expect(pick(value, "nonzero-exit")).toEqual([{ facet: "info-access", value: 5, refs: [1, 7, 9, 11, 25] }]);
+		expect(pick(value, "exit-code")).toEqual([
+			{ facet: "info-access", value: 2, refs: [7, 9], exitCode: 2 },
+			{ facet: "info-access", value: 1, refs: [1], exitCode: 1 },
+			{ facet: "info-access", value: 1, refs: [11], exitCode: 4 },
+			{ facet: "info-access", value: 1, refs: [25], exitCode: 7 },
+		]);
+		expect(pick(value, "failed-call")).toEqual([{ facet: "info-access", value: 1, refs: [13], tool: "WebFetch" }]);
+		expect(pick(value, "permission-blocked")).toEqual([{ facet: "info-access", value: 1, refs: [17] }]);
+		expect(pick(value, "hook-blocked")).toEqual([{ facet: "info-access", value: 1, refs: [19] }]);
+		expect(pick(value, "repeated-failure")).toEqual([{ facet: "info-access", value: 2, refs: [7, 9], tool: "Bash" }]);
+		expect(pick(value, "repeated-failure-groups")).toEqual([{ facet: "info-access", value: 1, refs: [7] }]);
+	});
+
+	test("keeps session text out of the persisted report", () => {
+		const home = tempHome();
+		writeSession(home, checkRecords());
+		const evidence = runRetroEvidence({ host: "claude", sessionId: SESSION, stateRoot: path.join(home, ".goldband"), env: env(home) });
+		if (evidence.status !== "completed") throw new Error(evidence.reason);
+		const persisted = fs.readFileSync(evidence.reportPath, "utf8");
+		for (const text of [...Object.values(CANARY), "npm test", "example.invalid", "403"]) expect(persisted).not.toContain(text);
+	});
+});
+
+describe("auto-checks and info-access proposals", () => {
+	function setup() {
+		const home = tempHome();
+		writeSession(home, checkRecords());
+		const stateRoot = path.join(home, ".goldband");
+		const evidence = runRetroEvidence({ host: "claude", sessionId: SESSION, stateRoot, env: env(home) });
+		if (evidence.status !== "completed") throw new Error(evidence.reason);
+		const snapshot = evidence.report.snapshots[0];
+		const key = `${snapshot.sessionId}@${snapshot.sha256}`;
+		const knowledge = path.join(stateRoot, "knowledge");
+		const submit = (proposals: Json[]) => {
+			const outcome = runRetroProposals(
+				{ sessionId: snapshot.sessionId, sha256: snapshot.sha256, proposals },
+				{ stateRoot, knowledgeRoot: knowledge, cwd: home },
+			);
+			if (outcome.status !== "completed") throw new Error(outcome.reason);
+			return outcome.outcomes;
+		};
+		const check = (overrides: Json = {}) =>
+			proposal(evidence.report, {
+				facet: "auto-checks",
+				rule: "lint-before-commit",
+				target: "lint",
+				checkClass: "mechanical",
+				estimatedBytes: undefined,
+				refs: [`${key}#7`, `${key}#9`],
+				evidence: [{ facet: "auto-checks", grade: "inferred", rule: "lint-not-run-after-edit", refs: [`${key}#7`] }],
+				...overrides,
+			});
+		return { home, key, knowledge, submit, check };
+	}
+
+	test("limits auto-checks targets by error class and records the class", () => {
+		const { home, knowledge, submit, check } = setup();
+		const outcomes = submit([
+			check(),
+			check({ rule: "case-a", checkClass: undefined }),
+			check({ rule: "case-b", target: "semantic-review-criteria" }),
+			check({ rule: "case-c", checkClass: "judgement", target: "test" }),
+			check({ rule: "case-d", checkClass: "advisory" }),
+			check({ rule: "case-e", checkClass: "toString" }),
+			check({ rule: "review-error-shape", checkClass: "judgement", target: "semantic-review-criteria" }),
+		]);
+		expect(outcomes.map(({ rule, status, reason }) => ({ rule, status, reason }))).toEqual([
+			{ rule: "lint-before-commit", status: "written", reason: undefined },
+			{ rule: "case-a", status: "rejected", reason: "checkClass must be mechanical or judgement" },
+			{ rule: "case-b", status: "rejected", reason: "target for a mechanical error must be one of: lint, hook, ci, test" },
+			{ rule: "case-c", status: "rejected", reason: "target for a judgement error must be one of: semantic-review-criteria, repo-review-standard" },
+			{ rule: "case-d", status: "rejected", reason: "checkClass must be mechanical or judgement" },
+			{ rule: "case-e", status: "rejected", reason: "checkClass must be mechanical or judgement" },
+			{ rule: "review-error-shape", status: "written", reason: undefined },
+		]);
+		const mechanical = parseKnowledgeFile(path.join(knowledge, "entries", `${outcomes[0].id}.md`));
+		expect(mechanical).toMatchObject({ check_class: "mechanical", source: "retro", trust_level: "inferred" });
+		expect(mechanical.body).toContain("- 錯誤分類（推論）：mechanical");
+		expect(mechanical.body).toContain("- unresolved-failure: 2 count (Bash)，#7, #9");
+		expect(parseKnowledgeFile(path.join(knowledge, "entries", `${outcomes[6].id}.md`)).check_class).toBe("judgement");
+
+		const graduate = (to: string) =>
+			spawnSync("bun", [path.join(ROOT, "bin", "goldband-knowledge.ts"), "review", "graduate", "--id", outcomes[0].id ?? "", "--to", to], {
+				cwd: home,
+				env: env(home),
+				encoding: "utf8",
+			});
+		expect(graduate("rules/semantic-review-criteria.md")).toMatchObject({
+			status: 1,
+			stderr: expect.stringContaining("mechanical knowledge graduates only to a lint, hook, CI, or test target"),
+		});
+		expect(graduate(".github/workflows/lint.yml").status).toBe(0);
+	});
+
+	test("rejects a check class outside auto-checks and marks access proposals for security review", () => {
+		const { key, knowledge, submit } = setup();
+		const access = (overrides: Json = {}) =>
+			proposal({ snapshots: [{ sessionId: SESSION, sha256: key.split("@")[1] }] }, {
+				facet: "info-access",
+				rule: "docs-read-access",
+				target: "read-only-permission",
+				estimatedBytes: undefined,
+				refs: [`${key}#13`],
+				evidence: [{ facet: "info-access", grade: "inferred", rule: "auth-failure", refs: [`${key}#13`] }],
+				...overrides,
+			});
+		const outcomes = submit([
+			access(),
+			access({ rule: "case-a", checkClass: "mechanical" }),
+			access({ rule: "case-b", target: "lint" }),
+			proposal({ snapshots: [{ sessionId: SESSION, sha256: key.split("@")[1] }] }, { rule: "case-c", checkClass: "judgement" }),
+		]);
+		expect(outcomes.map(({ status, reason }) => ({ status, reason }))).toEqual([
+			{ status: "written", reason: undefined },
+			{ status: "rejected", reason: "checkClass applies only to auto-checks proposals" },
+			{ status: "rejected", reason: "target for info-access must be one of: read-only-permission, access-guidance" },
+			{ status: "rejected", reason: "checkClass applies only to auto-checks proposals" },
+		]);
+		const entry = parseKnowledgeFile(path.join(knowledge, "entries", `${outcomes[0].id}.md`));
+		expect(entry.check_class).toBe("");
+		expect(entry.body).toContain("- 需安全審查：只提議唯讀存取，不授予寫入權限或密鑰");
+		expect(entry.body).toContain("- failed-call: 1 count (WebFetch)，#13");
+		expect(fs.readFileSync(path.join(knowledge, "entries", `${outcomes[0].id}.md`), "utf8")).not.toContain("check_class");
+	});
+});
+
+describe("retro range", () => {
+	const DAY = 24 * 60 * 60 * 1000;
+	const NOW = Date.UTC(2026, 9, 26, 12);
+
+	function rangeHome() {
+		const home = tempHome();
+		const repo = path.join(home, "repo");
+		fs.mkdirSync(path.join(repo, "sub"), { recursive: true });
+		expect(spawnSync("git", ["init", "-q", repo]).status).toBe(0);
+		return { home, repo: fs.realpathSync(repo) };
+	}
+
+	/** Writes a session record in its own project directory, last modified `age` days before NOW. */
+	function rangeSession(home: string, id: string, cwd: string | undefined, age: number, records?: Json[]): string {
+		const dir = path.join(home, ".claude", "projects", `-p-${id.slice(0, 8)}`);
+		fs.mkdirSync(dir, { recursive: true });
+		const file = path.join(dir, `${id}.jsonl`);
+		const body = (records ?? sessionRecords()).map((record) => JSON.stringify({ ...record, sessionId: id }));
+		const first = JSON.stringify({ type: "summary", summary: "x".repeat(70_000) });
+		const located = cwd === undefined ? [] : [JSON.stringify({ type: "user", sessionId: id, cwd, message: { role: "user", content: "hi" } })];
+		fs.writeFileSync(file, `${[first, ...located, ...body].join("\n")}\n`);
+		const time = new Date(NOW - age * DAY);
+		fs.utimesSync(file, time, time);
+		return file;
+	}
+
+	const id = (n: number) => `${String(n).padStart(8, "0")}-2222-4333-8444-555555555555`;
+
+	test("analyzes each repository session changed in the range under its own snapshot", () => {
+		const { home, repo } = rangeHome();
+		rangeSession(home, id(1), repo, 1);
+		rangeSession(home, id(2), path.join(repo, "sub"), 2);
+		rangeSession(home, id(3), path.join(home, "elsewhere"), 1);
+		rangeSession(home, id(4), `${repo}-sibling`, 1);
+		rangeSession(home, id(5), repo, 10);
+		rangeSession(home, id(6), undefined, 1);
+		const subagents = path.join(home, ".claude", "projects", "-p-00000001", id(1), "subagents");
+		fs.mkdirSync(subagents, { recursive: true });
+		fs.writeFileSync(path.join(subagents, `${id(7)}.jsonl`), "{}\n");
+		const stateRoot = path.join(home, ".goldband");
+		const run = () => runRetroRange({ host: "claude", days: 7, cwd: path.join(repo, "sub"), stateRoot, env: env(home), now: NOW });
+
+		const first = run();
+		if (first.status !== "completed") throw new Error(first.reason);
+		expect(first.unlocated).toBe(1);
+		expect(first.sessions.map((session) => [session.sessionId, session.status])).toEqual([
+			[id(2), "completed"],
+			[id(1), "completed"],
+		]);
+		const [older, newer] = first.sessions;
+		if (older.status !== "completed" || newer.status !== "completed") throw new Error("range session failed");
+		expect(older.sha256).not.toBe(newer.sha256);
+		expect(path.basename(older.reportPath)).toBe(`${id(2)}@${older.sha256}.json`);
+		const report = JSON.parse(fs.readFileSync(older.reportPath, "utf8"));
+		expect(report.snapshots).toEqual([expect.objectContaining({ sessionId: id(2), sha256: older.sha256 })]);
+		expect(report.evidence.length).toBe(older.evidence);
+
+		const options = { stateRoot, knowledgeRoot: path.join(stateRoot, "knowledge"), cwd: home };
+		const submit = () =>
+			runRetroProposals(
+				{ sessionId: older.sessionId, sha256: older.sha256, proposals: [proposal(report)] },
+				options,
+			);
+		expect(submit()).toMatchObject({ outcomes: [{ status: "written" }] });
+		const second = run();
+		expect(second).toEqual(first);
+		expect(submit()).toMatchObject({ outcomes: [{ status: "duplicate" }] });
+	});
+
+	test("includes linked worktrees of the repository", () => {
+		const { home, repo } = rangeHome();
+		const git = (...args: string[]) =>
+			spawnSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t.invalid", "-c", "core.hooksPath=/dev/null", ...args], {
+				encoding: "utf8",
+			});
+		expect(git("commit", "-q", "--allow-empty", "-m", "init").status).toBe(0);
+		// A newline in a worktree path survives only NUL-separated listing.
+		const linked = path.join(home, "linked\nworktree");
+		const nested = path.join(repo, ".claude", "worktrees", "x");
+		expect(git("worktree", "add", "-q", "--detach", linked).status).toBe(0);
+		expect(git("worktree", "add", "-q", "--detach", nested).status).toBe(0);
+		rangeSession(home, id(1), repo, 1);
+		rangeSession(home, id(2), fs.realpathSync(linked), 1);
+		rangeSession(home, id(3), fs.realpathSync(nested), 1);
+		const run = (cwd: string) => runRetroRange({ host: "claude", days: 3, cwd, stateRoot: path.join(home, ".goldband"), env: env(home), now: NOW });
+		for (const cwd of [repo, linked]) {
+			const result = run(cwd);
+			if (result.status !== "completed") throw new Error(result.reason);
+			expect(result.sessions.map((session) => session.sessionId).sort()).toEqual([id(1), id(2), id(3)]);
+		}
+	});
+
+	test("reports a duplicated id once as ambiguous and leaves out records of another session", () => {
+		const { home, repo } = rangeHome();
+		rangeSession(home, id(1), repo, 1);
+		const copy = path.join(home, ".claude", "projects", "-copy");
+		fs.mkdirSync(copy);
+		fs.copyFileSync(rangeSession(home, id(2), repo, 1), path.join(copy, `${id(2)}.jsonl`));
+		// The other copy of id 3 is older than the range and still makes the id ambiguous.
+		const old = path.join(copy, `${id(3)}.jsonl`);
+		fs.copyFileSync(rangeSession(home, id(3), repo, 1), old);
+		fs.utimesSync(old, new Date(Date.now() - 30 * DAY), new Date(Date.now() - 30 * DAY));
+		// A sidechain record named for an agent carries its parent's session id.
+		const sidechain = path.join(home, ".claude", "projects", "-p-00000001", "agent-a1b2c3d4.jsonl");
+		fs.writeFileSync(sidechain, `${JSON.stringify({ type: "user", sessionId: id(1), isSidechain: true, cwd: repo, message: { role: "user", content: "x" } })}\n`);
+		const result = runRetroRange({ host: "claude", days: 3, cwd: repo, stateRoot: path.join(home, ".goldband"), env: env(home), now: Date.now() });
+		if (result.status !== "completed") throw new Error(result.reason);
+		expect(result.sessions.map(({ sessionId, status }) => [sessionId, status])).toEqual([
+			[id(1), "completed"],
+			[id(2), "failed"],
+			[id(3), "failed"],
+		]);
+		expect(result.sessions[1]).toMatchObject({ reason: `Claude session id is ambiguous: ${id(2)}` });
+		expect(result.sessions[2]).toMatchObject({ reason: `Claude session id is ambiguous: ${id(3)}` });
+	});
+
+	test("finds a working directory past the first read step", () => {
+		const { home, repo } = rangeHome();
+		const file = rangeSession(home, id(1), repo, 1);
+		const lines = fs.readFileSync(file, "utf8").split("\n");
+		lines[0] = JSON.stringify({ type: "summary", summary: "x".repeat(600_000) });
+		fs.writeFileSync(file, lines.join("\n"));
+		const time = new Date(NOW - DAY);
+		fs.utimesSync(file, time, time);
+		const result = runRetroRange({ host: "claude", days: 3, cwd: repo, stateRoot: path.join(home, ".goldband"), env: env(home), now: NOW });
+		expect(result).toMatchObject({ status: "completed", sessions: [{ sessionId: id(1), status: "completed" }], unlocated: 0 });
+	});
+
+	test("reports a malformed session as failed and keeps the others", () => {
+		const { home, repo } = rangeHome();
+		rangeSession(home, id(1), repo, 1);
+		rangeSession(home, id(2), repo, 1, [{ type: "assistant", sessionId: id(2), message: { content: "x" } }, { nope: true }]);
+		const result = runRetroRange({ host: "claude", days: 3, cwd: repo, stateRoot: path.join(home, ".goldband"), env: env(home), now: NOW });
+		if (result.status !== "completed") throw new Error(result.reason);
+		expect(result.sessions.map((session) => session.status).sort()).toEqual(["completed", "failed"]);
+		expect(result.sessions.find((session) => session.status === "failed")).toEqual({
+			sessionId: id(2),
+			status: "failed",
+			reason: expect.stringContaining("has no type"),
+		});
+	});
+
+	test("excludes nested worktrees and repositories and counts unreadable records as unlocated", () => {
+		const { home, repo } = rangeHome();
+		const worktree = path.join(repo, ".worktrees", "feature");
+		const nested = path.join(repo, "vendor", "lib");
+		fs.mkdirSync(path.join(worktree, "src"), { recursive: true });
+		fs.writeFileSync(path.join(worktree, ".git"), "gitdir: ../../.git/worktrees/feature\n");
+		fs.mkdirSync(path.join(nested, ".git"), { recursive: true });
+		rangeSession(home, id(1), repo, 1);
+		rangeSession(home, id(2), path.join(worktree, "src"), 1);
+		rangeSession(home, id(3), nested, 1);
+		rangeSession(home, id(4), path.join(repo, "removed", "dir"), 1);
+		rangeSession(home, id(6), "removed", 1);
+		fs.chmodSync(rangeSession(home, id(5), repo, 1), 0o000);
+		const locked = path.join(home, ".claude", "projects", "-locked");
+		fs.mkdirSync(locked);
+		fs.chmodSync(locked, 0o000);
+		// Listable but not searchable: the directory reads, each entry's status does not.
+		const listOnly = path.join(home, ".claude", "projects", "-list-only");
+		fs.mkdirSync(listOnly);
+		fs.writeFileSync(path.join(listOnly, `${id(9)}.jsonl`), "{}\n");
+		fs.chmodSync(listOnly, 0o444);
+		try {
+			// Run from a subdirectory without `.git`, where a relative cwd once never reached the root.
+			const result = runRetroRange({ host: "claude", days: 3, cwd: path.join(repo, "sub"), stateRoot: path.join(home, ".goldband"), env: env(home), now: NOW });
+			if (result.status !== "completed") throw new Error(result.reason);
+			expect(result.sessions.map((session) => [session.sessionId, session.status])).toEqual([
+				[id(1), "completed"],
+				[id(4), "completed"],
+			]);
+			expect(result.unlocated).toBe(1);
+			expect(result.unreadableProjects).toBe(2);
+			// A relative cwd resolves against the process directory, so run the CLI inside the repository.
+			const cli = spawnSync("bun", [path.join(ROOT, "bin", "goldband-retro.ts"), "evidence", "--host", "claude", "--days", "3"], {
+				cwd: path.join(repo, "sub"),
+				env: env(home),
+				encoding: "utf8",
+				timeout: 20_000,
+			});
+			expect(cli.status).toBe(0);
+			expect(JSON.parse(cli.stdout).sessions.map((session: Json) => session.sessionId)).not.toContain(id(6));
+		} finally {
+			fs.chmodSync(path.join(home, ".claude", "projects", `-p-${id(5).slice(0, 8)}`, `${id(5)}.jsonl`), 0o600);
+			fs.chmodSync(locked, 0o700);
+			fs.chmodSync(listOnly, 0o700);
+		}
+	});
+
+	test("keeps a failed session's reason in the workflow output without its record path", async () => {
+		const { home, repo } = rangeHome();
+		rangeSession(home, id(1), repo, 0);
+		const broken = rangeSession(home, id(2), repo, 0, [{ type: "assistant", sessionId: id(2), message: { content: "x" } }, { nope: true }]);
+		const goldbandHome = path.join(home, ".goldband");
+		const inputFile = path.join(home, "input.json");
+		fs.writeFileSync(inputFile, JSON.stringify({ mode: "evidence", days: 1 }));
+		const saved = process.env.CLAUDE_CONFIG_DIR;
+		process.env.CLAUDE_CONFIG_DIR = path.join(home, ".claude");
+		try {
+			const run = await runWorkflow(getWorkflow("context/retro"), { mode: "real", host: "claude", cwd: repo, goldbandHome, inputFile });
+			const output = run.output as { sessions: Json[]; evidence: string[] };
+			expect(output.sessions.find((session) => session.sessionId === id(2))).toMatchObject({
+				status: "failed",
+				reason: expect.stringContaining("has no type"),
+			});
+			expect(output.evidence).toContain(`${id(2)}: failed: claude session record 3 has no type`);
+		} finally {
+			if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+			else process.env.CLAUDE_CONFIG_DIR = saved;
+		}
+		for (const file of filesUnder(goldbandHome)) {
+			expect({ file, leaked: fs.readFileSync(file, "utf8").includes(broken) }).toEqual({ file, leaked: false });
+		}
+	});
+
+	test("bounds the range and its session count", () => {
+		const { home, repo } = rangeHome();
+		const options = { host: "claude", cwd: repo, stateRoot: path.join(home, ".goldband"), env: env(home), now: NOW };
+		expect(runRetroRange({ ...options, days: 1 })).toEqual({ status: "completed", days: 1, sessions: [], unlocated: 0, unreadableProjects: 0 });
+		for (const days of [0, 91, 1.5]) expect(() => runRetroRange({ ...options, days })).toThrow("days must be an integer from 1 to 90");
+		expect(runRetroRange({ ...options, host: "codex", days: 1 })).toMatchObject({ status: "blocked" });
+		for (let n = 1; n <= 201; n += 1) rangeSession(home, id(n), repo, 0, []);
+		expect(runRetroRange({ ...options, days: 1 })).toEqual({
+			status: "blocked",
+			reason: "201 sessions in the last 1 days exceed 200; use fewer days",
+		});
+	});
+
+	test("accepts --days only as a bounded integer without --session", () => {
+		const { home, repo } = rangeHome();
+		const cli = (args: string[]) =>
+			spawnSync("bun", [path.join(ROOT, "bin", "goldband-retro.ts"), "evidence", "--host", "claude", ...args], {
+				cwd: repo,
+				env: env(home),
+				encoding: "utf8",
+			});
+		for (const args of [["--days", "0"], ["--days", "91"], ["--days", "1.5"], ["--days", "3", "--session", SESSION]]) {
+			expect({ args, status: cli(args).status }).toEqual({ args, status: 2 });
+		}
+		const run = cli(["--days", "3"]);
+		expect(run.status).toBe(0);
+		expect(JSON.parse(run.stdout)).toEqual({ status: "completed", days: 3, sessions: [], unlocated: 0, unreadableProjects: 0 });
 	});
 });
 
@@ -485,7 +1010,7 @@ describe("retro owner runtime", () => {
 		const snapshot = evidence.report.snapshots[0];
 		const key = `${snapshot.sessionId}@${snapshot.sha256}`;
 		const cases: [Json, string][] = [
-			[{ facet: "auto-checks", target: "lint" }, "facet is not covered"],
+			[{ facet: "ineffective-instructions", target: "lint" }, "facet is not covered"],
 			[{ target: "rules" }, "target for file-search must be one of"],
 			[{ estimatedBytes: undefined }, "estimatedBytes must be a positive integer"],
 			[{ evidence: [{ facet: "file-search", grade: "measured", rule: "x-y", refs: [`${key}#1`] }] }, "must be inferred"],
@@ -577,7 +1102,8 @@ describe("goldband-retro CLI", () => {
 
 	test("runs the typed workflow owner in real mode through the CLI", async () => {
 		const home = tempHome();
-		const recordPath = writeSession(home, sessionRecords());
+		const [first, ...rest] = sessionRecords();
+		const recordPath = writeSession(home, [{ ...first, cwd: fs.realpathSync(home) }, ...rest]);
 		const goldbandHome = path.join(home, ".goldband");
 		const saved = { dir: process.env.CLAUDE_CONFIG_DIR, id: process.env.CLAUDE_CODE_SESSION_ID };
 		process.env.CLAUDE_CONFIG_DIR = path.join(home, ".claude");
@@ -598,6 +1124,18 @@ describe("goldband-retro CLI", () => {
 				proposals: [proposal(report)],
 			});
 			expect(proposed.output).toMatchObject({ status: "completed", outcomes: [{ status: "written" }] });
+			const range = await run({ mode: "evidence", days: 2 });
+			expect(range.output).toMatchObject({
+				status: "completed",
+				days: 2,
+				unlocated: 0,
+				sessions: [{ sessionId: SESSION, status: "completed", sha256: report.snapshots[0].sha256 }],
+				evidence: [
+					`${SESSION}@${report.snapshots[0].sha256}: evidence=${(evidence.output as { report: { evidence: unknown[] } }).report.evidence.length}`,
+					"unlocated=0",
+					"unreadableProjects=0",
+				],
+			});
 			const missing = await run({ mode: "evidence", sessionId: "00000000-0000-4000-8000-000000000000" });
 			expect(missing.output).toMatchObject({ status: "blocked" });
 			await expect(runWorkflow(getWorkflow("context/retro"), { mode: "real", cwd: home, goldbandHome })).rejects.toThrow(

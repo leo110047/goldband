@@ -639,11 +639,15 @@ function runContextRetroEvidence(
 	input: Record<string, unknown>,
 ): OwnedRuntimeResult {
 	const sessionId = optionalString(input.sessionId, "sessionId");
+	const days = optionalPositiveInteger(input.days, "days");
 	// runWorkflow admits real mode only with an explicit host.
 	const args = ["evidence", "--host", ctx.options.host ?? "mock"];
 	if (sessionId) args.push("--session", sessionId);
-	const result = retroCommand(ctx, "evidence", args);
+	if (days) args.push("--days", String(days));
+	// A range reads up to 200 sessions, so it gets a longer limit than one session.
+	const result = retroCommand(ctx, "evidence", args, days ? 600_000 : 120_000);
 	if (result.status === "blocked") return result.blocked;
+	if (days) return retroRangeResult(ctx, result.output);
 	const { report, reportPath } = result.output as {
 		report: { facets: Record<string, { status: string }>; evidence: unknown[] };
 		reportPath: string;
@@ -659,6 +663,59 @@ function runContextRetroEvidence(
 		[...facets, `evidence=${report.evidence.length}`],
 		[reportPath],
 		{ report },
+	);
+}
+
+/** A range run lists each session's report; the reports themselves stay on disk. */
+function retroRangeResult(
+	ctx: WorkflowContext,
+	output: Record<string, unknown>,
+): OwnedRuntimeResult {
+	const { sessions } = output as {
+		sessions: Array<{
+			sessionId: string;
+			status: string;
+			sha256?: string;
+			evidence?: number;
+			reportPath?: string;
+			reason?: string;
+		}>;
+	};
+	// The record paths stay with the CLI caller; run state keeps only reports.
+	const listed = sessions.map(
+		({ sessionId, status, sha256, evidence, reportPath, reason }) => ({
+			sessionId,
+			status,
+			sha256,
+			evidence,
+			reportPath,
+			reason,
+		}),
+	);
+	const reports = listed.flatMap((session) =>
+		session.reportPath ? [session.reportPath] : [],
+	);
+	ctx.artifacts.push(...reports);
+	return completed(
+		"session-retro-evidence",
+		"evidence",
+		"Snapshotted each session in the range and persisted its measured report.",
+		[
+			...listed.map((session) =>
+				session.status === "completed"
+					? `${session.sessionId}@${session.sha256}: evidence=${session.evidence}`
+					: `${session.sessionId}: ${session.status}: ${compact(session.reason ?? "")}`,
+			),
+			`unlocated=${String(output.unlocated)}`,
+			`unreadableProjects=${String(output.unreadableProjects)}`,
+		],
+		reports,
+		{
+			days: output.days,
+			sessions: listed,
+			unlocated: output.unlocated,
+			unreadableProjects: output.unreadableProjects,
+		},
 	);
 }
 
@@ -699,6 +756,7 @@ function retroCommand(
 	ctx: WorkflowContext,
 	operation: string,
 	args: string[],
+	timeout = 120_000,
 ):
 	| { status: "completed"; output: Record<string, unknown> }
 	| { status: "blocked"; blocked: OwnedRuntimeResult } {
@@ -706,7 +764,7 @@ function retroCommand(
 		"bun",
 		["run", workflowAssetPath("bin/goldband-retro.ts"), ...args],
 		ctx.cwd,
-		120_000,
+		timeout,
 		{ GOLDBAND_HOME: stateRoot(ctx.options) },
 	);
 	if (result.status === 0 || result.status === 3) {
