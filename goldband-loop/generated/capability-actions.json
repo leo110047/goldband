@@ -536,23 +536,41 @@
       "name": "context/retro",
       "description": "Summarize recent work and lessons.",
       "contractPath": "generated/workflow-contracts/context/retro.workflow.md",
-      "runtime": "compatibility",
-      "dispatch": "prompt-contract",
+      "runtime": "typed",
+      "dispatch": "host-runtime",
       "lifecycle": "public",
-      "runtimeOwner": "prompt-contract-dispatch",
-      "runtimeContract": null,
+      "runtimeOwner": "session-retro-evidence",
+      "runtimeContract": {
+        "modes": [
+          "evidence",
+          "propose"
+        ],
+        "requiredInputs": {
+          "evidence": [
+            "mode"
+          ],
+          "propose": [
+            "mode",
+            "sessionId",
+            "sha256",
+            "proposals"
+          ]
+        },
+        "outputs": [
+          "retro-report",
+          "facet-coverage",
+          "candidate-outcomes"
+        ],
+        "sideEffects": {
+          "local-retro-report-write": "runtime-owner",
+          "local-knowledge-candidate-write": "runtime-owner"
+        }
+      },
       "safetyGates": [],
       "riskLevel": "low",
       "hostSupport": [
         "claude",
-        "codex",
-        "factory",
-        "kiro",
-        "opencode",
-        "slate",
-        "cursor",
-        "openclaw",
-        "hermes"
+        "codex"
       ]
     },
     {

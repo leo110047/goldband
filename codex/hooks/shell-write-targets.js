@@ -80,12 +80,13 @@ function isMergeForm(word) {
   return word.endsWith('/') || path.basename(word) === '.';
 }
 
-// Absolute source locations a source word may name in any working directory.
-// A trailing `/` marks a source whose contents, not itself, are copied.
+// Absolute source locations a source word may name: one list for each
+// working directory, empty for an unmatched glob. A trailing `/` marks a
+// source whose contents, not itself, are copied.
 function sourceLocations(source, context) {
   const expanded = expandPathWord(source, context);
   const suffix = isMergeForm(expanded) ? '/' : '';
-  return context.cwds.flatMap((cwd) =>
+  return context.cwds.map((cwd) =>
     GLOB_CHARACTERS.test(expanded)
       ? globMatches(expanded, cwd, context.budget)
       : [path.resolve(cwd, expanded) + suffix],
@@ -120,16 +121,19 @@ function unlistedTargets(name, root, location) {
 }
 
 // Every entry a moved or recursively copied source places below its
-// destination.
+// destination. Each working directory is judged on its own, so a glob
+// unmatched in one counts even where another matches.
 function contentTargets(name, source, place, context) {
-  const locations = sourceLocations(source, context);
-  if (!locations.length) return unlistedTargets(name, place(source));
-  return locations.flatMap((location) => {
-    const entries = sourceEntries(location);
-    return entries
-      ? under(place(location), entries)
-      : unlistedTargets(name, place(location), location);
-  });
+  return sourceLocations(source, context).flatMap((locations) =>
+    locations.length
+      ? locations.flatMap((location) => {
+          const entries = sourceEntries(location);
+          return entries
+            ? under(place(location), entries)
+            : unlistedTargets(name, place(location), location);
+        })
+      : unlistedTargets(name, place(source)),
+  );
 }
 
 const COPY_VALUE_OPTIONS = {
@@ -276,6 +280,7 @@ function metadataArguments(name, words) {
 // name.
 function existingTreeTargets(word, context) {
   return sourceLocations(word, context)
+    .flat()
     .filter((location) => fs.existsSync(location))
     .flatMap((location) =>
       under(location, sourceEntries(location) ?? PROTECTED_RELATIVE_PROBES),

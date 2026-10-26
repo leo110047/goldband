@@ -224,10 +224,10 @@ assert.equal(
   actions.filter((action) => action.lifecycle === 'public').length,
   19,
 );
-assert.equal(actions.filter((action) => action.runtime === 'typed').length, 16);
+assert.equal(actions.filter((action) => action.runtime === 'typed').length, 17);
 assert.equal(
   actions.filter((action) => action.runtime === 'compatibility').length,
-  3,
+  2,
 );
 assert.deepEqual(
   actions

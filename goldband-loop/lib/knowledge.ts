@@ -1,13 +1,17 @@
 import {
+  closeSync,
   existsSync,
+  linkSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "fs";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { basename, dirname, join, resolve } from "path";
 import { execFileSync } from "child_process";
 import { createRequire } from "module";
@@ -41,6 +45,7 @@ export const KNOWLEDGE_SOURCES = [
   "telemetry-miner",
   "workflow-evidence",
   "hook-advisory",
+  "retro",
 ] as const;
 export const KNOWLEDGE_TRUST_LEVELS = [
   "user-stated",
@@ -51,6 +56,14 @@ export const KNOWLEDGE_TRUST_LEVELS = [
 ] as const;
 export const KNOWLEDGE_REVIEWERS = ["user", "workflow", "agent", ""] as const;
 export const KNOWLEDGE_STALENESS = ["fresh", "needs-review", "stale"] as const;
+/** Whether a deterministic check (`mechanical`) or a reviewer (`judgement`) catches the error; "" is unclassified. */
+const KNOWLEDGE_CHECK_CLASSES = ["mechanical", "judgement", ""] as const;
+/**
+ * Whether an instruction change has an eval behind it: `unproven` has none,
+ * `ineffective` showed removing the instruction leaves results no worse, and
+ * `effective` showed results get worse without it; "" is not an instruction change.
+ */
+const KNOWLEDGE_EVAL_STATUSES = ["unproven", "ineffective", "effective", ""] as const;
 
 export type KnowledgeType = (typeof KNOWLEDGE_TYPES)[number];
 export type KnowledgeDomain = (typeof KNOWLEDGE_DOMAINS)[number];
@@ -59,6 +72,8 @@ export type KnowledgeSource = (typeof KNOWLEDGE_SOURCES)[number];
 export type KnowledgeTrustLevel = (typeof KNOWLEDGE_TRUST_LEVELS)[number];
 export type KnowledgeReviewer = (typeof KNOWLEDGE_REVIEWERS)[number];
 export type KnowledgeStaleness = (typeof KNOWLEDGE_STALENESS)[number];
+type KnowledgeCheckClass = (typeof KNOWLEDGE_CHECK_CLASSES)[number];
+type KnowledgeEvalStatus = (typeof KNOWLEDGE_EVAL_STATUSES)[number];
 export type KnowledgeScope = "global" | "project";
 
 export interface KnowledgeEntry {
@@ -80,6 +95,8 @@ export interface KnowledgeEntry {
   last_verified: string | null;
   staleness: KnowledgeStaleness;
   graduated_to: string;
+  check_class: KnowledgeCheckClass;
+  eval_status: KnowledgeEvalStatus;
   links: string[];
   summary: string;
   body: string;
@@ -124,6 +141,9 @@ export interface KnowledgeSearchOptions {
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{1,80}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** Prose a `mechanical` entry may not graduate to: documentation files, and instruction directories without a file. */
+const DOCUMENTATION_FILE_RE = /\.(?:md|mdx|mdc|markdown|rst|adoc|txt)$/i;
+const INSTRUCTION_DIRECTORY_RE = /(?:^|\/)(?:skills|rules|commands|agents|docs)(?:\/|$)/i;
 const require = createRequire(import.meta.url);
 // Generated from hooks/scripts/lib/hook-router/secret-patterns.js by
 // scripts/sync-plugin-assets.mjs so linked and copied runtimes carry the rules.
@@ -222,6 +242,8 @@ export function writeKnowledgeEntry(entry: KnowledgeEntry, root = knowledgeRoot(
   validateEntry(entry);
   ensureKnowledgeDirs(root);
   const filePath = entryPath(entry.id, root);
+  const current = existsSync(filePath) ? parseValidEntry(filePath) : undefined;
+  if (current) assertEvaluatedContentKept(current, entry);
   const tmpPath = `${filePath}.tmp-${process.pid}`;
   writeFileSync(tmpPath, renderKnowledgeEntry(entry), "utf8");
   renameSync(tmpPath, filePath);
@@ -236,14 +258,67 @@ export function writeKnowledgeCandidate(
   if (entry.status !== "candidate") {
     throw new Error("candidate capture must write status=candidate");
   }
+  validateEntry(entry);
   ensureKnowledgeDirs(root);
   const filePath = entryPath(entry.id, root);
-  if (existsSync(filePath)) {
-    rebuildIndex(root);
-    return { filePath, skipped: true };
+  const skipped = !createEntryFile(entry, filePath);
+  rebuildIndex(root);
+  return { filePath, skipped };
+}
+
+/**
+ * Writes an entry that `add` authors: it creates the entry or replaces one
+ * that is not a retro entry, which changes only through review actions and
+ * `goldband-retro eval`.
+ */
+export function writeAuthoredKnowledgeEntry(entry: KnowledgeEntry, root = knowledgeRoot()): string {
+  validateEntry(entry);
+  ensureKnowledgeDirs(root);
+  const filePath = entryPath(entry.id, root);
+  return withKnowledgeEntryLock(entry.id, root, () => {
+    if (!existsSync(filePath)) {
+      // A candidate capture does not take the lock, so creation must be exclusive.
+      if (!createEntryFile(entry, filePath)) {
+        throw new Error(`knowledge entry ${entry.id} was created during this add; run it again`);
+      }
+      rebuildIndex(root);
+      return filePath;
+    }
+    if (parseValidEntry(filePath)?.source === "retro") {
+      throw new Error(
+        `knowledge entry ${entry.id} is a retro entry; change it with review actions or goldband-retro eval`,
+      );
+    }
+    return writeKnowledgeEntry(entry, root);
+  });
+}
+
+/**
+ * Creates the entry file only if it is absent, by linking a complete
+ * temporary file, so concurrent creators of one id cannot overwrite each other.
+ */
+function createEntryFile(entry: KnowledgeEntry, filePath: string): boolean {
+  if (existsSync(filePath)) return false;
+  const tmpPath = `${filePath}.tmp-${process.pid}-${randomUUID()}`;
+  writeFileSync(tmpPath, renderKnowledgeEntry(entry), "utf8");
+  try {
+    linkSync(tmpPath, filePath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return false;
+  } finally {
+    rmSync(tmpPath, { force: true });
   }
-  writeKnowledgeEntry(entry, root);
-  return { filePath, skipped: false };
+}
+
+/** The entry `filePath` holds, or undefined when it is invalid and may be replaced. */
+function parseValidEntry(filePath: string): KnowledgeEntry | undefined {
+  try {
+    return parseKnowledgeFile(filePath);
+  } catch {
+    return undefined;
+  }
 }
 
 function readIndex(root = knowledgeRoot()): KnowledgeIndex {
@@ -289,11 +364,53 @@ export function searchKnowledge(
   return searchKnowledgeRows(readIndex(root).entries, options);
 }
 
+/**
+ * The entry's lock cannot be taken: another update holds it, one was
+ * interrupted and left it, or the entries directory does not exist.
+ */
+export class KnowledgeEntryLockError extends Error {}
+
+/**
+ * Runs `update` holding the entry's exclusive lock, so read-modify-write
+ * updates of one entry, such as review actions and retro evals, cannot
+ * overwrite each other. A held lock fails the update instead of waiting.
+ */
+export function withKnowledgeEntryLock<T>(id: string, root: string, update: () => T): T {
+  if (!ID_RE.test(id)) throw new Error(`invalid knowledge id: ${id}`);
+  const lock = `${entryPath(id, root)}.lock`;
+  let fd: number;
+  try {
+    fd = openSync(lock, "wx");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") throw new KnowledgeEntryLockError(`knowledge entry not found: ${id}`);
+    if (code !== "EEXIST") throw error;
+    throw new KnowledgeEntryLockError(
+      `knowledge entry ${id} is being updated, or an update was interrupted; remove ${lock} if none is running`,
+    );
+  }
+  try {
+    return update();
+  } finally {
+    closeSync(fd);
+    rmSync(lock, { force: true });
+  }
+}
+
 export function transitionKnowledgeStatus(
   id: string,
   status: KnowledgeStatus,
   updates: Partial<KnowledgeEntry> = {},
   root = knowledgeRoot(),
+): KnowledgeEntry {
+  return withKnowledgeEntryLock(id, root, () => transitionUnlocked(id, status, updates, root));
+}
+
+function transitionUnlocked(
+  id: string,
+  status: KnowledgeStatus,
+  updates: Partial<KnowledgeEntry>,
+  root: string,
 ): KnowledgeEntry {
   const file = entryPath(id, root);
   if (!existsSync(file)) throw new Error(`knowledge entry not found: ${id}`);
@@ -315,8 +432,25 @@ export function transitionKnowledgeStatus(
   return next;
 }
 
+const EVALUATED_CONTENT = ["title", "summary", "body"] as const;
+
+/**
+ * An eval measured the content of the entry it was recorded on, so a write
+ * may not change that content; a changed proposal needs its own eval.
+ */
+function assertEvaluatedContentKept(current: KnowledgeEntry, next: KnowledgeEntry): void {
+  if (current.eval_status !== "ineffective" && current.eval_status !== "effective") return;
+  const changed = EVALUATED_CONTENT.find((field) => current[field].trim() !== next[field].trim());
+  if (changed) {
+    throw new Error(
+      `knowledge entry ${current.id} has a recorded eval, so its ${changed} cannot change; propose the change as a new candidate`,
+    );
+  }
+}
+
 export function createKnowledgeEntry(input: Partial<KnowledgeEntry>): KnowledgeEntry {
   const today = todayIsoDate();
+  const { check_class = "", eval_status = "" } = input;
   const entry: KnowledgeEntry = {
     id: input.id || "",
     title: input.title || "",
@@ -337,6 +471,8 @@ export function createKnowledgeEntry(input: Partial<KnowledgeEntry>): KnowledgeE
       input.last_verified === undefined ? null : input.last_verified,
     staleness: input.staleness || "fresh",
     graduated_to: input.graduated_to || "",
+    check_class,
+    eval_status,
     links: input.links || [],
     summary: input.summary || "",
     body: input.body || "",
@@ -391,6 +527,8 @@ function validateEntry(entry: KnowledgeEntry): void {
   if (entry.status === "graduated" && !entry.graduated_to) {
     throw new Error("graduated entries require graduated_to");
   }
+  validateCheckClass(entry);
+  validateEvalStatus(entry);
   if (!entry.summary.trim()) throw new Error("summary is required");
   if (!entry.body.trim()) throw new Error("body is required");
   validateSafeKnowledgeText("summary", entry.summary);
@@ -410,6 +548,50 @@ export function renderSearchRows(rows: KnowledgeIndexRow[]): string {
     );
   }
   return `${lines.join("\n")}\n`;
+}
+
+/** A `mechanical` error belongs in a deterministic check, so documentation is not a graduation target. */
+function validateCheckClass(entry: KnowledgeEntry): void {
+  if (!KNOWLEDGE_CHECK_CLASSES.includes(entry.check_class)) {
+    throw new Error(`invalid check_class: ${entry.check_class}`);
+  }
+  if (
+    entry.status === "graduated" &&
+    entry.check_class === "mechanical" &&
+    isDocumentationTarget(entry.graduated_to)
+  ) {
+    throw new Error("mechanical knowledge graduates only to a lint, hook, CI, or test target, not documentation");
+  }
+}
+
+/**
+ * An `unproven` instruction change has no eval showing it is safe to apply, so
+ * it stays a candidate, out of recall, until an eval clears it, or is retired.
+ * An `effective` one was shown to make results worse, so it is never applied.
+ */
+function validateEvalStatus(entry: KnowledgeEntry): void {
+  if (!KNOWLEDGE_EVAL_STATUSES.includes(entry.eval_status)) {
+    throw new Error(`invalid eval_status: ${entry.eval_status}`);
+  }
+  if (entry.status !== "active" && entry.status !== "graduated") return;
+  if (entry.eval_status === "unproven") {
+    throw new Error(`unproven knowledge cannot become ${entry.status} until an eval clears eval_status`);
+  }
+  if (entry.eval_status === "effective") {
+    throw new Error(`effective-instruction knowledge cannot become ${entry.status}: its eval showed results get worse without the instruction`);
+  }
+}
+
+/**
+ * A documentation file, with or without a `#` section, or a path without a
+ * file extension under an instruction directory such as `rules/` or `skills/`.
+ * A check file there, such as `codex/rules/default.rules`, is not documentation.
+ */
+function isDocumentationTarget(target: string): boolean {
+  const path = target.split("#")[0].trim().replace(/\/+$/, "");
+  if (DOCUMENTATION_FILE_RE.test(path)) return true;
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return !name.includes(".") && INSTRUCTION_DIRECTORY_RE.test(`${path}/`);
 }
 
 function splitFrontmatter(raw: string, filePath: string): { frontmatter: string; body: string } {
@@ -443,6 +625,8 @@ function frontmatterToEntry(frontmatter: string, body: string): KnowledgeEntry {
     last_verified: data.last_verified === null ? null : stringField(data, "last_verified"),
     staleness: stalenessField(data),
     graduated_to: stringField(data, "graduated_to"),
+    check_class: optionalField(data, "check_class") as KnowledgeCheckClass,
+    eval_status: optionalField(data, "eval_status") as KnowledgeEvalStatus,
     links: arrayField(data, "links"),
     summary: stringField(data, "summary"),
     body,
@@ -485,6 +669,12 @@ function stringField(data: Record<string, unknown>, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+/** Empty only when absent, so a present non-string value fails enum validation instead of reading as unset. */
+function optionalField(data: Record<string, unknown>, key: string): string {
+  const value = data[key];
+  return value === undefined ? "" : typeof value === "string" ? value : JSON.stringify(value);
+}
+
 function arrayField(data: Record<string, unknown>, key: string): string[] {
   return Array.isArray(data[key]) ? (data[key] as unknown[]).map(String) : [];
 }
@@ -510,6 +700,9 @@ function renderKnowledgeEntry(entry: KnowledgeEntry): string {
     `last_verified: ${entry.last_verified === null ? "null" : entry.last_verified}`,
     `staleness: ${entry.staleness}`,
     `graduated_to: ${entry.graduated_to}`,
+    // Written only when set, so unclassified entries keep their existing form.
+    ...(entry.check_class ? [`check_class: ${entry.check_class}`] : []),
+    ...(entry.eval_status ? [`eval_status: ${entry.eval_status}`] : []),
     `links: [${entry.links.join(", ")}]`,
     `summary: ${yamlString(entry.summary)}`,
     "---",
@@ -589,10 +782,11 @@ function stalenessField(data: Record<string, unknown>): KnowledgeStaleness {
   return (stringField(data, "staleness") || "fresh") as KnowledgeStaleness;
 }
 
-function defaultTrustLevel(source: KnowledgeSource): KnowledgeTrustLevel {
+export function defaultTrustLevel(source: KnowledgeSource): KnowledgeTrustLevel {
   if (source === "telemetry-miner") return "telemetry-derived";
   if (source === "workflow-evidence") return "verified";
   if (source === "hook-advisory") return "observed";
+  if (source === "retro") return "inferred";
   return "user-stated";
 }
 
@@ -660,7 +854,7 @@ function validateSafeKnowledgeText(field: string, value: string): void {
   }
 }
 
-function detectSecretLikeContent(value: string): string[] {
+export function detectSecretLikeContent(value: string): string[] {
   return detectSecrets(value).map((finding) => finding.name);
 }
 

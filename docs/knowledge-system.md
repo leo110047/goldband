@@ -19,6 +19,7 @@ uses only `active` entries.
 | Candidate review/promotion | `goldband-knowledge-review` runtime binary | `goldband-knowledge-review` runtime binary | direct wrapper smoke; `./install.sh status` readback |
 | Active knowledge recall | Explicit `knowledge/recall` contract and runtime CLI | Same capability contract and runtime CLI | `goldband-loop/test/goldband-knowledge.test.ts`; `node scripts/test-workflow-contracts.mjs` |
 | Telemetry-derived candidates | Offline miner writes local candidate files only when run | same offline miner | `node scripts/test-telemetry-miner.mjs`; `npm run test:telemetry` |
+| Retro candidates | `goldband-retro propose` after `context/retro` evidence from Claude sessions | Same, from Codex sessions | `goldband-loop/test/session-retro.test.ts`; `goldband-loop/test/session-retro-codex.test.ts`; `node scripts/check-goldband-loop-inventory.mjs` |
 | MCP `knowledge-query` | Available through first-party MCP server when enabled by host | Available through first-party MCP server when enabled by host | `mcp/server/test/knowledge-query.test.ts`; `npm test` in `mcp/server` |
 | Prompt-time knowledge advisory | Claude UserPromptSubmit advisory for active entries | Not equivalent; Codex has workflow/MCP recall only. Codex `Stop` hooks do not prompt knowledge capture. | `npm run test:hook-router`; `node scripts/test-codex-hook-router.mjs` |
 | Install/status readback | `./install.sh status` shows CLI, candidate review, workflow recall, MCP repo availability | same | `./install.sh status` |
@@ -26,7 +27,10 @@ uses only `active` entries.
 ## Trust Rules
 
 - Candidate ids are `<source_type>-<YYYYMMDD>-<hash8>`, derived from source
-  type, sanitized source pointer, and summary.
+  type, sanitized source pointer, and summary. Retro candidates are
+  `retro-<hash16>`, derived from the session snapshot SHA-256, facet, and rule
+  code only, so a rerun or reworded proposal for the same snapshot is a
+  duplicate. Their default `trust_level` is `inferred`.
 - Duplicate candidate ids are skipped rather than overwritten.
 - Candidate review can list overdue candidates first, show entries, promote to
   active, edit summary/body, retire, or graduate.
@@ -34,6 +38,29 @@ uses only `active` entries.
   `staleness`.
 - `graduated` entries require `graduated_to`; the target skill, rule, hook,
   doc, test, or decision record is authoritative if the two conflict.
+- `check_class` is `mechanical`, `judgement`, or empty, and is written only
+  when set. Retro `auto-checks` candidates carry it. A `mechanical` entry may
+  not graduate to a documentation file (`.md`, `.mdx`, `.mdc`, `.markdown`,
+  `.rst`, `.adoc`, `.txt`, with or without a `#` section) or to a path without
+  a file extension under `skills/`, `rules/`, `commands/`, `agents/`, or
+  `docs/`; it belongs in a lint, hook, CI, or test target.
+- `eval_status` is `unproven`, `ineffective`, `effective`, or empty, and is
+  written only when set. Retro `ineffective-instructions` candidates carry
+  `unproven`: no eval has shown that removing or consolidating the
+  instruction leaves agent behavior unchanged. An `unproven` entry stays a
+  candidate, outside recall, or is retired; it cannot become `active` or
+  `graduated`. `goldband-retro eval --input <file>` records a comparison the
+  user ran on an `unproven` retro candidate: runs with the instruction as it
+  is (`keep`) against runs with it removed or consolidated as proposed
+  (`change`), one score per run, at least 5 per arm, and whether a `higher`
+  or `lower` score is better. A change-arm mean no worse than the keep-arm
+  mean sets `ineffective`, which may then be promoted; a worse one sets
+  `effective`, which cannot become `active` or `graduated`. The command runs
+  no model and accepts one eval per candidate. It sets `eval_status` and
+  `updated`, replaces the body's `unproven` note with the verdict, and appends
+  the metric label, direction, each arm's count and mean, the verdict, and the
+  date. `add` cannot replace a retro entry, and no review action can change the
+  title, summary, or body of an entry with a recorded eval.
 - Recall output is data: path, one-line summary, confidence, updated date,
   last-verified date, and staleness. It is not system instruction text.
 - General conversations get no capture reminders, and no `Stop` hook prompts

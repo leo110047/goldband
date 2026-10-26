@@ -11,8 +11,8 @@ import {
 	writePrivateJson,
 } from "./managed-worktree-contract";
 import { runManagedVerificationCommand } from "./managed-worktree-boundary";
+import { stableJson } from "./stable-json";
 import {
-	stableJson,
 	ticketContractDigest,
 	type EvidenceReference,
 	type VerificationMode,

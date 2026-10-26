@@ -162,6 +162,94 @@ describe("goldband-knowledge CLI", () => {
     );
   });
 
+  test("review graduates a mechanical entry only to a deterministic check", () => {
+    run([
+      "capture",
+      "--id",
+      "lint-unused-import",
+      "--title",
+      "Unused import lint candidate",
+      "--type",
+      "practice",
+      "--domains",
+      "review",
+      "--summary",
+      "Catch unused imports with a lint rule.",
+      "--body-file",
+      bodyFile,
+    ]);
+    const file = path.join(tmpHome, "knowledge", "entries", "lint-unused-import.md");
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("\nlinks:", "\ncheck_class: mechanical\nlinks:"));
+
+    for (const target of [
+      "rules/coding-style.md",
+      "CLAUDE.md",
+      "CLAUDE.md ",
+      "docs/review.mdx",
+      ".cursor/rules/lint.mdc",
+      "skills/global/review",
+      "rules/common",
+      "docs/",
+      "docs/review.md#checks",
+    ]) {
+      const result = fail(["review", "graduate", "--id", "lint-unused-import", "--to", target]);
+      expect({ target, status: result.status, stderr: result.stderr }).toMatchObject({
+        target,
+        status: 1,
+        stderr: expect.stringContaining("mechanical knowledge graduates only to a lint, hook, CI, or test target"),
+      });
+    }
+    expect(fs.readFileSync(file, "utf8")).toContain("status: active");
+
+    expect(run(["review", "graduate", "--id", "lint-unused-import", "--to", "codex/rules/default.rules"])).toContain("GRADUATED");
+    expect(fs.readFileSync(file, "utf8")).toContain("check_class: mechanical");
+
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("check_class: mechanical", "check_class: lint"));
+    expect(fail(["review", "edit", "--id", "lint-unused-import"]).stderr).toContain("invalid check_class: lint");
+  });
+
+  test("review keeps an unproven instruction change from becoming active or graduating", () => {
+    run([
+      "capture",
+      "--id",
+      "drop-duplicate-rule",
+      "--title",
+      "Duplicate rule candidate",
+      "--type",
+      "practice",
+      "--domains",
+      "general",
+      "--summary",
+      "Remove a paragraph repeated across instruction files.",
+      "--body-file",
+      bodyFile,
+    ]);
+    const file = path.join(tmpHome, "knowledge", "entries", "drop-duplicate-rule.md");
+    expect(fs.readFileSync(file, "utf8")).not.toContain("eval_status:");
+    const unproven = fs.readFileSync(file, "utf8").replace("\nlinks:", "\neval_status: unproven\nlinks:");
+    fs.writeFileSync(file, unproven);
+    expect(fail(["review", "edit", "--id", "drop-duplicate-rule"]).stderr).toContain(
+      "unproven knowledge cannot become active until an eval clears eval_status",
+    );
+    fs.writeFileSync(file, unproven.replace("status: active", "status: candidate"));
+
+    const result = fail(["review", "graduate", "--id", "drop-duplicate-rule", "--to", "CLAUDE.md"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("unproven knowledge cannot become graduated until an eval clears eval_status");
+    expect(fail(["review", "promote", "--id", "drop-duplicate-rule"]).stderr).toContain("unproven knowledge cannot become active");
+    expect(fs.readFileSync(file, "utf8")).toContain("status: candidate");
+    expect(run(["review", "retire", "--id", "drop-duplicate-rule"])).toContain("RETIRED");
+    expect(fs.readFileSync(file, "utf8")).toContain("eval_status: unproven");
+
+    const retired = fs.readFileSync(file, "utf8");
+    for (const [value, shown] of [["proven", "proven"], ["null", "null"], ["123", "123"], ["[]", "[]"]]) {
+      fs.writeFileSync(file, retired.replace("eval_status: unproven", `eval_status: ${value}`));
+      expect(fail(["review", "edit", "--id", "drop-duplicate-rule"]).stderr).toContain(`invalid eval_status: ${shown}`);
+    }
+    fs.writeFileSync(file, retired.replace("eval_status: unproven", "check_class: null"));
+    expect(fail(["review", "edit", "--id", "drop-duplicate-rule"]).stderr).toContain("invalid check_class: null");
+  });
+
   test("schema validation rejects practice entries missing required sections", () => {
     const invalidBody = path.join(tmpHome, "invalid.md");
     fs.writeFileSync(invalidBody, "## 做法\nOnly one section.\n", "utf8");

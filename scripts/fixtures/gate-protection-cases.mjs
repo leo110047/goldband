@@ -1,6 +1,8 @@
 // Shared Gate A and Gate G cases replayed through both native hook adapters.
 // Expectations restate the contract table, independent of the module flags.
 import os from 'node:os';
+import { assignmentResolutionCases } from './gate-assignment-cases.mjs';
+import { copySourceCases } from './gate-copy-source-cases.mjs';
 
 // The hook process environment carries a core.hooksPath override at index 0.
 export const gitConfigOverrideEnv = {
@@ -497,6 +499,7 @@ export const shellResolutionCases = [
   ['A=.claude; B=$A/settings.json; echo {} > $B', true],
   ['A=.git; B=$A; C=$B/config; echo x > $C', true],
   ['A=docs; B=$A/notes.md; echo x > $B', false],
+  ...assignmentResolutionCases,
   ['echo x > "$LOG"', false],
   ["sh -c -- 'echo x > .mcp.json'", true],
   // apply_patch run from the shell, by argument or heredoc.
@@ -532,6 +535,7 @@ export const shellResolutionCases = [
   ['cp -r kit out/new', true],
   ['mv kit out/', true],
   ['cp -R missing/ out/', true],
+  ...copySourceCases,
   ['cp -R big/ out/', true],
   ['cp -R docs/ out/', false],
   ['cp -r docs out/', false],

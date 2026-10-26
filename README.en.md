@@ -76,6 +76,8 @@ Implementation involving bulk processing, materialization, caching, parallel exe
 
 The reviewer does not execute project tests or change ticket status. Continue running project tests, lint, type checks, CI, and relevant live checks separately; no findings does not establish runtime correctness.
 
+`context/retro` measures evidence from local Claude Code session records or uncompressed Codex session records (the current session, a named session, or this repository's last N days) and stores only numbers, hashes, and record positions in its report. Proposals become knowledge candidates for review; it edits no instructions, rules, hooks, or settings. A candidate that removes or consolidates an instruction can be adopted only after `bin/goldband-retro eval --input <file>`, run from the installed Goldband runtime root (the installed `goldband` skill directory), records a keep-vs-change comparison you ran. Claude uses `/goldband context retro`; Codex uses `$goldband context retro`.
+
 ## Update and Uninstall
 
 Update the source in your original checkout:

@@ -103,6 +103,7 @@ function main() {
         runInstall(copyHome, target, { GOLDBAND_FORCE_COPY: '1' }),
     });
     assertInstalledKnowledgeCliRuns(copyHome);
+    assertInstalledRetroCliRuns(copyHome);
     assertInstalledCrossReviewCliRuns(copyHome);
     assertInstalledTaskEmissionCliRuns(copyHome);
     console.log('[OK] Goldband Loop copy fallback runtime CLI works');
@@ -555,6 +556,39 @@ function assertInstalledKnowledgeCliRuns(home) {
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /KNOWLEDGE:/);
+}
+
+// Each host's retro CLI loads its full module graph from that host's
+// installed root and reports the absent session as blocked (exit 3).
+function assertInstalledRetroCliRuns(home) {
+  for (const [host, root, label] of [
+    ['claude', '.claude', 'Claude'],
+    ['codex', '.codex', 'Codex'],
+  ]) {
+    const result = spawnSync(
+      path.join(home, root, 'skills', 'goldband', 'bin', 'goldband-retro'),
+      [
+        'evidence',
+        '--host',
+        host,
+        '--session',
+        '00000000-0000-4000-8000-000000000000',
+      ],
+      {
+        cwd: home,
+        env: {
+          ...process.env,
+          HOME: home,
+          CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
+          CODEX_HOME: path.join(home, '.codex'),
+          GOLDBAND_HOME: path.join(home, '.goldband'),
+        },
+        encoding: 'utf8',
+      },
+    );
+    assert.equal(result.status, 3, result.stderr || result.stdout);
+    assert.match(result.stdout, new RegExp(`${label} session not found`));
+  }
 }
 
 function skillDirectories(parent) {

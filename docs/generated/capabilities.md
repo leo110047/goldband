@@ -19,7 +19,7 @@ Public inventory: 19 actions. Experimental actions are excluded from routing and
 | `safety` | `unfreeze` | Disable freeze-mode for a Claude session. | `claude-hook-mode-state` | `typed` | `host-runtime` | `low` |
 | `context` | `save` | Save current working context. | `context-checkpoint-store` | `typed` | `host-runtime` | `low` |
 | `context` | `restore` | Restore saved working context. | `context-checkpoint-store` | `typed` | `host-runtime` | `low` |
-| `context` | `retro` | Summarize recent work and lessons. | `prompt-contract-dispatch` | `compatibility` | `prompt-contract` | `low` |
+| `context` | `retro` | Summarize recent work and lessons. | `session-retro-evidence` | `typed` | `host-runtime` | `low` |
 | `knowledge` | `recall` | Inspect Goldband learnings and knowledge. | `goldband-knowledge` | `typed` | `host-runtime` | `low` |
 | `benchmark` | `workflow` | Benchmark product or workflow performance. | `benchmark-evidence-aggregator` | `typed` | `host-runtime` | `low` |
 | `document` | `generate` | Audit documentation coverage and prepare documentation artifacts. | `documentation-audit` | `typed` | `host-runtime` | `low` |

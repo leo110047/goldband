@@ -2159,3 +2159,389 @@ check that cannot run reports failure, never success.
   the call continue. Glob walks run in a child process killed at a 2-second
   deadline, because a directory read can block, as on a macOS
   privacy-protected folder, where no in-process check interrupts it.
+
+## 2026-10-26: Retro Becomes a Typed Owner over Session Snapshots
+
+Decision: `context/retro` moves from `compatibility` to `typed` with the owner
+`session-retro-evidence`. The runtime computes `measured` evidence from host
+session records; the model adds `inferred` judgments; every proposal is
+written as a knowledge `candidate` and takes effect only after human review.
+The switch to `typed` lands in Phase 1, when the first two facets ship;
+Phase 2 adds `auto-checks`, `info-access`, and the last-N-days range;
+Phase 3 adds `ineffective-instructions`; Phase 4 adds the Codex adapter;
+Phase 5 adds the keep-vs-change eval record.
+
+Implementation contract:
+
+- `goldband-loop/lib/session-retro-evidence.ts` owns the provider-neutral
+  contract: `RetroToolEventV1` (adapter output, in memory only) and
+  `RetroReportV1` (the only persisted shape). Validation rejects unknown keys.
+- Snapshot identity: at run start each analyzed session gets host, session id,
+  byte length up to the last complete line, its record count, and the SHA-256
+  of that range. A ref whose ordinal is not below the record count is
+  rejected.
+  Evidence reads only that range and cites
+  `<session id>@<snapshot sha256>#<record ordinal>`, where the ordinal is the
+  0-based JSONL record index. Records appended during the run are outside the
+  snapshot. The record path is used in memory and never persisted.
+- Grades: every evidence item is `measured` (deterministic over the snapshot)
+  or `inferred` (heuristic or model judgment); a missing grade is rejected.
+  `measured` evidence is emitted in a deterministic order, so a rerun over the
+  same snapshot is byte-identical.
+- Persistence allowlist: numbers, tool names, input and content SHA-256,
+  instruction source kinds, exit codes, and record positions. Prompts, tool output, stderr, attachments, file content,
+  and instruction text are read in memory and never copied to storage.
+  Candidate summary and body pass `secret-patterns` filtering and a length cap.
+- Facet coverage: every report lists `file-search`, `auto-checks`,
+  `tool-cost`, `info-access`, and `ineffective-instructions` as `covered` or
+  `unavailable` (`not-implemented` | `host-unsupported` | `not-recorded`).
+  Evidence for an
+  `unavailable` facet is rejected.
+- Knowledge: `KNOWLEDGE_SOURCES` gains `retro` with default `trust_level`
+  `inferred`. A retro candidate id is `retro-<hash>` over snapshot SHA-256,
+  facet, and rule code, with no date or summary, so a rerun or reworded
+  proposal is `SKIPPED duplicate`. `docs/knowledge-system.md` changes with it.
+- Host record formats stay inside one adapter per host. Each adapter locates,
+  lists, and reads sessions into the in-memory `RetroSessionRead`; the
+  runtime selects it by host and knows no record shape.
+
+Phase 0 sampling (10 Claude and 8 Codex local sessions, field names only):
+
+| Signal | Claude Code | Codex |
+|--------|-------------|-------|
+| Tool call and result | `tool_use` / `tool_result` blocks linked by id | `item_completed` items: `CommandExecution`, `FileChange`, `McpToolCall`; script calls as `custom_tool_call` |
+| Exit code | No structured field: `is_error` plus a leading `Exit code N` line; success implies 0 | `exit_code` and `status` on `CommandExecution` |
+| Hook or permission block | `permissionDecision.decision` `reject`; `source` `hook` marks a hook | Not observed |
+| Search and read | Tool names (`Grep`, `Glob`, `Read`) | `parsed_cmd` type (`read`, `search`, `list_files`); 1,392 of 2,168 sampled entries are `unknown` |
+| Edit | `Edit`, `Write`, `NotebookEdit` | `FileChange` |
+| Truncation | `persistedOutputPath` on Bash results; `truncated` on Grep | `…N tokens truncated…` in model-facing output, per script call, not per command |
+| Token usage | Per assistant message | Per turn (`token_count`, `token_usage_record`) |
+| Loaded instructions | `instructions` attachment with file paths; `skill_listing` | AGENTS.md as a user message per directory; skills in a developer message |
+| Tool definitions | `prompt_snapshot` and `deferred_tools_delta` attachments | `additional_tools` response item |
+
+Consequences of the sampling:
+
+- Neither host records tokens per tool output, so per-call `tool-cost`
+  metrics use bytes and only session or turn totals use tokens.
+- `ineffective-instructions` measures loaded instruction sources from the
+  snapshot, not from the current disk, so the result reflects what that
+  session loaded and stays reproducible.
+- Tool-definition size is available on both hosts and may enter `tool-cost`
+  evidence as bytes.
+- Codex `parsed_cmd` is `unknown` for many commands, so Phase 4 classifies
+  Codex commands with the shared shell classifier instead, and Codex
+  `file-search` is `covered`.
+
+Phase 1 contract (Claude adapter, `file-search`, `tool-cost`):
+
+- `hostSupport` is `["claude", "codex"]` from Phase 4; a host without an
+  adapter is `blocked`.
+- Location: `<CLAUDE_CONFIG_DIR or ~/.claude>/projects/*/<session id>.jsonl`,
+  skipping symlinked project directories; the default session is
+  `CLAUDE_CODE_SESSION_ID`. Subagent transcripts under
+  `<project>/<session id>/subagents/` are separate records outside the
+  snapshot; their work appears only as the parent's `Agent` call. A missing, invalid,
+  unknown, or ambiguous id is `blocked`. The snapshot is read in 4 MiB chunks
+  through `O_NOFOLLOW`; a blank or non-JSON record, a record of another
+  session, a `tool_result` without its `tool_use`, or non-list content fails
+  the run.
+- Event mapping: the event ordinal is the `tool_use` record. Output bytes
+  count text parts as UTF-8 and other parts, such as images, by their
+  serialized size. Exit code is the
+  leading `Exit code N` line of an `is_error` result, and 0 for a result
+  without `is_error`. `truncated` comes
+  from Bash `persistedOutputPath` and Grep `truncated`. `emptyResult` comes
+  from Glob `numFiles` and Grep `numFiles`, `numLines`, or `numMatches` by
+  mode, and for Bash only from a single grep-family command (exit 1 empty,
+  0 not). Usage is deduplicated by message id and persisted only as
+  `RetroUsageTotalsV1` session totals.
+- Categories: `Edit`, `MultiEdit`, `Write`, `NotebookEdit`, and Bash with
+  `bashEditDiff.changedFiles` are `edit`; `Grep` is `search`; `Glob` and `LS`
+  are `list`; `Read` is `read`; `mcp__*` is `mcp`. Other Bash is classified
+  without a shell: a list of plain pipelines joined by `;`, `&&`, or newlines
+  is a lookup only when every pipeline is `cd <dir>` or starts with a search
+  (`rg`, grep family, `ag`, `ack`, `git grep`), list (`ls`, `find`, `fd`,
+  `tree`, `git ls-files`), or read (`cat`, `head`, `tail`, `less`, `bat`,
+  `nl`, `wc`, `sed -n <line range>p`) program followed only by filters. A
+  program with an option that runs commands or writes files (`find` actions
+  and `-fprint*`/`-fls`, `fd -x`, `rg --pre`, `git grep -O`, `tree -o`,
+  `sort -o`/`--compress-program`, `less -o`, `uniq` with an output operand) is
+  `command`. Only redirections to `/dev/null` or a standard stream are
+  allowed; expansions, substitutions, and other syntax make it `command`. The
+  list takes the first of search, list, read that it contains.
+- Rules: `file-search` emits `first-edit`, `pre-edit-searches`,
+  `pre-edit-reads`, `pre-edit-lookup-output` (bytes), `duplicate-search`, and
+  `empty-search` over the calls that started before the result of the first
+  edit that neither failed nor was blocked, or the whole snapshot without one. `tool-cost` emits
+  `top-output` (10 largest, bytes), `duplicate-call`, `truncated-output`,
+  `output-by-tool` (bytes), and `session-input-tokens` /
+  `session-output-tokens`, and `unfinished-call` counts calls whose result is
+  outside the snapshot, which are not events. Duplicate rules list the 20
+  largest groups and add `<rule>-groups` counting every group. Metrics are
+  exact unless marked `lowerBound`; each item cites at most 20 positions in order.
+- Proposals: at most 20 per run. Targets are `instruction-path-guidance`
+  (requires `estimatedBytes`) or `file-structure` for `file-search`, and
+  `command-usage`, `mcp-config`, or `tool-retirement` for `tool-cost`.
+  Proposal evidence may only be `inferred`, at most 5 items; refs, at most 20
+  per proposal or evidence item, must cite records of the reported snapshot.
+  A secret-shaped rule is invalid and is never echoed as an outcome label. Proposal text may not contain heading or section-break
+  lines, email addresses, or home-directory paths. A rejection reason that
+  quotes secret-shaped input is withheld. Candidates are created exclusively,
+  so concurrent runs report `duplicate` rather than overwrite. The knowledge
+  CLI does not accept the `retro` source. Outcomes are `written`, `duplicate`, or `rejected`, ordered by
+  severity.
+- Entry points: `bin/goldband-retro evidence --host <host> [--session <id>]`,
+  `propose --input <file>`, and, from Phase 5, `eval --input <file>` print
+  one compact JSON object and exit 0
+  completed, 1 error, 2 usage, 3 blocked. The `context/retro` handler runs this CLI rather than importing the
+  knowledge store, which the bundled trusted workflow runtime cannot load.
+  Reports are written to `<state root>/retro/reports/<key>.json` with mode
+  0600.
+- Scale: a 717,638,576-byte Claude record (66,751 records, 4,533 tool
+  calls) is read and analyzed in 1.47-1.49 s at about 194 MB maximum RSS, and
+  its report is 50,122 bytes (3 runs, Bun 1.3.11, macOS arm64); reading it as
+  one string fails with `ERR_STRING_TOO_LONG`.
+
+Phase 2 contract (`auto-checks`, `info-access`, last N days):
+
+- Events carry `resultOrdinal`, the record of their result, because calls
+  issued in one message finish in any order; it is not persisted. A Bash
+  call's input hash covers only its `command`, so a rerun with another
+  description or timeout is the same input.
+- `auto-checks` uses only commands that ran: `command` events that were not
+  blocked. A command is after an edit only when it starts after the edit's
+  result. `last-edit` counts applied edits and cites the one whose result is
+  last; `commands-after-last-edit` counts the commands after it and cites that
+  edit when there are none. Per tool and input, failures and then a passing
+  run are `failed-then-passed` when an applied edit starts after the first
+  failure's result and finishes after the last failing run starts and before
+  the pass starts; failures no later run passes are `unresolved-failure`. Each lists 20 runs,
+  earliest first, with the last failure's exit code, and `<rule>-groups`
+  counts every run.
+- `info-access` emits `nonzero-exit` over calls with a non-zero exit code
+  that were not blocked and are not a search that matched nothing, `exit-code`
+  per code, `failed-call` per tool for failed calls without an exit code,
+  `hook-blocked`, `permission-blocked`, and `repeated-failure` over all of
+  these by tool and input. `exit-code` and `failed-call` list 20 groups and
+  add `<rule>-groups`. Failure causes, retries of the same target, and the
+  missing information are `inferred`.
+- `auto-checks` proposals require `checkClass`: `mechanical` targets `lint`,
+  `hook`, `ci`, or `test`; `judgement` targets `semantic-review-criteria` or
+  `repo-review-standard`. The class is stored as the knowledge entry's
+  `check_class`, and the knowledge store refuses to graduate a `mechanical`
+  entry to a documentation file (with or without a `#` section) or to a path
+  without a file extension under `skills/`, `rules/`, `commands/`, `agents/`,
+  or `docs/`. Other facets reject `checkClass`.
+  `info-access` targets `read-only-permission`, whose candidate body is marked
+  as needing security review and limited to read-only access, or
+  `access-guidance`.
+- `evidence --days <N>` (1-90) analyzes every Claude session record directly
+  in a project directory, changed in the last N days, whose first recorded
+  `cwd` within the first 4 MiB, read in 256 KiB steps, is in an existing
+  worktree of the current repository (`git worktree list -z`, or the current
+  directory outside Git) with no directory holding `.git` between it and that
+  worktree, so a nested repository or unregistered worktree is excluded; a
+  removed directory is judged by the directories that remain. A file whose
+  located record names another session, such as a sidechain, is left out; an
+  id found in more than one project directory, at any age, is one `failed`
+  entry, ambiguous as it is for `--session`. Each session gets its own snapshot and report; the
+  output lists per session its snapshot, evidence count, and report path, or
+  `failed` with the read error, its record path replaced by
+  `<session record>`. Records with no `cwd` or an unreadable start are counted
+  as `unlocated`, and directories that cannot be listed as
+  `unreadableDirectories`. More than 200 sessions is `blocked`; the workflow
+  handler allows a range 600 s instead of 120 s.
+  Candidate ids stay per snapshot, so rerunning an unchanged session is
+  `duplicate`; a session that grew since is a new snapshot.
+
+Phase 3 contract (`ineffective-instructions`):
+
+- An ineffective instruction is always-on instruction content that does not
+  change agent behavior. Claude sources are the files of `instructions`
+  attachments and `nested_memory` attachments, keyed by path, and the skill
+  listing as one source: an initial `skill_listing` replaces it, and a later
+  one adds `- name:` entries, where a name may hold a plugin namespace, or
+  replaces those it names again. Other attachments are not read. A source
+  counts with the content of its latest load. A host that records instruction
+  loads but recorded none for a session, as in Claude SDK sessions, reports
+  the facet `unavailable` `not-recorded`; a host without loads is
+  `host-unsupported`.
+- `instruction-source` gives per source its bytes, `sourceKind` (`user`,
+  `project`, `local`, `memory`, `managed`, `skills`, `other`), the SHA-256 of
+  its latest content, and the records that loaded it (past 20, the first 19
+  and the latest), in order of first load;
+  `instruction-bytes` sums them. Paths are not persisted: the cited records
+  name them, and a path names the user's home and projects.
+- Paragraphs are blocks between blank lines and headings; each list item is
+  its own paragraph without its marker; whitespace runs collapse to one space;
+  paragraphs under 40 bytes are dropped. A paragraph in the latest content of
+  two or more sources is a `duplicate-paragraph` with the source count, the
+  paragraph's SHA-256, and the loading records; the 20 with the most repeated
+  bytes are listed, then `duplicate-paragraph-groups` and
+  `duplicate-paragraph-bytes` over every group. A repeat within one source
+  does not count.
+- Semantic duplicates, content a hook or gate already enforces, and host
+  default behavior are `inferred`. Proposals target `instruction-removal` or
+  `instruction-consolidation`, with `estimatedBytes` read as bytes removed;
+  candidate bodies label measured lines with the source kind and a 12-digit
+  content hash prefix. Candidates carry `eval_status: unproven`, which keeps
+  them out of `active` and `graduated`, so only an eval the user starts can
+  make a candidate an instruction change.
+
+Phase 4 contract (Codex adapter):
+
+- Location: `<CODEX_HOME or ~/.codex>/sessions/<YYYY>/<MM>/<DD>/rollout-<time>-<thread id>.jsonl`,
+  without following links; the default session is `CODEX_THREAD_ID`, and an
+  id must be a lowercase UUID as file names spell it. A `sessions` directory,
+  or a Claude `projects` directory, that is a link or cannot be listed is
+  counted in `unreadableDirectories`, and a not-found reason names that
+  count. Archived records and records Codex compressed to `.jsonl.zst` are
+  not read: a named compressed record is `blocked`, and a range run counts
+  those in range, of any repository, as `unreadRecords`. A missing, invalid,
+  unknown, or ambiguous id is `blocked`. A record must hold a `session_meta`
+  naming the thread, and one naming another thread fails the run, as do a
+  record without a type, a read record without a payload, a model call
+  without `call_id`, an output without its call, a command without an
+  argument list, and a file change without changes.
+- Events are the operations Codex records as completed items:
+  `CommandExecution` (`exec_command`), `FileChange` (`apply_patch`, `edit`),
+  `McpToolCall` (`mcp__<server>__<tool>`, `mcp`), `ImageView` (`view_image`,
+  `read`), and `web.search` extensions (`web_search`). A completed item whose
+  `thread_id` names another thread, which a thread records for one it
+  started such as a review, is not its event. Codex records an operation
+  once, when it completes, so its ordinal and `resultOrdinal` are that
+  record.
+- Ordering: `RetroToolEventV1` gains optional `startOrdinal`, for ordering
+  only. Completion times are taken as never decreasing in record order, and
+  one without a recorded time as the latest before it. An operation whose
+  `started_at_ms` precedes the latest completion starts right after the last
+  operation that completed by then, or at 0. Start positions separate what
+  started before an edit's result from what started after it, for both
+  hosts: the file-search window is every event other than an applied edit
+  that started before the first applied edit's result, including a Claude
+  call issued in the same message as that edit, and auto-checks count only
+  what started after the last edit's result.
+- Commands: the script, the third argument of `<shell> -c` or `-lc`, is
+  classified by the shared shell classifier and hashed as `{command}`, as a
+  Claude Bash call is; the exit code is `exit_code`, and a command failed
+  when its status is not `completed` or the code is not 0. A file change
+  failed when its status is not `completed`; an MCP call when its status is
+  not `completed` or its result is an error. Codex records no hook or
+  permission block, so Codex events have no `blockedBy`.
+- Output: bytes are the operation's own output as recorded; the shared
+  byte rule (`retroContentBytes`) applies to both hosts. Codex persists at
+  most 64 KiB of a command's output and marks the cut, so such an event is
+  `outputCapped` and each byte metric summed from it carries `lowerBound`
+  (29 of 2,784 sampled commands). Codex shortens output for the model per
+  call: an operation belongs to the open call its item id names (MCP calls),
+  else to the only call open by record times both when it started and when
+  it finished. An unshortened call output sets `truncated: false` on its
+  operations; a shortened one sets `truncated: true` only when the call ran
+  one operation. Otherwise, or with several calls open at either time, none,
+  or a start before the call (a background command), the event has no
+  truncation field. Model calls without an output in the snapshot are
+  `unfinished-call`. Session tokens sum `input_tokens` and `output_tokens` of
+  `token_usage_record` rows, one per `response_id`.
+- Instruction sources: the AGENTS.md message Codex sends as the user holds
+  the user's file and the project docs joined by `--- project-doc ---`; they
+  are the `user` source and the `project` source of that directory. Without
+  the separator the record does not say which file it holds, so it is
+  `other`. A user message with the heading but no `INSTRUCTIONS` block is the
+  user's own text, not a source. Codex joins several project docs without a
+  boundary, so they are one project source and repeats among them are not
+  found. The `<skills_instructions>` developer message is the `skills`
+  source. `codex exec` sessions record neither, so their facet is
+  `not-recorded`.
+- `evidence --days` lists record files changed in range and reads each
+  file's `session_meta` within its head for the working directory; a record
+  whose `session_meta` names another thread is unlocated, and a spawned
+  agent's thread (an object `source` with `subagent`) is left out. A named
+  session may be a spawned agent's thread.
+- Persisted reports keep `RetroReportV1` with optional `startOrdinal` and
+  `outputCapped` on events and `lowerBound` on metrics; the range output
+  field `unreadableProjects` is renamed `unreadableDirectories`, and
+  `unreadRecords` is added, for both hosts.
+- Sampling for this phase: 66 local Codex records (30 user threads, 36
+  spawned agent threads) read without a format error; 14 of the 30 user
+  threads cover all five facets, and the other 16 lack instruction messages
+  (15 `codex exec`, 1 VS Code). Another 2,336 local records are compressed.
+
+Phase 5 contract (instruction eval):
+
+- `goldband-loop/lib/session-retro-eval.ts` owns the verdict and the
+  `unproven` note it replaces. `bin/goldband-retro eval --input <file>`, run
+  from the Goldband runtime root, takes `{candidate, metric, better, keep,
+  change}`: a `retro-<16 hex>` candidate id, a lowercase metric label,
+  `higher` or `lower` as the better direction, and 5 to 1,000 finite scores
+  per arm, one per run. `keep` runs had the instruction as it is; `change`
+  runs had it removed or consolidated as the candidate proposes. The user
+  runs both arms with tools of their choice, such as `benchmark/workflow`
+  samples or the paid eval workflow under `check-eval-budget-cap.mjs`; the
+  command runs no model and spends nothing, so no candidate is evaluated
+  unless the user supplies its results.
+- The CLI reads candidates under the knowledge home that `propose` writes
+  and `goldband-knowledge review` reads. The candidate must exist, have
+  source `retro`, status `candidate`, and `eval_status: unproven`; otherwise
+  the run is `blocked`, so each candidate takes one eval. The knowledge
+  store's exclusive `<entry>.lock`, which review actions also take, covers
+  the read, check, and write; a held lock blocks the eval and fails the
+  review action instead of waiting. `goldband-knowledge add` takes it too,
+  creates an absent entry exclusively, and refuses to replace a retro entry;
+  no review action changes the title, summary, or body of an entry with a
+  recorded eval, since the eval measured that content. No command skips or reuses an eval.
+- Means are compared exactly: each finite score is an integer multiple of
+  2^-1074, so the arm sums cross-multiplied by the other arm's count are
+  compared as integers, with no overflow, underflow, or rounding. A change-arm mean no worse than the keep-arm mean in the `better`
+  direction sets `ineffective` (shown ineffective; the reviewer may promote
+  it); a worse one sets `effective` (keep the instruction; never `active` or
+  `graduated`). The rule compares means only, as chosen; it has no variance
+  or significance test.
+- The result is measured evidence appended to the candidate body: the
+  metric label and direction, each arm's count and its exact mean as the
+  nearest number (ties to even), the verdict, and the date, which is also `updated`; the `unproven`
+  note line is replaced by the verdict. No run text is stored.
+- Alternative rejected for now: Goldband launching both arms itself, which
+  would move the test-helper runner into the runtime and isolate instruction
+  loading in temporary copies, unverifiable without a paid run.
+
+Fixtures: one de-identified window per host under
+`goldband-loop/test/fixtures/session-retro/`. Keys, numbers, booleans, enum
+fields, and tool names are kept; ids are pseudonymized, timestamps rebased,
+and other strings replaced by same-length filler capped at 512 bytes; the
+Codex fixture's `call_id` key, which the scrubber had pseudonymized as an
+id, is restored. The
+leading `Exit code N` line and truncation markers are kept because adapters
+read them. Byte metrics from these fixtures are not real sizes; metric tests
+use synthetic fixtures. A test rejects any text outside enum fields and tool
+names.
+
+Why: a prompt contract cannot prove a retro claim. Counting, ordering, and
+exit codes are deterministic and belong in code; judgment stays with the
+model and is labeled as such. Binding evidence to a hashed snapshot keeps
+citations valid while the session continues to grow.
+
+Alternatives considered:
+
+| Alternative | Why rejected |
+|-------------|--------------|
+| Let the model read the transcript and judge everything | Counts and exit codes become unverifiable and unrepeatable. |
+| Persist excerpts of tool output as evidence | Copies prompts, secrets, and file content into Goldband state. |
+| Statically scan the target repo's build, hook, and CI files | A file's presence does not prove the check ran; the session record does. |
+| Scheduled retro runs | No evidence that manual runs are insufficient; adds install, state, cursor, lock, and uninstall surfaces. |
+
+Failure signals:
+
+- A persisted report or candidate contains text outside the allowlist, or the
+  canary strings from the privacy fixture.
+- Two runs over the same snapshot produce different `measured` evidence.
+- A report omits a facet or reports partial output as complete.
+- A `mechanical` candidate is promoted to a documentation rule.
+- An `unproven` instruction candidate becomes active or graduates.
+- An `effective` instruction candidate becomes active or graduates, or an
+  eval is recorded without the user running and supplying both arms.
+
+Revisit triggers:
+
+- A host adds structured per-call tokens, exit codes, or truncation fields.
+- Phase 2 is live, the user reports manual runs are insufficient, and
+  `workflow-entry` telemetry shows retro going unrun.

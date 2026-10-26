@@ -444,7 +444,33 @@
       "actions": [
         { "id": "save", "description": "Save current working context.", "runtime": "typed", "owner": "context-checkpoint-store", "risk": "low" },
         { "id": "restore", "description": "Restore saved working context.", "runtime": "typed", "owner": "context-checkpoint-store", "risk": "low", "promptContract": { "hardBoundaries": ["Do not modify the project while restoring context."] } },
-        { "id": "retro", "description": "Summarize recent work and lessons.", "runtime": "compatibility", "owner": "prompt-contract-dispatch", "risk": "low", "promptContract": { "relevantContext": ["Trace the session or history records the user names. Before proposing changes, check which existing checks, tests, and wiring already cover the issue."], "hardBoundaries": ["Separate observations from inferences. Without history evidence, state that the cause is unknown instead of inventing one. End without new rules when no proposal is worth adopting."], "verification": ["Fix mechanical problems in an existing check, test, or wiring first; address design problems through ownership boundaries or review criteria. Cite the evidence for each proposal."] } }
+        {
+          "id": "retro",
+          "description": "Summarize recent work and lessons.",
+          "runtime": "typed",
+          "owner": "session-retro-evidence",
+          "risk": "low",
+          "hostSupport": ["claude", "codex"],
+          "runtimeContract": {
+            "modes": ["evidence", "propose"],
+            "requiredInputs": { "evidence": ["mode"], "propose": ["mode", "sessionId", "sha256", "proposals"] },
+            "outputs": ["retro-report", "facet-coverage", "candidate-outcomes"],
+            "sideEffects": { "local-retro-report-write": "runtime-owner", "local-knowledge-candidate-write": "runtime-owner" }
+          },
+          "promptContract": {
+            "relevantContext": [
+              "From the Goldband runtime root, run `bin/goldband-retro evidence --host <claude|codex>` for this session, `--session <id>`, or `--days <N>` (this repo, last N days). Record N is line N+1 of the record path.",
+              "Infer only from cited records: unused reads, cheaper commands or MCP, whether a deterministic check could catch an error (`mechanical`) or not (`judgement`), failure causes, and whether a repeated instruction restates another, a hook or gate, or host defaults."
+            ],
+            "hardBoundaries": [
+              "Report `unavailable` facets as not covered. Label inferences apart from measurements; without evidence, call the cause unknown.",
+              "Never copy prompts, tool output, or file content into proposals, which only become knowledge candidates. Edit no instructions, rules, hooks, or settings; propose only read-only access, never secrets. Instruction changes stay `unproven` until `bin/goldband-retro eval` records user-run scores."
+            ],
+            "verification": [
+              "Per snapshot, write JSON with `sessionId`, `sha256`, and `proposals` (`facet`, `rule`, `severity`, `target`, `summary`, `practice`, `context`, `refs`, `estimatedBytes` for path guidance, `checkClass` for auto-checks, `inferred` `evidence`), run `bin/goldband-retro propose --input <file>`, and report each outcome or that nothing is worth adopting."
+            ]
+          }
+        }
       ]
     },
     {
