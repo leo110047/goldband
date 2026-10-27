@@ -3,14 +3,19 @@
 const fs = require('fs');
 const path = require('path');
 
+// Plugin and copied installs place skills/<name>/ beside hooks/; the repo
+// nests skills under skills/global/.
+const HOOK_ROUTER_DIRS = [
+  '../../../hooks/scripts/lib/hook-router',
+  '../../../../hooks/scripts/lib/hook-router',
+];
+
 function resolveHookModule(relativePath) {
-  const candidate = path.resolve(
-    __dirname,
-    '../../../../hooks/scripts/lib/hook-router',
-    relativePath,
-  );
-  if (fs.existsSync(candidate)) {
-    return require(candidate);
+  for (const hookRouterDir of HOOK_ROUTER_DIRS) {
+    const candidate = path.resolve(__dirname, hookRouterDir, relativePath);
+    if (fs.existsSync(candidate)) {
+      return require(candidate);
+    }
   }
 
   throw new Error(

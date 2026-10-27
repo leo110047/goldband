@@ -107,6 +107,12 @@ function prepareModeStateFixture(fixture, modeStateFile) {
     // Ignore cleanup failures before the next fixture.
   }
 
+  const modeStateRaw = fixture.setup && fixture.setup.modeStateRaw;
+  if (typeof modeStateRaw === 'string') {
+    fs.writeFileSync(modeStateFile, modeStateRaw, 'utf8');
+    return;
+  }
+
   const modeState = fixture.setup && fixture.setup.modeState;
   if (!modeState || typeof modeState !== 'object') {
     return;

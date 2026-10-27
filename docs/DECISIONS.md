@@ -2545,3 +2545,90 @@ Revisit triggers:
 - A host adds structured per-call tokens, exit codes, or truncation fields.
 - Phase 2 is live, the user reports manual runs are insufficient, and
   `workflow-entry` telemetry shows retro going unrun.
+
+## 2026-10-27: Unreadable Mode State Fails Status Reads, Not Hook Policy
+
+Decision: `mode-state.js` separates a missing state file from one that exists
+but cannot be read or parsed. A missing file means no active mode everywhere.
+An unreadable or corrupt file is an explicit error for status and user mode
+changes: `loadModeState` and `setModeActiveStrict` throw with a hint to delete
+the file, so `careful-mode.js` and `freeze-mode.js` exit nonzero for `status`,
+`enable`, and `disable` and leave the file unchanged, and `goldband-status.js`
+reports the source as unavailable. Hook policy keeps reading through
+`readModeState`, which treats that file as no active mode, and hook writes
+(review read-only mode) keep replacing it, unchanged from before. Every write
+goes to a temporary file renamed over the state file.
+
+The mode scripts locate the file the hooks read for the session. Without
+`--session`, the session comes from `CLAUDE_CODE_SESSION_ID`, the variable
+Claude Code puts in the model's shell, then from `CLAUDE_SESSION_ID`, which the
+host does not set there but a caller may export. That shell also lacks
+`CLAUDE_PLUGIN_DATA`, so the skills' documented commands pass
+`CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}"`, which the host substitutes in a
+plugin skill's text and leaves empty elsewhere. The plugin distribution check
+confirms the substitution against a live host. The `safety
+guard|freeze|unfreeze` workflows resolve the session the same way. Without the
+goldband plugin's `CLAUDE_PLUGIN_DATA` (with a goldband `CLAUDE_PLUGIN_ROOT`),
+they change mode state only when `HOOK_ROUTER_MODE_STATE_FILE` names the file
+or `claude plugin list` shows no enabled `goldband@goldband` install, and block
+otherwise; another plugin's data directory never reaches the mode script.
+
+Rationale: the hook is a bounded heuristic, not an authorization boundary
+(2026-10-12), so refusing every tool call on a corrupt file would add a
+failure path without adding authority. The user-facing surfaces now report the
+corruption instead of showing an inactive mode. The replay fixture
+`careful-rm-rf-corrupt-state-negative` holds the hook behavior.
+
+## 2026-10-27: Claude Mods Are a Claude-Only Display and Command Adapter
+
+Decision: the `goldband@goldband` plugin ships a Claude mod (`hooks/mod/`,
+named under `modules` in the plugin's `hooks/hooks.json`). It is a Claude-only
+adapter with no Codex equivalent and carries no policy: guardrails stay in the
+shared command-hook owners. It does two things:
+
+- Pins a status line with careful mode, freeze mode, and cross-review. Cross-
+  review shows while the session has an active, unexpired review contract,
+  whether or not an approved review would already let Stop pass. The rule sits
+  in the hook-router adapter because `core.cjs` stays unchanged for this
+  feature. It never writes mode state and never replaces the user's
+  `statusLine`.
+- Serves `/goldband-language` without a model turn by running
+  `set-goldband-language.sh`, which owns alias normalization: it reads the
+  current value first, which also checks that Goldband Loop is installed (the
+  helper exits 3 when its config binary is missing), asks when no language is
+  given and someone can answer (a `-p` run fails instead), then passes the
+  language as typed to `set` (exit 2 for an unsupported one) and reports the
+  helper's read-back value. The plugin stops shipping
+  `commands/goldband-language.md`. While mods are disabled, plugin installs
+  have no `/goldband-language`. Installer installs keep the markdown command.
+
+Implementation contract:
+
+- Status reads go through `hooks/scripts/tools/goldband-status.js`, which
+  calls `loadModeState` and the cross-review gate's runtime loader, so the mod
+  resolves the same files and runtime as the hooks. One status process runs per
+  update, at session start, after `/clear` or `/resume`, and after each
+  main-agent turn; the first update also runs `claude plugin list` once to
+  locate the data directory, again only after the host failed to answer.
+  `scripts/test-goldband-status.mjs` holds the display rule for cross-review to
+  the core's Stop gate.
+- Child processes the mod starts do not receive `CLAUDE_PLUGIN_DATA`
+  (verified on Claude Code 2.1.310). `hooks/mod/install-paths.ts` derives it
+  as `<config>/plugins/data/<plugin id>` from `claude plugin list --json`,
+  matching the plugin root to exactly one enabled entry, with characters
+  outside `[A-Za-z0-9_-]` replaced by `-`. Any other result is an error, so
+  status shows unavailable; a `--plugin-dir` session, which `claude plugin
+  list` does not show, has no status line state.
+  `scripts/check-plugin-distribution.mjs` holds the derivation to the host:
+  a probe plugin's command hook records the `CLAUDE_PLUGIN_DATA` it receives,
+  and its mod runs this resolver against the real `$.plugin.root` and
+  `claude plugin list`, recording the result through a child process; both
+  must match.
+- A mod command with a markdown command's name runs instead of the markdown
+  command while the mod is loaded (verified on 2.1.310).
+
+Revisit triggers:
+
+- Claude Code exposes the plugin data directory to mods or passes
+  `CLAUDE_PLUGIN_DATA` to their child processes.
+- Mods leave early access with a changed command, status, or process API.

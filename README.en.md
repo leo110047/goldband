@@ -51,6 +51,8 @@ claude plugin install goldband@goldband --scope user
 
 The Claude plugin does not include Goldband Loop. For workflows on a single tool, the Codex portable plugin, or Claude Desktop/web/mobile integrations, see [additional install options](OPERATIONS.md#additional-install-options).
 
+The Claude plugin also includes a Claude mod, with no Codex equivalent: it shows careful mode, freeze mode, and cross-review gate state below the prompt, and runs `/goldband-language` without a model turn. While mods are disabled (for example by `disableAllHooks`), plugin installs have no `/goldband-language`; installer installs keep `commands/goldband-language.md`.
+
 Check installation status, then restart Claude Code/Codex:
 
 ```bash

@@ -49,6 +49,16 @@ const GENERATED_RULE_SKILL_PATH = path.join(
   'SKILL.md',
 );
 
+// The Claude mod replaces this markdown command for plugin installs; the
+// installer still links it from commands/.
+const MOD_REPLACED_COMMANDS = ['commands/goldband-language.md'];
+const MOD_SOURCE_DIR = 'hooks/mod';
+const MOD_MODULE = './mod/register.ts';
+// Mod tests run from a temporary copy (check-plugin-distribution.mjs) and are
+// not shipped.
+export const MOD_TESTS_DIR = 'tests';
+export const MOD_SOURCE_PATH = path.join(ROOT_DIR, MOD_SOURCE_DIR);
+
 const MANAGED_COMMANDS = [
   '.claude-plugin/plugin.json',
   '.claude-plugin/marketplace.json',
@@ -85,7 +95,9 @@ const MANAGED_COMMANDS = [
 ];
 
 export function buildPluginArtifacts() {
-  const commands = markdownFiles('commands');
+  const commands = markdownFiles('commands').filter(
+    (command) => !MOD_REPLACED_COMMANDS.includes(command),
+  );
   const sourceSkills = skillDirs('skills/global');
   const rules = markdownFiles('rules');
   const hookConfig = buildPluginHooks();
@@ -107,10 +119,17 @@ export function buildPluginArtifacts() {
     [GENERATED_RULE_SKILL_PATH, buildRuleSkill(rules)],
   ]);
 
+  addSourceDirectoryArtifacts(artifacts);
+  addSharedAdapterArtifacts(artifacts);
+  return artifacts;
+}
+
+function addSourceDirectoryArtifacts(artifacts) {
   addDirectoryArtifacts(
     artifacts,
     'commands',
     path.join(PLUGIN_ROOT_PATH, 'commands'),
+    (relative) => !MOD_REPLACED_COMMANDS.includes(`commands/${relative}`),
   );
   addDirectoryArtifacts(
     artifacts,
@@ -127,8 +146,12 @@ export function buildPluginArtifacts() {
     'rules',
     path.join(PLUGIN_ROOT_PATH, 'rules'),
   );
-  addSharedAdapterArtifacts(artifacts);
-  return artifacts;
+  addDirectoryArtifacts(
+    artifacts,
+    MOD_SOURCE_DIR,
+    path.join(PLUGIN_ROOT_PATH, 'hooks', 'mod'),
+    (relative) => !relative.startsWith(`${MOD_TESTS_DIR}/`),
+  );
 }
 
 const HOOK_ROUTER_DIR = 'hooks/scripts/lib/hook-router';
@@ -319,6 +342,10 @@ function buildExpectedAssets({ commands, hookConfig, rules, sourceSkills }) {
         'hooks/scripts/hooks/hook-router.js',
         'hooks/scripts/hooks/skill-activation-suggestions.js',
       ],
+      modules: hookConfig.modules.map((module) =>
+        path.posix.join('hooks', module),
+      ),
+      modReplacedCommands: MOD_REPLACED_COMMANDS,
       rules,
       rulesManifest: 'rules/manifest.json',
       generatedRuleSkill: relativePath(GENERATED_RULE_SKILL_PATH),
@@ -370,7 +397,7 @@ function buildPluginHooks() {
   );
   const hooks = JSON.parse(JSON.stringify(source.hooks || {}));
   rewriteHookCommands(hooks);
-  return { hooks };
+  return { hooks, modules: [MOD_MODULE] };
 }
 
 function rewriteHookCommands(node) {
@@ -449,10 +476,16 @@ function skillDirs(dir) {
     .sort();
 }
 
-function addDirectoryArtifacts(artifacts, sourceDir, destinationDir) {
+function addDirectoryArtifacts(
+  artifacts,
+  sourceDir,
+  destinationDir,
+  include = () => true,
+) {
   const sourceRoot = path.join(ROOT_DIR, sourceDir);
   for (const sourceFile of listFiles(sourceRoot)) {
     const relative = path.relative(sourceRoot, sourceFile);
+    if (!include(relative.split(path.sep).join('/'))) continue;
     const destination = path.join(destinationDir, relative);
     artifacts.set(destination, fs.readFileSync(sourceFile, 'utf8'));
   }

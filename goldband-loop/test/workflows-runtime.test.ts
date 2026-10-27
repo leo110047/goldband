@@ -411,10 +411,12 @@ describe('workflow runtime', () => {
   test('safety freeze and unfreeze share the hook state owner', async () => {
     const oldEnv = {
       CLAUDE_PLUGIN_DATA: process.env.CLAUDE_PLUGIN_DATA,
-      CLAUDE_SESSION_ID: process.env.CLAUDE_SESSION_ID,
+      CLAUDE_PLUGIN_ROOT: process.env.CLAUDE_PLUGIN_ROOT,
+      CLAUDE_CODE_SESSION_ID: process.env.CLAUDE_CODE_SESSION_ID,
     };
     process.env.CLAUDE_PLUGIN_DATA = tmpHome;
-    process.env.CLAUDE_SESSION_ID = 'workflow-freeze-test';
+    process.env.CLAUDE_PLUGIN_ROOT = join(tmpHome, 'goldband-plugin');
+    process.env.CLAUDE_CODE_SESSION_ID = 'workflow-freeze-test';
     try {
       const frozen = await runWorkflow(getWorkflow('safety/freeze'), {
         mode: 'real',
@@ -470,6 +472,88 @@ describe('workflow runtime', () => {
         },
       );
       expect(allowedEdit.status).toBe(0);
+    } finally {
+      restoreEnv(oldEnv);
+    }
+  });
+
+  // Without the goldband plugin's data directory, a write proceeds only when the
+  // state file is named or `claude plugin list` confirms the plugin is absent.
+  test('safety guard refuses a write the goldband plugin hooks would not read', async () => {
+    const bin = join(tmpHome, 'fake-claude-bin');
+    mkdirSync(bin, { recursive: true });
+    const oldEnv = {
+      CLAUDE_PLUGIN_DATA: process.env.CLAUDE_PLUGIN_DATA,
+      CLAUDE_PLUGIN_ROOT: process.env.CLAUDE_PLUGIN_ROOT,
+      CLAUDE_CODE_SESSION_ID: process.env.CLAUDE_CODE_SESSION_ID,
+      CLAUDE_SESSION_ID: process.env.CLAUDE_SESSION_ID,
+      GOLDBAND_DATA_DIR: process.env.GOLDBAND_DATA_DIR,
+      HOOK_ROUTER_MODE_STATE_FILE: process.env.HOOK_ROUTER_MODE_STATE_FILE,
+      PATH: process.env.PATH,
+    };
+    delete process.env.CLAUDE_PLUGIN_DATA;
+    delete process.env.CLAUDE_PLUGIN_ROOT;
+    delete process.env.CLAUDE_SESSION_ID;
+    delete process.env.HOOK_ROUTER_MODE_STATE_FILE;
+    process.env.CLAUDE_CODE_SESSION_ID = 'workflow-guard-test';
+    process.env.GOLDBAND_DATA_DIR = tmpHome;
+    process.env.PATH = `${bin}:${process.env.PATH}`;
+    const stateFile = join(
+      tmpHome,
+      'hook-router',
+      'modes',
+      'session-workflow-guard-test.json',
+    );
+    const guard = () => {
+      return runWorkflow(getWorkflow('safety/guard'), {
+        mode: 'real',
+        host: 'claude',
+        cwd: ROOT,
+        goldbandHome: tmpHome,
+      });
+    };
+    const fakeClaude = (script: string) => {
+      writeFileSync(join(bin, 'claude'), `#!/bin/sh\n${script}\n`);
+      chmodSync(join(bin, 'claude'), 0o755);
+    };
+    const enabled = `printf '%s' '[{"id":"goldband@goldband","enabled":false},{"id":"goldband@goldband","enabled":true}]'`;
+    const disabled = `printf '%s' '[{"id":"goldband@goldband","enabled":false}]'`;
+    const expectRefused = async (plugin: string) => {
+      const refused = await guard();
+      expect(refused.output).toMatchObject({ status: 'blocked' });
+      expect(refused.output.evidence).toContain(`goldbandPlugin=${plugin}`);
+      expect(existsSync(stateFile)).toBe(false);
+    };
+    try {
+      fakeClaude(enabled);
+      await expectRefused('enabled');
+      fakeClaude('exit 1');
+      await expectRefused('unknown');
+
+      // Another plugin's data directory is neither accepted nor written to.
+      const otherData = join(tmpHome, 'other-plugin-data');
+      process.env.CLAUDE_PLUGIN_DATA = otherData;
+      // tmpHome's own path names goldband, so this root lies outside it.
+      process.env.CLAUDE_PLUGIN_ROOT = '/tmp/other-plugin';
+      fakeClaude(enabled);
+      await expectRefused('enabled');
+
+      fakeClaude(disabled);
+      const guarded = await guard();
+      expect(guarded.output).toMatchObject({ status: 'completed', active: true });
+      expect(guarded.artifacts).toContain(stateFile);
+      expect(existsSync(otherData)).toBe(false);
+
+      // A named state file needs no plugin answer; CLAUDE_SESSION_ID still names the session.
+      const named = join(tmpHome, 'named-mode-state.json');
+      process.env.HOOK_ROUTER_MODE_STATE_FILE = named;
+      delete process.env.CLAUDE_CODE_SESSION_ID;
+      process.env.CLAUDE_SESSION_ID = 'workflow-guard-legacy';
+      fakeClaude('exit 1');
+      const pinned = await guard();
+      expect(pinned.output).toMatchObject({ status: 'completed', active: true });
+      expect(pinned.output.evidence).toContain('sessionId=workflow-guard-legacy');
+      expect(pinned.artifacts).toContain(named);
     } finally {
       restoreEnv(oldEnv);
     }

@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { goldbandPluginDataDir } from "../lib/state-root";
 import { stateRoot } from "./evidence";
 import { workflowAssetPath } from "./paths";
 import { parseIosQaInput, parseSystemUpgradeInput } from "./safety-gates";
@@ -332,9 +333,7 @@ function runClaudeHookMode(
 			["mode=mock", `expectedActive=${expectedActive}`],
 		);
 	}
-	const requestedSessionId =
-		optionalString(input.sessionId, "sessionId") ||
-		optionalString(process.env.CLAUDE_SESSION_ID, "CLAUDE_SESSION_ID");
+	const requestedSessionId = hookModeSessionId(input);
 	if (!requestedSessionId) {
 		return blocked(
 			"claude hook mode state",
@@ -344,6 +343,8 @@ function runClaudeHookMode(
 		);
 	}
 	const sessionId = normalizeHookSessionId(requestedSessionId);
+	const pluginBlock = pluginDataDirBlock(ctx, operation);
+	if (pluginBlock) return pluginBlock;
 	const script = findModeOwnerScript(modeName);
 	if (!script) {
 		return blocked(
@@ -353,12 +354,7 @@ function runClaudeHookMode(
 			[`mode=${modeName}`],
 		);
 	}
-	const result = commandResult(
-		process.execPath,
-		[script, action, "--session", sessionId, "--json"],
-		ctx.cwd,
-		5_000,
-	);
+	const result = runModeOwnerScript(script, action, sessionId, ctx.cwd);
 	if (result.status !== 0) {
 		return blocked(
 			"claude hook mode state",
@@ -395,6 +391,90 @@ function runClaudeHookMode(
 		[stateFile],
 		{ modeName, active: expectedActive },
 	);
+}
+
+const GOLDBAND_PLUGIN_ID = "goldband@goldband";
+
+// CLAUDE_CODE_SESSION_ID is the session Claude Code puts in the model's shell;
+// CLAUDE_SESSION_ID is the name a caller may still export.
+function hookModeSessionId(input: Record<string, unknown>): string {
+	return (
+		optionalString(input.sessionId, "sessionId") ||
+		optionalString(
+			process.env.CLAUDE_CODE_SESSION_ID,
+			"CLAUDE_CODE_SESSION_ID",
+		) ||
+		optionalString(process.env.CLAUDE_SESSION_ID, "CLAUDE_SESSION_ID")
+	);
+}
+
+// The goldband plugin's hooks read mode state under its CLAUDE_PLUGIN_DATA,
+// which the model's shell does not carry. Without it, a write would read back
+// as success while those hooks never see it, so it is refused unless the state
+// file is named explicitly or the plugin is confirmed absent.
+function pluginDataDirBlock(
+	ctx: WorkflowContext,
+	operation: string,
+): OwnedRuntimeResult | undefined {
+	if (
+		goldbandPluginDataDir() ||
+		optionalString(
+			process.env.HOOK_ROUTER_MODE_STATE_FILE,
+			"HOOK_ROUTER_MODE_STATE_FILE",
+		)
+	) {
+		return undefined;
+	}
+	const enabled = isGoldbandPluginEnabled(ctx.cwd);
+	if (enabled === false) return undefined;
+	return blocked(
+		"claude hook mode state",
+		operation,
+		enabled
+			? "The goldband plugin hooks read mode state from the plugin data directory, which this shell does not carry; use the plugin's careful-mode or freeze-mode skill."
+			: "Cannot confirm whether the goldband plugin hooks are enabled, so the hook mode state location is unknown.",
+		[
+			`goldbandPlugin=${enabled ? "enabled" : "unknown"}`,
+			"goldbandPluginData=missing",
+		],
+	);
+}
+
+// Another plugin's data directory is not where goldband hooks read mode state;
+// an empty value makes the mode script fall back to the default data directory.
+function runModeOwnerScript(
+	script: string,
+	action: "enable" | "disable",
+	sessionId: string,
+	cwd: string,
+) {
+	return commandResult(
+		process.execPath,
+		[script, action, "--session", sessionId, "--json"],
+		cwd,
+		5_000,
+		goldbandPluginDataDir() ? {} : { CLAUDE_PLUGIN_DATA: "" },
+	);
+}
+
+// Any enabled entry counts: user and project installs are listed separately.
+function isGoldbandPluginEnabled(cwd: string): boolean | undefined {
+	const result = commandResult(
+		"claude",
+		["plugin", "list", "--json"],
+		cwd,
+		10_000,
+	);
+	if (result.status !== 0) return undefined;
+	try {
+		const plugins: unknown = JSON.parse(result.stdout);
+		if (!Array.isArray(plugins)) return undefined;
+		return plugins.some(
+			(entry) => entry?.id === GOLDBAND_PLUGIN_ID && entry.enabled === true,
+		);
+	} catch {
+		return undefined;
+	}
 }
 
 function runContextSave(ctx: WorkflowContext): OwnedRuntimeResult {

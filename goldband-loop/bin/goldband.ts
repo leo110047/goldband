@@ -41,7 +41,10 @@ import {
 	REVIEW_SCOPE_FLAGS,
 	type ReviewScopeFlag,
 } from "../lib/review-runtime-contract";
-import { resolveGoldbandStateRoot } from "../lib/state-root";
+import {
+	goldbandPluginDataDir,
+	resolveGoldbandStateRoot,
+} from "../lib/state-root";
 import {
 	PROMPT_CONTRACT_ACTIONS,
 	TRUSTED_LAUNCHER_ACTIONS,
@@ -804,8 +807,7 @@ function hasExplicitStateRoot(env: NodeJS.ProcessEnv): boolean {
 		env.GOLDBAND_HOME ||
 			env.GOLDBAND_STATE_DIR ||
 			env.GOLDBAND_STATE_ROOT ||
-			(env.CLAUDE_PLUGIN_DATA &&
-				env.CLAUDE_PLUGIN_ROOT?.toLowerCase().includes("goldband")),
+			goldbandPluginDataDir(env),
 	);
 }
 

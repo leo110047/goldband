@@ -28,10 +28,14 @@ normalize_language() {
   esac
 }
 
+# Unset means the zh-TW default; a failed read is an error, not the default.
 read_language() {
   local workflow_config_bin="$1"
   local current
-  current="$("$workflow_config_bin" get goldband_language 2>/dev/null || true)"
+  current="$("$workflow_config_bin" get goldband_language)" || {
+    echo "failed to read goldband_language" >&2
+    return 1
+  }
   if [ -n "$current" ]; then
     printf '%s\n' "$current"
   else
@@ -44,23 +48,34 @@ main() {
   local requested="${2:-}"
   local workflow_config_bin
   local normalized
+  local current
 
+  # Exit 3 tells callers Goldband Loop is not installed.
   workflow_config_bin="$(find_workflow_config_bin)" || {
     echo "Goldband Loop config binary not found" >&2
-    exit 1
+    exit 3
   }
 
   case "$mode" in
     get)
-      read_language "$workflow_config_bin"
+      read_language "$workflow_config_bin" || exit 1
       ;;
     set|sync)
+      # Exit 2 tells callers the language is not supported.
       normalized="$(normalize_language "$requested")" || {
         echo "unsupported language: ${requested:-<empty>}" >&2
+        exit 2
+      }
+      "$workflow_config_bin" set goldband_language "$normalized" || {
+        echo "failed to write goldband_language" >&2
         exit 1
       }
-      "$workflow_config_bin" set goldband_language "$normalized"
-      printf '%s\n' "$normalized"
+      current="$(read_language "$workflow_config_bin")" || exit 1
+      if [ "$current" != "$normalized" ]; then
+        echo "goldband_language readback is ${current}, expected ${normalized}" >&2
+        exit 1
+      fi
+      printf '%s\n' "$current"
       ;;
     *)
       echo "usage: $0 {get|set <zh-TW|en>|sync <zh-TW|en>}" >&2

@@ -9,6 +9,8 @@ import path from 'node:path';
 import {
   diffArtifacts,
   EXPECTED_ASSETS_PATH,
+  MOD_SOURCE_PATH,
+  MOD_TESTS_DIR,
   PLUGIN_HOOKS_PATH,
   PLUGIN_ROOT_PATH,
   ROOT_DIR,
@@ -32,6 +34,8 @@ function main() {
   assertPluginPackageShape(PLUGIN_ROOT_PATH, expected);
   if (!skipCli) {
     assertTempHomePluginInstall(expected);
+    assertModTestsPass();
+    assertPluginDataDirsMatchHost();
   }
   console.log('[OK] plugin distribution check passed');
 }
@@ -89,6 +93,7 @@ function assertExpectedFilesExist(expected) {
     ...expected.claude.commands,
     ...expected.claude.rules,
     ...expected.claude.hookScripts,
+    ...expected.claude.modules,
     ...expected.claude.runtimeDependencies,
     ...expected.codex.reviewRuntimeDependencies,
     ...expected.codex.hookRuntimeDependencies,
@@ -151,6 +156,172 @@ function assertTempHomePluginInstall(expected) {
   }
 }
 
+// Mod tests are not shipped, so they run against a copy of the plugin.
+function assertModTestsPass() {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'goldband-mod.'));
+  const tmpHome = path.join(tmpRoot, 'home');
+  const tmpPlugin = path.join(tmpRoot, 'plugin');
+  try {
+    fs.mkdirSync(tmpHome);
+    fs.cpSync(PLUGIN_ROOT_PATH, tmpPlugin, { recursive: true });
+    fs.cpSync(
+      path.join(MOD_SOURCE_PATH, MOD_TESTS_DIR),
+      path.join(tmpPlugin, 'hooks', 'mod', MOD_TESTS_DIR),
+      { recursive: true },
+    );
+    runClaude(tmpHome, ['plugin', 'validate', tmpPlugin]);
+    runClaude(tmpHome, ['plugin', 'test', tmpPlugin]);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+// The mod derives CLAUDE_PLUGIN_DATA because its child processes do not get
+// it. A probe plugin pairs a command hook, which records the value the host
+// passes, with a mod that runs the goldband mod's own resolver against the
+// host's real `$.plugin.root` and `claude plugin list`, and records the result
+// through a child process given only an extra variable (so HOME and PATH must
+// still arrive). The marketplace name holds a `.` so the character
+// replacement is exercised.
+// The hooks' CLAUDE_PLUGIN_DATA is the truth; the mod derives the same
+// directory, and skill text receives it by substitution.
+function assertPluginDataDirsMatchHost() {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'goldband-data-dir.'));
+  const tmpHome = path.join(tmpRoot, 'home');
+  try {
+    const marketplace = writeProbeMarketplace(path.join(tmpRoot, 'market'));
+    fs.mkdirSync(tmpHome);
+    runClaude(tmpHome, ['plugin', 'marketplace', 'add', marketplace]);
+    runClaude(tmpHome, ['plugin', 'install', 'probe@probe.market']);
+    // A slash command ends the session before any model call; a skill's
+    // injected command runs as the skill text loads.
+    const sessions = ['/probe-session-start', '/probe:probe-skill'].map(
+      (prompt) =>
+        spawnSync('claude', ['-p', prompt], {
+          cwd: tmpHome,
+          env: tempHomeEnv(tmpHome),
+          input: '',
+          encoding: 'utf8',
+          timeout: 120_000,
+        }),
+    );
+    const read = (name) => {
+      const file = path.join(tmpHome, name);
+      assert.ok(
+        fs.existsSync(file),
+        `probe session wrote no ${name}: ${JSON.stringify(
+          sessions.map((session) => ({
+            status: session.status,
+            error: session.error?.message,
+            stderr: session.stderr,
+          })),
+        )}`,
+      );
+      return fs.readFileSync(file, 'utf8');
+    };
+    assert.equal(
+      read('probe-mod-data-dir'),
+      `ok ${read('probe-data-dir')}`,
+      'mod plugin data dir matches the host',
+    );
+    assert.equal(
+      read('probe-skill-data-dir'),
+      read('probe-data-dir'),
+      'skill text receives the hooks plugin data dir',
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+const PROBE_MOD = `import type { Register } from 'claude-code';
+import { resolvePluginDataDir } from './install-paths';
+
+export const register: Register = (on) => {
+  on('session.start', async ($, e, next) => {
+    let line: string;
+    try {
+      line = \`ok \${await resolvePluginDataDir($)}\`;
+    } catch (error) {
+      line = \`error \${String(error)}\`;
+    }
+    await $.process.run(
+      ['node', '-e', 'require("fs").writeFileSync(process.env.HOME + "/probe-mod-data-dir", process.env.PROBE_LINE)'],
+      { env: { PROBE_LINE: line } },
+    );
+    return next(e);
+  });
+};
+`;
+
+// Single quotes keep the shell out: only the host's substitution can fill it.
+const PROBE_SKILL = `---
+name: probe-skill
+description: Records the plugin data dir substituted into skill text.
+allowed-tools: Bash
+---
+!\`printf '%s' '\${CLAUDE_PLUGIN_DATA}' > "$HOME/probe-skill-data-dir"\`
+`;
+
+function writeProbeMarketplace(dir) {
+  const files = {
+    '.claude-plugin/marketplace.json': JSON.stringify({
+      name: 'probe.market',
+      owner: { name: 'goldband' },
+      plugins: [{ name: 'probe', source: './probe' }],
+    }),
+    'probe/.claude-plugin/plugin.json': JSON.stringify({
+      name: 'probe',
+      version: '0.1.0',
+    }),
+    'probe/hooks/hooks.json': JSON.stringify({
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [
+              {
+                type: 'command',
+                command:
+                  'printf \'%s\' "$CLAUDE_PLUGIN_DATA" > "$HOME/probe-data-dir"',
+              },
+            ],
+          },
+        ],
+      },
+      modules: ['./mod/register.ts'],
+    }),
+    'probe/hooks/mod/register.ts': PROBE_MOD,
+    'probe/skills/probe-skill/SKILL.md': PROBE_SKILL,
+    'probe/hooks/mod/install-paths.ts': fs.readFileSync(
+      path.join(MOD_SOURCE_PATH, 'install-paths.ts'),
+      'utf8',
+    ),
+  };
+  for (const [file, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    fs.writeFileSync(path.join(dir, file), content);
+  }
+  return dir;
+}
+
+// Claude Code under a temp HOME, never the developer's own config directory,
+// and without credentials: a probe session must end before any model call.
+function tempHomeEnv(home) {
+  const env = { ...process.env, HOME: home };
+  for (const name of [
+    'CLAUDE_CONFIG_DIR',
+    'ANTHROPIC_API_KEY',
+    'ANTHROPIC_AUTH_TOKEN',
+    'CLAUDE_CODE_OAUTH_TOKEN',
+    'CLAUDE_CODE_USE_BEDROCK',
+    'CLAUDE_CODE_USE_VERTEX',
+    'CLAUDE_CODE_USE_FOUNDRY',
+  ]) {
+    delete env[name];
+  }
+  return env;
+}
+
 function assertPluginPackageShape(pluginRootPath, expected) {
   assertInstalledAssets(pluginRootPath, expected);
   assertInstalledRuntimeExecutes(pluginRootPath);
@@ -160,7 +331,7 @@ function assertPluginPackageShape(pluginRootPath, expected) {
 function runClaude(tmpHome, args) {
   const result = spawnSync('claude', args, {
     cwd: ROOT_DIR,
-    env: { ...process.env, HOME: tmpHome },
+    env: tempHomeEnv(tmpHome),
     encoding: 'utf8',
   });
   if (result.status === 0) {
@@ -192,7 +363,7 @@ function assertInstalledAssets(installPath, expected) {
   assertRuntimeDependencies(installPath, expected);
   assertRulesAssets(installPath, expected);
   assertGeneratedRuleSkillIndexPathsResolve(installPath);
-  assertGoldbandLanguageCommandIsPluginSafe(installPath);
+  assertModAssets(installPath, expected);
 }
 
 function assertRulesAssets(installPath, expected) {
@@ -276,23 +447,32 @@ function assertRuntimeDependencies(installPath, expected) {
   }
 }
 
-function assertGoldbandLanguageCommandIsPluginSafe(installPath) {
-  const commandPath = path.join(
-    installPath,
-    'commands',
-    'goldband-language.md',
+function assertModAssets(installPath, expected) {
+  const hooks = JSON.parse(
+    fs.readFileSync(path.join(installPath, 'hooks', 'hooks.json'), 'utf8'),
   );
-  const content = fs.readFileSync(commandPath, 'utf8');
-  assert.equal(
-    content.includes('~/.claude/commands/scripts/set-goldband-language.sh set'),
-    false,
-    'goldband-language command must not hardcode installer command helper path',
+  assert.deepEqual(
+    hooks.modules.map((module) => path.posix.join('hooks', module)),
+    expected.claude.modules,
   );
+  for (const modulePath of expected.claude.modules) {
+    assert.ok(
+      fs.existsSync(path.join(installPath, modulePath)),
+      `installed mod module missing: ${modulePath}`,
+    );
+  }
+  for (const commandPath of expected.claude.modReplacedCommands) {
+    assert.equal(
+      fs.existsSync(path.join(installPath, commandPath)),
+      false,
+      `plugin must not ship ${commandPath}; the mod serves that command`,
+    );
+  }
   assert.ok(
-    content.includes(
-      '${CLAUDE_PLUGIN_ROOT}/commands/scripts/set-goldband-language.sh',
+    fs.existsSync(
+      path.join(installPath, 'commands/scripts/set-goldband-language.sh'),
     ),
-    'goldband-language command must describe the plugin-bundled helper path',
+    'plugin must ship the language helper the mod runs',
   );
 }
 
@@ -308,6 +488,8 @@ function assertInstalledRuntimeExecutes(installPath) {
     session_id: 'plugin-runtime-test',
   });
   assertPackagedRulesResolver(installPath);
+  assertPackagedModeScriptsExecute(installPath);
+  assertPackagedStatusScriptExecutes(installPath);
   const suggestions = runNodeHook(
     installPath,
     'hooks/scripts/hooks/skill-activation-suggestions.js',
@@ -345,14 +527,57 @@ function assertPackagedRulesResolver(installPath) {
   );
 }
 
-function runNodeHook(installPath, relativeScriptPath, input) {
+function assertPackagedModeScriptsExecute(installPath) {
+  for (const modeName of ['careful-mode', 'freeze-mode']) {
+    const result = runNodeHook(
+      installPath,
+      `skills/${modeName}/scripts/${modeName}.js`,
+      {},
+      ['status', '--session', 'plugin-runtime-test', '--json'],
+    );
+    assert.equal(JSON.parse(result.stdout).modeName, modeName);
+    assertModeCommandsPassPluginData(installPath, modeName);
+  }
+}
+
+// The model's shell has no CLAUDE_PLUGIN_DATA; the host substitutes it into
+// skill text, so every documented command must carry it to the script.
+function assertModeCommandsPassPluginData(installPath, modeName) {
+  const skill = fs.readFileSync(
+    path.join(installPath, `skills/${modeName}/SKILL.md`),
+    'utf8',
+  );
+  const commands = skill.match(/`[^`]*node scripts\/[^`]*`/g) ?? [];
+  assert.ok(commands.length > 0, `${modeName} documents no commands`);
+  for (const command of commands) {
+    assert.ok(
+      command.startsWith('`CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node '),
+      `${modeName} command must pass the plugin data dir: ${command}`,
+    );
+  }
+}
+
+function assertPackagedStatusScriptExecutes(installPath) {
+  const result = runNodeHook(
+    installPath,
+    'hooks/scripts/tools/goldband-status.js',
+    {},
+    ['--session', 'plugin-runtime-test'],
+  );
+  assert.deepEqual(
+    JSON.parse(result.stdout).sources.map((source) => source.name),
+    ['careful-mode', 'freeze-mode', 'cross-review'],
+  );
+}
+
+function runNodeHook(installPath, relativeScriptPath, input, args = []) {
   const dataDir = fs.mkdtempSync(
     path.join(os.tmpdir(), 'goldband-plugin-runtime-data.'),
   );
   try {
     const result = spawnSync(
       process.execPath,
-      [path.join(installPath, relativeScriptPath)],
+      [path.join(installPath, relativeScriptPath), ...args],
       {
         cwd: installPath,
         env: {

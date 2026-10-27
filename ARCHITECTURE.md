@@ -254,6 +254,29 @@ The plugin deliberately excludes `goldband-loop/`, Playwright/browser/iOS
 tooling, Codex config/rules/hooks/requirements, and public marketplace
 publishing.
 
+The plugin also ships a Claude mod, a Claude-only adapter with no Codex
+equivalent. Its source is `hooks/mod/`; the plugin's `hooks/hooks.json` names
+it under `modules`, beside the command hooks. The mod holds no policy and writes
+no mode state:
+
+- it pins a status line with careful mode, freeze mode, and cross-review (while
+  an active, unexpired review contract exists), read through
+  `hooks/scripts/tools/goldband-status.js`, which queries the same owners the
+  hooks read. A source that cannot answer shows as unavailable, never as
+  inactive.
+- it serves `/goldband-language` by running
+  `commands/scripts/set-goldband-language.sh`, without a model turn. The helper
+  normalizes aliases, exits 2 for an unsupported language, and exits 3 when the
+  Goldband Loop config binary is missing. The plugin does not
+  ship `commands/goldband-language.md`; the installer still links it.
+
+Child processes the mod starts do not receive `CLAUDE_PLUGIN_DATA`, so
+`hooks/mod/install-paths.ts` derives that directory from the one enabled
+installed plugin read from the mod's root and passes it explicitly; with no
+such entry (as under `--plugin-dir`) status shows unavailable. Mod tests under `hooks/mod/tests/` are not shipped;
+`scripts/check-plugin-distribution.mjs` runs `claude plugin validate` and
+`claude plugin test` on a copy of the plugin with them.
+
 ### Codex Plugin Contract
 
 The Codex plugin is generated from shared portable sources by

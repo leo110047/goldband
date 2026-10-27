@@ -177,18 +177,38 @@ read_goldband_claude_plugin_state() {
     plugin_json="$(claude plugin list --json 2>/dev/null || printf '[]')"
     PLUGIN_JSON="$plugin_json" node -e '
 const plugins = JSON.parse(process.env.PLUGIN_JSON || "[]");
-const plugin = plugins.find((entry) => entry.id === "goldband@goldband");
+const fs = require("fs");
+const path = require("path");
+// User and project installs are listed separately; an enabled one wins.
+const installs = plugins.filter((entry) => entry.id === "goldband@goldband");
+const plugin = installs.find((entry) => entry.enabled === true) || installs[0];
+// The folder Claude Code reads: the marketplace folder, else the cache copy.
+// "no-mod" is a version without the mod; "broken" is an unreadable hooks.json
+// or a declared module that is missing.
+function modState(root) {
+  try {
+    const hooks = JSON.parse(fs.readFileSync(path.join(root, "hooks", "hooks.json"), "utf8"));
+    const modules = Array.isArray(hooks.modules) ? hooks.modules : [];
+    if (modules.length === 0) return "no-mod";
+    return modules.every((module) => fs.existsSync(path.join(root, "hooks", module)))
+      ? "mod" : "broken";
+  } catch {
+    return "broken";
+  }
+}
 if (!plugin) {
   console.log("missing");
 } else {
   const errors = Array.isArray(plugin.errors) ? plugin.errors.join("; ") : "";
+  const root = plugin.readFromFolder || plugin.installPath || "";
   console.log([
     "installed",
     plugin.enabled ? "enabled" : "disabled",
     plugin.version || "unknown",
     plugin.installPath || "",
+    root ? modState(root) : "no-mod",
     errors
-  ].join("\t"));
+  ].join("\x1f"));
 }
 '
 }
@@ -201,8 +221,9 @@ print_goldband_claude_plugin_state() {
         return 0
     fi
 
-    local state enabled version install_path errors
-    IFS=$'\t' read -r state enabled version install_path errors <<<"$plugin_state"
+    # A non-whitespace separator keeps empty fields (an unset installPath) in place.
+    local state enabled version install_path mod_state errors
+    IFS=$'\x1f' read -r state enabled version install_path mod_state errors <<<"$plugin_state"
     if [ "$state" != "installed" ]; then
         echo -e "  ${YELLOW}[無法檢查]${NC} claude plugin list 回傳格式不明"
         GOLDBAND_STATUS_EXIT_CODE=2
@@ -217,6 +238,15 @@ print_goldband_claude_plugin_state() {
         echo -e "  ${RED}[錯誤]${NC} goldband@goldband plugin (${version}) -> $install_path"
         echo -e "    plugin errors: $errors"
         GOLDBAND_STATUS_EXIT_CODE=2
+    fi
+
+    if [ "$mod_state" = "mod" ]; then
+        echo -e "  ${GREEN}[OK]${NC} Claude mod（狀態行、/goldband-language）"
+    elif [ "$mod_state" = "broken" ]; then
+        echo -e "  ${RED}[錯誤]${NC} Claude mod：hooks/hooks.json 無法讀取或宣告的 module 不存在，重新安裝 goldband@goldband"
+        GOLDBAND_STATUS_EXIT_CODE=2
+    else
+        echo -e "  ${YELLOW}[缺少]${NC} Claude mod：plugin 版本未含 hooks/mod，執行 claude plugin update goldband@goldband"
     fi
 
     if [ "$enabled" = "enabled" ]; then

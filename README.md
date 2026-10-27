@@ -49,6 +49,8 @@ claude plugin install goldband@goldband --scope user
 
 Claude plugin 不含 Goldband Loop。只想替單一工具加裝工作流程，或需要 Codex portable plugin、Claude Desktop／web／mobile 整合，請看[其他安裝選項](OPERATIONS.md#additional-install-options)。
 
+Claude plugin 另含一個 Claude mod（Codex 沒有對應功能）：在提示框下方顯示 careful mode、freeze mode 與 cross-review gate 的狀態，並讓 `/goldband-language` 不經模型直接切換語言。mod 被停用時（例如 `disableAllHooks`），plugin 安裝沒有 `/goldband-language`；installer 安裝仍使用 `commands/goldband-language.md`。
+
 安裝後檢查狀態，並重新啟動 Claude Code／Codex：
 
 ```bash

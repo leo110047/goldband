@@ -84,5 +84,8 @@
         "description": "Unified router notification handling"
       }
     ]
-  }
+  },
+  "modules": [
+    "./mod/register.ts"
+  ]
 }

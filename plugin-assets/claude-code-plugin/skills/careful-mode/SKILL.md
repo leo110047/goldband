@@ -22,11 +22,17 @@ disable-model-invocation: true
 
 ## Script
 
-- `node scripts/careful-mode.js enable`: activates `careful-mode` for the
-  current Claude session.
-- `node scripts/careful-mode.js status`: reports activation, state location,
-  and armed guards.
-- `node scripts/careful-mode.js disable`: deactivates the mode.
+Run the scripts from this skill's directory, keeping the prefix as written.
+A plugin install substitutes its data directory, which the shell does not
+carry, so the state lands where the hooks read it. Outside a plugin the
+prefix is empty and the default data directory applies.
+
+- `CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node scripts/careful-mode.js enable`:
+  activates `careful-mode` for the current Claude session.
+- `CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node scripts/careful-mode.js status`:
+  reports activation, state location, and armed guards.
+- `CLAUDE_PLUGIN_DATA="${CLAUDE_PLUGIN_DATA}" node scripts/careful-mode.js disable`:
+  deactivates the mode.
 
 Flags: `--session <id>` targets another session; `--json` prints
 machine-readable output.
@@ -44,7 +50,7 @@ That module is the authoritative list; the description names each guard's
 - Disable the mode when the risky window ends.
 - Mode state is session-scoped; check `status` before claiming it is armed or
   disabled.
-- Without `${CLAUDE_PLUGIN_DATA}`, mode state falls back to temp storage.
+- A command without the prefix writes state the plugin hooks do not read.
 
 ## Completion Check
 

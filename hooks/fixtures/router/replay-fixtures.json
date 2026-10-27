@@ -1110,6 +1110,31 @@
     }
   },
   {
+    "id": "careful-rm-rf-corrupt-state-negative",
+    "coverage": {
+      "category": "careful-mode",
+      "policy": "rm-rf",
+      "expectedDecision": "allow",
+      "variant": "negative",
+      "regressionSource": "mode-state-corrupt-is-inactive"
+    },
+    "input": {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "session_id": "careful-session",
+      "tool_input": {
+        "command": "rm -rf /tmp/danger"
+      }
+    },
+    "setup": {
+      "modeStateRaw": "{\"modes\": {\"careful-mode\": {\"active\": true"
+    },
+    "expect": {
+      "exitCode": 0,
+      "decision": "allow"
+    }
+  },
+  {
     "id": "careful-rm-rf-negative",
     "coverage": {
       "category": "careful-mode",

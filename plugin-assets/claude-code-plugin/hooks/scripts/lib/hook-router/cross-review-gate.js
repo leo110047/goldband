@@ -81,7 +81,20 @@ function armFromPrompt(input, options) {
   return null;
 }
 
+// Read-only, for display: whether this session has an active, unexpired
+// review contract, the precondition of the core's Stop gate. An approved
+// review can still let Stop pass; an absent runtime cannot arm a contract.
+function isCrossReviewGateActive(sessionId) {
+  const loadedCore = loadCore();
+  if (!loadedCore) return false;
+  const contract = loadedCore.readContract(sessionId);
+  if (!contract || contract.status !== 'active') return false;
+  const expiresMs = Date.parse(contract.expiresAt || '');
+  return !(Number.isFinite(expiresMs) && Date.now() > expiresMs);
+}
+
 module.exports = {
   armFromPrompt,
   evaluateCrossReviewGate,
+  isCrossReviewGateActive,
 };

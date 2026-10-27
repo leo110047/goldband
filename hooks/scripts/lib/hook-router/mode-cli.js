@@ -1,15 +1,16 @@
 const {
+  activeModeNames,
   normalizeSessionId,
-  readModeState,
-  setModeActive,
-  getActiveModes,
+  loadModeState,
+  setModeActiveStrict,
 } = require('./mode-state');
 const { appendUsageEvent } = require('./usage-telemetry');
 
 function parseArgs(argv) {
   const options = {
     action: 'status',
-    sessionId: process.env.CLAUDE_SESSION_ID || 'default',
+    // Without --session, mode-state resolves the host's session.
+    sessionId: undefined,
     json: false,
   };
 
@@ -44,8 +45,8 @@ function parseArgs(argv) {
 
 function buildSummary(options) {
   const { action, modeName, displayName, sessionId, protections } = options;
-  const state = readModeState(sessionId);
-  const activeModes = getActiveModes(sessionId);
+  const state = loadModeState(sessionId);
+  const activeModes = activeModeNames(state);
   const modeState =
     state.modes[modeName] && typeof state.modes[modeName] === 'object'
       ? state.modes[modeName]
@@ -89,7 +90,7 @@ function printHuman(summary) {
 
   console.log('');
   console.log(
-    `Usage: node scripts/${summary.modeName}.js <enable|disable|status> [--session <id>] [--json]`,
+    `Usage: CLAUDE_PLUGIN_DATA=<plugin data dir> node scripts/${summary.modeName}.js <enable|disable|status> [--session <id>] [--json]`,
   );
 }
 
@@ -117,9 +118,9 @@ function runModeCli(config) {
   const sessionId = normalizeSessionId(options.sessionId);
 
   if (options.action === 'enable') {
-    setModeActive(sessionId, modeName, true, { updatedBy: source });
+    setModeActiveStrict(sessionId, modeName, true, { updatedBy: source });
   } else if (options.action === 'disable') {
-    setModeActive(sessionId, modeName, false, { updatedBy: source });
+    setModeActiveStrict(sessionId, modeName, false, { updatedBy: source });
   } else if (options.action !== 'status') {
     throw new Error(`Unknown action: ${options.action}`);
   }
