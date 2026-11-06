@@ -1171,7 +1171,8 @@ describe("retro instruction eval", () => {
 
 describe("retro range", () => {
 	const DAY = 24 * 60 * 60 * 1000;
-	const NOW = Date.UTC(2026, 9, 26, 12);
+	// The workflow and CLI runs read the real clock, so fixtures are dated from it too.
+	const NOW = Date.now();
 
 	function rangeHome() {
 		const home = tempHome();
@@ -1270,11 +1271,11 @@ describe("retro range", () => {
 		// The other copy of id 3 is older than the range and still makes the id ambiguous.
 		const old = path.join(copy, `${id(3)}.jsonl`);
 		fs.copyFileSync(rangeSession(home, id(3), repo, 1), old);
-		fs.utimesSync(old, new Date(Date.now() - 30 * DAY), new Date(Date.now() - 30 * DAY));
+		fs.utimesSync(old, new Date(NOW - 30 * DAY), new Date(NOW - 30 * DAY));
 		// A sidechain record named for an agent carries its parent's session id.
 		const sidechain = path.join(home, ".claude", "projects", "-p-00000001", "agent-a1b2c3d4.jsonl");
 		fs.writeFileSync(sidechain, `${JSON.stringify({ type: "user", sessionId: id(1), isSidechain: true, cwd: repo, message: { role: "user", content: "x" } })}\n`);
-		const result = runRetroRange({ host: "claude", days: 3, cwd: repo, stateRoot: path.join(home, ".goldband"), env: env(home), now: Date.now() });
+		const result = runRetroRange({ host: "claude", days: 3, cwd: repo, stateRoot: path.join(home, ".goldband"), env: env(home), now: NOW });
 		if (result.status !== "completed") throw new Error(result.reason);
 		expect(result.sessions.map(({ sessionId, status }) => [sessionId, status])).toEqual([
 			[id(1), "completed"],
@@ -1350,7 +1351,7 @@ describe("retro range", () => {
 				timeout: 20_000,
 			});
 			expect(cli.status).toBe(0);
-			expect(JSON.parse(cli.stdout).sessions.map((session: Json) => session.sessionId)).not.toContain(id(6));
+			expect(JSON.parse(cli.stdout).sessions.map((session: Json) => session.sessionId)).toEqual([id(1), id(4)]);
 		} finally {
 			fs.chmodSync(path.join(home, ".claude", "projects", `-p-${id(5).slice(0, 8)}`, `${id(5)}.jsonl`), 0o600);
 			fs.chmodSync(locked, 0o700);
