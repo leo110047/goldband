@@ -2159,6 +2159,20 @@ check that cannot run reports failure, never success.
   the call continue. Glob walks run in a child process killed at a 2-second
   deadline, because a directory read can block, as on a macOS
   privacy-protected folder, where no in-process check interrupts it.
+- Below `$TMPDIR` or `/tmp/claude-<uid>`, when it is a directory the current
+  user owns, a recursive copy or move may duplicate a project-level surface
+  from an existing source path on the same surface in the same role. Agents
+  copy whole repositories into scratch directories for experiments, and each
+  copy duplicated `.claude/settings.json`, making it the most frequent Gate G
+  prompt. A duplicate carries content Gate G already authorized at its source,
+  so it grants a session started in the copy nothing new. A direct write, a
+  copy of content from elsewhere or through a link the same command may
+  create, and a removal still need authorization, because a scratch clone's
+  Git hooks, gitleaks rules, and settings govern commits it can push. The
+  configuration that the call's working directory or Claude's project root
+  reads (that directory, its ancestors, and its repository's Git
+  directories), homes, relocated user configuration, global Git
+  configuration, and Gate A keep full coverage.
 
 ## 2026-10-26: Retro Becomes a Typed Owner over Session Snapshots
 

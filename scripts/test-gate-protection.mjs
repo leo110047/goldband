@@ -36,6 +36,7 @@ import {
   runCodex,
   temp,
 } from './lib/gate-protection-harness.mjs';
+import { verifyScratchCopies } from './lib/gate-scratch-copies.mjs';
 
 const require = createRequire(import.meta.url);
 
@@ -589,6 +590,7 @@ verifyAnalysisFailures();
 verifyGitLaunches();
 verifyAnalysisLimits();
 verifyForeignInstall();
+verifyScratchCopies();
 verifyMarkerFileTools();
 verifyGateG();
 verifyShellForms();

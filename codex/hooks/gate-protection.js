@@ -238,13 +238,16 @@ function inspectSegment(segment, context, found) {
     ...commandWriteTargets(launch.words, { ...context, cwds: child.cwds }),
     ...shellPatchTargets(segment, launch.words, context),
   ];
+  // Each target names the operation that writes it.
   found.targets.push(
-    ...scopedTargets(
-      assignedTargets(redirectTargets(segment), found),
-      scope,
-      context,
-    ),
-    ...scopedTargets(assignedTargets(writes, found), child, context),
+    ...[
+      ...scopedTargets(
+        assignedTargets(redirectTargets(segment), found),
+        scope,
+        context,
+      ),
+      ...scopedTargets(assignedTargets(writes, found), child, context),
+    ].map((target) => ({ ...target, op: segment })),
   );
   recordAssignments(launch, found);
 }

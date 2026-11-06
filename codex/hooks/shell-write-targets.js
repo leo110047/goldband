@@ -9,7 +9,9 @@ const {
 } = require('./protected-surfaces');
 
 // Paths that explicit shell writers create, replace, or remove, read from
-// static command words. Each target is { word, operation: write | remove }.
+// static command words. Each target is { word, operation: write | remove },
+// with `source`, the absolute path it duplicates, for an entry a recursive
+// copy or move places below its destination.
 // A recursive copy whose source cannot be listed within this many entries is
 // treated as if it carried every protected name.
 const TREE_ENTRY_LIMIT = 2000;
@@ -110,13 +112,28 @@ function under(root, entries) {
   return writes(entries.map((entry) => path.join(root, entry)));
 }
 
+// Entries copied from below `location` to the same relative paths below
+// `root`, with `root` itself first.
+function copied(root, location, entries) {
+  return ['', ...entries].map((entry) => ({
+    word: path.join(root, entry),
+    operation: 'write',
+    source: path.join(location, entry),
+  }));
+}
+
 // A source that cannot be listed is checked as if it held every protected
 // name; so is a missing cp source, which may be a glob or created later in
 // the command. A missing mv source moves nothing. The destination comes
 // first, so a destination that is itself a protected container is the
 // reported surface.
 function unlistedTargets(name, root, location) {
-  if (name === 'mv' && !(location && fs.existsSync(location))) return [];
+  if (location && fs.existsSync(location))
+    return copied(root, location, PROTECTED_RELATIVE_PROBES);
+  // A missing source may be created earlier in the command with unknown
+  // content, so its entries name no source; a missing mv source places
+  // nothing below the destination it writes.
+  if (name === 'mv') return writes([root]);
   return [...writes([root]), ...under(root, PROTECTED_RELATIVE_PROBES)];
 }
 
@@ -129,7 +146,7 @@ function contentTargets(name, source, place, context) {
       ? locations.flatMap((location) => {
           const entries = sourceEntries(location);
           return entries
-            ? under(place(location), entries)
+            ? copied(place(location), location, entries)
             : unlistedTargets(name, place(location), location);
         })
       : unlistedTargets(name, place(source)),
@@ -195,11 +212,11 @@ function copyTargets(name, words, context) {
         )
         .map(place)
     : [destination];
-  const targets = writes(written);
-  if (name === 'mv' || (name === 'cp' && isRecursiveCopy(words))) {
-    for (const source of sources)
-      targets.push(...contentTargets(name, source, place, context));
-  }
+  // A recursive copy or move writes each destination with its contents.
+  const recursive = name === 'mv' || (name === 'cp' && isRecursiveCopy(words));
+  const targets = recursive
+    ? sources.flatMap((source) => contentTargets(name, source, place, context))
+    : writes(written);
   if (name === 'mv') targets.push(...writes(sources, 'remove'));
   // A link to a protected path lets a later write in the same command reach
   // it through the link.

@@ -49,6 +49,9 @@ function verifyInstall(mode) {
     'shell-word-syntax.js',
     'git-aliases.js',
     'git-config-args.js',
+    'git-config-files.js',
+    'path-variants.js',
+    'scratch-paths.js',
     'git-no-verify.js',
   ]) {
     assert.equal(

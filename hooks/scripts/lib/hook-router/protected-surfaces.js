@@ -2,11 +2,29 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const {
+  configIncludes,
+  isGitConfig,
+  isGlobalGitConfig,
+} = require('./git-config-files');
+const {
+  fold,
+  foldedVariants,
+  isWithin,
+  pathVariants,
+  realpathOrNull,
+} = require('./path-variants');
+const {
+  configRole,
+  isScratchPath,
+  scratchAnchors,
+} = require('./scratch-paths');
 
 // One authoritative list of files that control agents and gates. Gate A owns
 // the style-gate marker; Gate G owns every other surface. Host adapters map a
 // match to their native response and never keep a second list.
 // `claudeBuiltin`: Claude Code already asks before its file tools write it.
+// `projectScoped`: a scratch copy of it configures no running session.
 // Names compare case-folded: case-insensitive filesystems such as APFS treat
 // `.Claude/Settings.json` as `.claude/settings.json`, and over-matching on a
 // case-sensitive filesystem is the safe direction.
@@ -17,39 +35,6 @@ const PATH_VARIABLES = new Set([
   'ZDOTDIR',
   'GOLDBAND_GIT_HOOKS_DIR',
 ]);
-
-function realpathOrNull(target) {
-  try {
-    return fs.realpathSync(target);
-  } catch {
-    return null;
-  }
-}
-
-// Resolve symlinks in the longest existing prefix; the rest stays lexical.
-function realpathNearest(target) {
-  const tail = [];
-  let current = target;
-  while (current !== path.dirname(current)) {
-    const real = realpathOrNull(current);
-    if (real) return path.join(real, ...tail.reverse());
-    tail.push(path.basename(current));
-    current = path.dirname(current);
-  }
-  return target;
-}
-
-function pathVariants(target) {
-  return [...new Set([path.resolve(target), realpathNearest(target)])];
-}
-
-function fold(target) {
-  return target.toLowerCase();
-}
-
-function foldedVariants(target) {
-  return [...new Set(pathVariants(target).map(fold))];
-}
 
 function readInstallerSource(gitHooksDir) {
   try {
@@ -94,6 +79,8 @@ function pathContext(input, env = process.env) {
   return {
     env,
     home: env.HOME || os.homedir(),
+    // The call's starting directory; `cwds` also gains static cd targets.
+    workdir: cwd,
     cwds: [cwd],
     budget: {
       ...ANALYSIS_LIMITS,
@@ -109,51 +96,6 @@ function globMilliseconds(env) {
   return Number.isInteger(value) && value > 0
     ? Math.min(value, ANALYSIS_LIMITS.globMilliseconds)
     : ANALYSIS_LIMITS.globMilliseconds;
-}
-
-const INCLUDE_DEPTH_LIMIT = 4;
-// A section header and its name: `[include]`, `[includeIf "gitdir:~/w/"]`.
-const CONFIG_HEADER = /^\s*\[\s*([^\]\s"]+)(?:[^\]"]|"(?:[^"\\]|\\.)*")*\]/;
-
-function includeValue(text, file, home) {
-  const value = text
-    .replace(/^"(.*)"\s*(?:[#;].*)?$/, '$1')
-    .replace(/\s+[#;].*$/, '')
-    .trim();
-  if (!value) return null;
-  if (value.startsWith('~/')) return path.join(home, value.slice(2));
-  return path.resolve(path.dirname(file), value);
-}
-
-// Files a Git configuration file includes through include.path and
-// includeIf.<condition>.path, followed as Git does: `~/` from home and
-// relative paths from the including file. A file that cannot be read
-// includes nothing.
-function configIncludes(file, home, depth = 0) {
-  let text;
-  try {
-    text = fs.readFileSync(file, 'utf8');
-  } catch {
-    return [];
-  }
-  let section = '';
-  const files = [];
-  for (const line of text.split(/\r?\n/)) {
-    const header = CONFIG_HEADER.exec(line);
-    if (header) section = header[1].toLowerCase();
-    // A key may follow its section header on the same line.
-    const entry = /^\s*path\s*=\s*(.*)$/i.exec(
-      header ? line.slice(header[0].length) : line,
-    );
-    if (!entry || !['include', 'includeif'].includes(section)) continue;
-    const included = includeValue(entry[1], file, home);
-    if (included) files.push(included);
-  }
-  if (depth + 1 >= INCLUDE_DEPTH_LIMIT) return files;
-  return [
-    ...files,
-    ...files.flatMap((included) => configIncludes(included, home, depth + 1)),
-  ];
 }
 
 // Adds the protected-path anchors, which read the filesystem.
@@ -181,6 +123,7 @@ function protectionAnchors(context) {
       ...configIncludes(path.join(xdg, 'git', 'config'), home),
     ].flatMap(foldedVariants),
     installer: source ? realpathOrNull(path.join(source, 'install.sh')) : null,
+    ...scratchAnchors(context),
   };
 }
 
@@ -341,13 +284,6 @@ function resolveTargetPaths(word, context) {
   return [...new Set(locations.flatMap(pathVariants))];
 }
 
-function isWithin(target, root) {
-  return (
-    target === root ||
-    target.startsWith(root.endsWith(path.sep) ? root : `${root}${path.sep}`)
-  );
-}
-
 function homeFiles(context, relative) {
   return context.homes.map((home) => path.join(home, relative));
 }
@@ -382,22 +318,6 @@ function isClaudePlugins(target, context) {
   });
 }
 
-// Repository, worktree, and global Git configuration, where core.hooksPath
-// and aliases live, and a `.git` file that points the work tree at another
-// repository. A bare repository's directory ends in `.git`.
-function isGitConfig(target, context) {
-  const parts = target.split(path.sep);
-  const git = parts.findLastIndex((part) => part.endsWith('.git'));
-  const inGitDir = git !== -1 && git < parts.length - 1;
-  return (
-    (inGitDir &&
-      ['config', 'config.worktree'].includes(path.basename(target))) ||
-    path.basename(target) === '.git' ||
-    homeFiles(context, '.gitconfig').includes(target) ||
-    context.gitConfigFiles.includes(target)
-  );
-}
-
 const PROTECTED_SURFACES = [
   {
     id: 'no-style-gate-marker',
@@ -418,6 +338,7 @@ const PROTECTED_SURFACES = [
     id: 'claude-settings',
     description: 'Claude Code settings (.claude/settings*.json)',
     claudeBuiltin: true,
+    projectScoped: true,
     matches: (target) =>
       parentName(target) === '.claude' &&
       /^settings.*\.json$/.test(path.basename(target)),
@@ -426,6 +347,7 @@ const PROTECTED_SURFACES = [
     id: 'claude-hooks',
     description: 'Claude Code hooks (.claude/hooks/)',
     claudeBuiltin: true,
+    projectScoped: true,
     matches: (target) => hasSegmentPair(target, '.claude', 'hooks'),
   },
   {
@@ -437,6 +359,7 @@ const PROTECTED_SURFACES = [
     id: 'mcp-config',
     description: 'MCP server configuration (.mcp.json)',
     claudeBuiltin: true,
+    projectScoped: true,
     matches: (target) => path.basename(target) === '.mcp.json',
   },
   {
@@ -449,6 +372,7 @@ const PROTECTED_SURFACES = [
     id: 'codex-project-config',
     description:
       'Codex project configuration (.codex/config.toml, hooks.json, hooks/)',
+    projectScoped: true,
     matches: (target) =>
       hasSegmentPair(target, '.codex', 'hooks') ||
       (parentName(target) === '.codex' &&
@@ -471,11 +395,13 @@ const PROTECTED_SURFACES = [
   {
     id: 'git-config',
     description: 'Git configuration (.git/config, ~/.gitconfig)',
+    projectScoped: (target, context) => !isGlobalGitConfig(target, context),
     matches: isGitConfig,
   },
   {
     id: 'gitleaks-config',
     description: 'gitleaks rules or ignore list',
+    projectScoped: true,
     matches: (target) =>
       ['.gitleaks.toml', '.gitleaksignore'].includes(path.basename(target)),
   },
@@ -529,11 +455,44 @@ function containerSurface(target, context) {
   return anchor ? SURFACE_BY_ID.get(anchor[0]) : null;
 }
 
+// A surface flag is a boolean or a function of the case-folded target.
+function surfaceFlag(value, target, context) {
+  return typeof value === 'function' ? value(target, context) : Boolean(value);
+}
+
 // `target` is case-folded.
-function surfaceForPath(target, operation, context) {
-  const surface =
-    PROTECTED_SURFACES.find((item) => item.matches(target, context)) ||
-    containerSurface(target, context);
+function surfacesAt(target, context) {
+  return [
+    ...PROTECTED_SURFACES.filter((item) => item.matches(target, context)),
+    containerSurface(target, context),
+  ].filter(Boolean);
+}
+
+// Surfaces a copy source is on, in the target's role, under every spelling,
+// so neither a symlink nor a renamed file lends a surface to other content.
+function carriedSurfaces(source, target, context) {
+  const variants = foldedVariants(source);
+  const role = configRole(target);
+  if (variants.some((variant) => configRole(variant) !== role)) return [];
+  const [first, ...rest] = variants.map((variant) =>
+    surfacesAt(variant, context),
+  );
+  return first.filter((item) => rest.every((list) => list.includes(item)));
+}
+
+// A scratch copy carries a project-level surface from a source in the same
+// role on that same surface, whose writes Gate G already authorized. Any other
+// write or removal, even in scratch, changes content no one approved.
+// `sourceOf` returns the path a copy duplicates there, or null.
+function surfaceForPath(target, operation, context, sourceOf) {
+  const candidates = surfacesAt(target, context);
+  if (!candidates.length) return null;
+  const scratch = Boolean(sourceOf) && isScratchPath(target, context);
+  const source = scratch ? sourceOf() : null;
+  const carried = source ? carriedSurfaces(source, target, context) : [];
+  const exempt = (item) =>
+    carried.includes(item) && surfaceFlag(item.projectScoped, target, context);
+  const surface = candidates.find((item) => !exempt(item));
   if (!surface) return null;
   if (operation === 'remove' && surface.allowsRemoval) return null;
   return surface;
@@ -556,15 +515,12 @@ function canonicalCase(target) {
   );
 }
 
-function matchPath(target, operation, context) {
+function matchPath(target, operation, context, sourceOf) {
   const key = fold(target);
-  const surface = surfaceForPath(key, operation, context);
+  const surface = surfaceForPath(key, operation, context, sourceOf);
   if (!surface) return null;
-  const builtin = surface.claudeBuiltin;
   const claudeBuiltin =
-    (typeof builtin === 'function'
-      ? builtin(key, context)
-      : Boolean(builtin)) && canonicalCase(target);
+    surfaceFlag(surface.claudeBuiltin, key, context) && canonicalCase(target);
   return { surface, path: target, claudeBuiltin };
 }
 
@@ -575,14 +531,38 @@ function matchProtectedTargets(targets, context) {
     targets.map((target) => target.word),
     context,
   );
-  let found = null;
-  for (const { word, operation } of targets) {
-    if (typeof word !== 'string' || !word) continue;
-    for (const target of resolveTargetPaths(word, context)) {
-      const match = matchPath(target, operation, context);
-      if (match?.surface.gate === 'A') return match;
-      found ||= match;
+  const resolved = targets.flatMap((item) =>
+    typeof item.word === 'string' && item.word
+      ? resolveTargetPaths(item.word, context).map((target) => ({
+          ...item,
+          target,
+          key: fold(target),
+        }))
+      : [],
+  );
+  const writers = new Map();
+  for (const item of resolved.filter(({ operation }) => operation === 'write'))
+    writers.set(item.key, [...(writers.get(item.key) || []), item]);
+  // A copy carries its source only when each path the call writes above it is
+  // a directory the same copy reproduces from a real directory; any other
+  // write there may leave a link before the copy runs.
+  const reproduces = (item, other) =>
+    other.op === item.op && isRealDirectory(other.source);
+  const relinked = (item) => {
+    for (let dir = path.dirname(item.key); dir !== path.dirname(dir); ) {
+      if ((writers.get(dir) || []).some((other) => !reproduces(item, other)))
+        return true;
+      dir = path.dirname(dir);
     }
+    return false;
+  };
+  let found = null;
+  for (const item of resolved) {
+    const sourceOf =
+      item.source && (() => (relinked(item) ? null : item.source));
+    const match = matchPath(item.target, item.operation, context, sourceOf);
+    if (match?.surface.gate === 'A') return match;
+    found ||= match;
   }
   return found;
 }
@@ -596,6 +576,14 @@ function isGoldbandInstaller(word, context) {
       (location) => fold(realpathOrNull(location) || '') === installer,
     ),
   );
+}
+
+function isRealDirectory(location) {
+  try {
+    return Boolean(location) && fs.lstatSync(location).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 function isDirectoryTarget(word, context) {

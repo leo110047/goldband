@@ -18,8 +18,18 @@ const routers = {
     process.argv[2] || path.join(root, 'hooks/scripts/hooks/hook-router.js'),
   codex: process.argv[3] || path.join(root, 'codex/hooks/hook-router.js'),
 };
+// Gate G treats /tmp/claude-<uid> as a scratch root no environment
+// overrides, so the fixture tree stays outside it.
+function tempBase() {
+  const base = fs.realpathSync(os.tmpdir());
+  const uid = process.getuid?.();
+  if (uid === undefined) return base;
+  const scratch = path.join(fs.realpathSync('/tmp'), `claude-${uid}`);
+  const inside = base === scratch || base.startsWith(`${scratch}${path.sep}`);
+  return inside ? fs.realpathSync('/var/tmp') : base;
+}
 export const temp = fs.realpathSync(
-  fs.mkdtempSync(path.join(os.tmpdir(), 'goldband-gate-protection-')),
+  fs.mkdtempSync(path.join(tempBase(), 'goldband-gate-protection-')),
 );
 export const home = path.join(temp, 'home');
 export const project = path.join(temp, 'project');
@@ -56,10 +66,13 @@ fs.writeFileSync(path.join(project, 'kit/.claude/settings.json'), '{}');
 fs.writeFileSync(path.join(project, 'docs/guide.md'), 'a\n');
 for (let index = 0; index <= 2000; index += 1)
   fs.writeFileSync(path.join(project, 'big', `f${index}`), '');
+const scratchTmp = path.join(temp, 'tmp');
+fs.mkdirSync(scratchTmp);
 const modeState = path.join(temp, 'modes.json');
 fs.writeFileSync(modeState, JSON.stringify({ modes: {} }));
 
-const AMBIENT_KEYS = /^(?:GIT_CONFIG_|GOLDBAND_|XDG_CONFIG_HOME$|ZDOTDIR$)/;
+const AMBIENT_KEYS =
+  /^(?:GIT_CONFIG_|GOLDBAND_|XDG_CONFIG_HOME$|ZDOTDIR$|CLAUDE_PROJECT_DIR$|CLAUDE_CONFIG_DIR$|CODEX_HOME$)/;
 
 function homePath(value) {
   return value.startsWith('~/') ? path.join(home, value.slice(2)) : value;
@@ -78,6 +91,8 @@ export function baseEnv(extra = {}) {
     GOLDBAND_DATA_DIR: path.join(temp, 'data'),
     CLAUDE_PLUGIN_DATA: path.join(temp, 'data'),
     HOOK_ROUTER_MODE_STATE_FILE: modeState,
+    // A scratch root of its own, so only gate-scratch-copies.mjs exercises one.
+    TMPDIR: scratchTmp,
     GOLDBAND_STYLE_GATE_SCRIPT: path.join(temp, 'no-style-checker'),
     ...overrides,
   };

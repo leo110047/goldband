@@ -84,6 +84,9 @@ const MANAGED_COMMANDS = [
   'codex/hooks/shell-braces.js',
   'codex/hooks/git-aliases.js',
   'codex/hooks/git-config-args.js',
+  'codex/hooks/git-config-files.js',
+  'codex/hooks/path-variants.js',
+  'codex/hooks/scratch-paths.js',
   'codex/hooks/git-no-verify.js',
   'codex/hooks/shell-word-syntax.js',
   'codex/hooks/shell-output.js',
@@ -172,6 +175,9 @@ const SHARED_ADAPTER_COPIES = [
     'shell-braces.js',
     'git-aliases.js',
     'git-config-args.js',
+    'git-config-files.js',
+    'path-variants.js',
+    'scratch-paths.js',
     'git-no-verify.js',
     'shell-word-syntax.js',
     'secret-patterns.js',
@@ -291,6 +297,9 @@ function buildExpectedCodexAssets() {
       'codex/hooks/shell-braces.js',
       'codex/hooks/git-aliases.js',
       'codex/hooks/git-config-args.js',
+      'codex/hooks/git-config-files.js',
+      'codex/hooks/path-variants.js',
+      'codex/hooks/scratch-paths.js',
       'codex/hooks/git-no-verify.js',
       'codex/hooks/shell-word-syntax.js',
       'codex/hooks/shell-output.js',
@@ -303,6 +312,28 @@ function buildExpectedCodexAssets() {
       'Codex plugins exist but package Codex skills/apps/MCP, not Claude Code settings. Root Codex install remains install.sh.',
   };
 }
+
+// Claude hook runtime files listed in the expected-assets report.
+const CLAUDE_RUNTIME_DEPENDENCIES = [
+  'hooks/scripts/lib/telemetry-schema.cjs',
+  'hooks/scripts/lib/hook-router/secret-patterns.js',
+  'hooks/scripts/lib/hook-router/shell-commands.js',
+  'hooks/scripts/lib/hook-router/shell-policy.js',
+  'hooks/scripts/lib/hook-router/gate-protection.js',
+  'hooks/scripts/lib/hook-router/gate-bypass-rules.js',
+  'hooks/scripts/lib/hook-router/protected-surfaces.js',
+  'hooks/scripts/lib/hook-router/shell-write-targets.js',
+  'hooks/scripts/lib/hook-router/shell-braces.js',
+  'hooks/scripts/lib/hook-router/git-aliases.js',
+  'hooks/scripts/lib/hook-router/git-config-args.js',
+  'hooks/scripts/lib/hook-router/git-config-files.js',
+  'hooks/scripts/lib/hook-router/path-variants.js',
+  'hooks/scripts/lib/hook-router/scratch-paths.js',
+  'hooks/scripts/lib/hook-router/git-no-verify.js',
+  'hooks/scripts/lib/hook-router/shell-word-syntax.js',
+  'hooks/scripts/lib/hook-router/shell-output.js',
+  'hooks/scripts/lib/hook-router/shell-invocation.js',
+];
 
 function buildExpectedAssets({ commands, hookConfig, rules, sourceSkills }) {
   return {
@@ -321,21 +352,7 @@ function buildExpectedAssets({ commands, hookConfig, rules, sourceSkills }) {
       skills: [...sourceSkills, 'goldband-rules'],
       hooks: summarizeHooks(hookConfig.hooks),
       runtimeDependencies: [
-        'hooks/scripts/lib/telemetry-schema.cjs',
-        'hooks/scripts/lib/hook-router/secret-patterns.js',
-        'hooks/scripts/lib/hook-router/shell-commands.js',
-        'hooks/scripts/lib/hook-router/shell-policy.js',
-        'hooks/scripts/lib/hook-router/gate-protection.js',
-        'hooks/scripts/lib/hook-router/gate-bypass-rules.js',
-        'hooks/scripts/lib/hook-router/protected-surfaces.js',
-        'hooks/scripts/lib/hook-router/shell-write-targets.js',
-        'hooks/scripts/lib/hook-router/shell-braces.js',
-        'hooks/scripts/lib/hook-router/git-aliases.js',
-        'hooks/scripts/lib/hook-router/git-config-args.js',
-        'hooks/scripts/lib/hook-router/git-no-verify.js',
-        'hooks/scripts/lib/hook-router/shell-word-syntax.js',
-        'hooks/scripts/lib/hook-router/shell-output.js',
-        'hooks/scripts/lib/hook-router/shell-invocation.js',
+        ...CLAUDE_RUNTIME_DEPENDENCIES,
         ...runtimeDependencyPaths('hooks/scripts/lib'),
       ],
       hookScripts: [

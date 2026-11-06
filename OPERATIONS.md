@@ -276,7 +276,7 @@ Claude and Codex on every tool call, independent of careful mode; Codex also
 applies them to PermissionRequest. Both hosts use one protected-surface list
 and decision module (`hooks/scripts/lib/hook-router/protected-surfaces.js`,
 `gate-bypass-rules.js`, `git-no-verify.js`, `git-aliases.js`,
-`git-config-args.js`,
+`git-config-args.js`, `git-config-files.js`, `path-variants.js`, `scratch-paths.js`,
 `gate-protection.js`, `shell-write-targets.js`, `shell-braces.js`,
 `shell-word-syntax.js`, copied verbatim to `codex/hooks/`). They read static
 command text: scripts, `eval` of dynamic text, and encoded commands are
@@ -382,11 +382,28 @@ two name in `[include]` or `[includeIf]` `path` entries, including one on the
 section header's line (four levels deep),
 `.gitleaks.toml`, and
 `.gitleaksignore`; project-level names match in any directory, and every name
-and home or XDG anchor compares case-insensitively. A write is a Claude Write,
-Edit, MultiEdit, or NotebookEdit call, a Codex `apply_patch` add, update,
-delete, or move (a file header may be indented; after an update header, an
-indented line is hunk context), the path arguments (`path`,
-`paths`, `file`, `file_path`, `filepath`, `filePath`, `filename`,
+and home or XDG anchor compares case-insensitively. Project-level names
+(`.claude/settings*.json`, `.claude/hooks/`, `.mcp.json`, project `.codex/`
+files, repository Git configuration, and gitleaks files) below a scratch root,
+`$TMPDIR` or `/tmp/claude-<uid>` while it is a directory the current user
+owns, may be written by a recursive `cp` or `mv` entry whose source path, under
+every symlink-resolved spelling, lies on the same surface in the same role
+(the path within its `.claude`, `.codex`, or `*.git` directory, else the file
+name), without authorization; a top-level source that does not exist yet
+carries nothing, and neither does an entry below a path the command also
+writes, unless that path is a directory the same copy reproduces from a real
+directory, since any other write there may leave a link first. Removals stay
+protected. A path stays protected when it is also below a home directory,
+`$CLAUDE_CONFIG_DIR`, or `$CODEX_HOME`, or when it belongs to the tool call's
+working directory or Claude's `$CLAUDE_PROJECT_DIR`: below that directory, in
+the `.claude`, `.codex`, `.mcp.json`, or gitleaks location of that directory
+or an ancestor, or in a Git directory its repository uses (its `.git`, or a
+`.git` file's `gitdir:` and `commondir`), and when its symlink-resolved form
+leaves the scratch root.
+A write is a Claude Write, Edit, MultiEdit, or NotebookEdit call, a Codex
+`apply_patch` add, update, delete, or move (a file header may be indented;
+after an update header, an indented line is hunk context), the path
+arguments (`path`, `paths`, `file`, `file_path`, `filepath`, `filePath`, `filename`,
 `relative_path`, `pathInProject`, `destination`, `target`, `dest`, and a
 move's `source`, `src`, or `from`) of an MCP tool (`mcp__<server>__<tool>`)
 whose tool name contains `write`, `edit`, `create`, `move`, `rename`,
